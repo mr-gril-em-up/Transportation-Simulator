@@ -22,7 +22,7 @@ pub use model::{
     DesireLine, IntercityPair, LineId, LinePreview, LineResult, LinkFlow, ModeSplit, PendingLine,
     Results, RoadState, Sim, ZoneResult,
 };
-pub use params::Params;
+pub use params::{IntercityParams, Params};
 pub use schema::*;
 use std::collections::HashSet;
 use std::fmt;

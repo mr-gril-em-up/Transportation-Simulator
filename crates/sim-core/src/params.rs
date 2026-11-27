@@ -161,7 +161,10 @@ pub struct Params {
     pub bankruptcy_months: u32,
 }
 
-/// Intercity demand and loading (F37, SIM-24); see `intercity.rs`.
+/// Intercity demand, mode choice and loading (F37, SIM-24, SIM-25); see
+/// `intercity.rs`. Cells, demand, air options and the road background are
+/// built in `Sim::new`; the choice terms (`vot_per_hour`, `beta_per_min`,
+/// constants, rail access) are read at every results update.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IntercityParams {
@@ -176,14 +179,68 @@ pub struct IntercityParams {
     /// Gravity decay exponent on free-flow car minutes. Assumed (a common
     /// long-distance value); one market cannot fit it.
     pub decay: f64,
-    /// Share of intercity person trips by car: FRA FEIS 2017, Dallas-Houston
-    /// 94.0% auto (air 5.6%, bus 0.4%). Replaced by mode choice in F37 step 2.
-    pub car_share: f64,
     /// Persons per intercity car. Assumed, not sourced.
     pub car_occupancy: f64,
     /// Share of daily intercity car trips in the modeled peak hour. Assumed:
     /// rural design-hour factors are ~0.08-0.10 of AADT.
     pub peak_hour_share: f64,
+
+    /// Mode choice (F37 step 2, SIM-25): a logit over car, air and rail on
+    /// generalized minutes (time plus money / value of time). Value of time,
+    /// dollars an hour: FRA FEIS, personal travel $22.90 (business $37.79).
+    pub vot_per_hour: f64,
+    /// Logit coefficient per generalized minute. Assumed (long-distance
+    /// models run about -0.005 to -0.02), not fitted.
+    pub beta_per_min: f64,
+    /// Air constant, generalized minutes added to air. Fitted so
+    /// Dallas-Fort Worth <-> Houston flies the FEIS 2017 air share, 5.6%
+    /// (`examples/intercity.rs`).
+    pub asc_air: f64,
+    /// Rail constant, generalized minutes. Set equal to `asc_air` (no
+    /// rail-specific preference), so the FEIS Texas Central forecast stays an
+    /// independent check rather than a fit target.
+    pub asc_rail: f64,
+    /// Drive to a station or airport, km/h on straight-line distance
+    /// (assumed: ~50 km/h on a road 1.25x the crow-fly length).
+    pub access_kph: f64,
+    /// Farthest straight-line drive to a station or airport, km.
+    pub max_access_km: f64,
+    /// Rail: minutes at the two stations (arrive early, board, leave).
+    pub station_min: f64,
+    /// Rail: cap on the wait, minutes (intercity riders plan to a timetable).
+    pub max_wait_min: f64,
+    /// Air: minutes at the two airports (check-in, security, boarding,
+    /// deplaning). Assumed; with the other air terms Dallas-Houston comes to
+    /// ~270 min door to door, inside the FEIS 267-291.
+    pub air_terminal_min: f64,
+    /// Air: taxi, climb and descent minutes on top of cruise.
+    pub air_taxi_min: f64,
+    /// Air: block speed, km/h of great-circle distance.
+    pub air_kph: f64,
+    /// Air: fare per trip, dollars, plus `air_fare_per_km`. Assumed.
+    pub air_fare_base: f64,
+    /// Air: fare per great-circle km. Assumed.
+    pub air_fare_per_km: f64,
+    /// Air: shortest flight, great-circle km.
+    pub min_air_km: f64,
+}
+
+impl IntercityParams {
+    /// Car, air and rail shares for one trip from generalized minutes
+    /// (without constants); `f64::INFINITY` marks a mode that is not offered.
+    pub fn shares(&self, car_gc: f64, air_gc: f64, rail_gc: f64) -> [f64; 3] {
+        let u = [car_gc, air_gc + self.asc_air, rail_gc + self.asc_rail];
+        let best = u.iter().copied().fold(f64::INFINITY, f64::min);
+        let e = u.map(|g| {
+            if g.is_finite() {
+                (self.beta_per_min * (g - best)).exp()
+            } else {
+                0.0
+            }
+        });
+        let sum: f64 = e.iter().sum();
+        e.map(|x| x / sum)
+    }
 }
 
 impl Default for IntercityParams {
@@ -193,9 +250,22 @@ impl Default for IntercityParams {
             cell_km: 30.0,
             scale: 2.323e-5,
             decay: 2.0,
-            car_share: 0.94,
             car_occupancy: 1.7,
             peak_hour_share: 0.08,
+            vot_per_hour: 22.90,
+            beta_per_min: -0.01,
+            asc_air: -15.6,
+            asc_rail: -15.6,
+            access_kph: 40.0,
+            max_access_km: 60.0,
+            station_min: 20.0,
+            max_wait_min: 15.0,
+            air_terminal_min: 120.0,
+            air_taxi_min: 20.0,
+            air_kph: 600.0,
+            air_fare_base: 100.0,
+            air_fare_per_km: 0.10,
+            min_air_km: 200.0,
         }
     }
 }
@@ -503,6 +573,21 @@ pub fn lane_capacity_vph(speed_kph: f64, class: Option<&str>) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn intercity_shares_are_a_logit_that_skips_missing_modes() {
+        let p = IntercityParams {
+            asc_air: 0.0,
+            asc_rail: 0.0,
+            ..IntercityParams::default()
+        };
+        let s = p.shares(300.0, f64::INFINITY, f64::INFINITY);
+        assert_eq!(s, [1.0, 0.0, 0.0]);
+        let s = p.shares(300.0, 400.0, 300.0);
+        assert!((s.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert!((s[0] - s[2]).abs() < 1e-12);
+        assert!((s[1] / s[0] - (p.beta_per_min * 100.0).exp()).abs() < 1e-12);
+    }
 
     #[test]
     fn road_class_sets_capacity_and_speed_rule_is_the_fallback() {
