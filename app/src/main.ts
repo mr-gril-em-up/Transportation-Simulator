@@ -6,7 +6,7 @@ import { LineDrawer } from "./draw";
 import { StopEditor } from "./edit";
 import { createMap, GEO_FULL, SCHEMATIC_FULL, setData, zoomBand } from "./map";
 import { layoutSchematic, morph } from "./schematic";
-import { km } from "./geo";
+import { km, routePath } from "./geo";
 import { money, escapeHtml } from "./format";
 import { inspectorHtml } from "./inspector";
 import { isRegional, type PendingRoute, type Budget, type Statement, type ClockState, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
@@ -54,13 +54,18 @@ async function applyNow(call: () => Promise<RouteResult[]>): Promise<void> {
 }
 
 let lastCash: number | null = null;
+let lastBudget: Budget | null = null;
 function renderBudget(b: Budget): void {
+  lastBudget = b;
   // The change since the last call shows what the edit just cost (or the grant it won).
   const delta = lastCash === null ? 0 : b.cash - lastCash;
   lastCash = b.cash;
   // Bond sizes offered: what covers the deficit (rounded up to $10M), then fixed steps.
-  const cover = b.cash < 0 ? Math.ceil(-b.cash / 1e7) * 1e7 : 0;
-  const sizes = [...new Set([cover, 100e6, 500e6, 1e9].filter((x) => x > 0))];
+  // Sizes above the borrowing capacity (SIM-7/SIM-9) would be refused, so they are not offered.
+  const cap = b.bondCapacity;
+  const cover = b.cash < 0 ? Math.min(Math.ceil(-b.cash / 1e7) * 1e7, Math.floor(cap / 1e6) * 1e6) : 0;
+  const sizes = [...new Set([cover, 100e6, 500e6, 1e9].filter((x) => x > 0 && x <= cap))];
+  const capText = Number.isFinite(cap) ? `Borrowing capacity ${money(cap)}, backed by ${money(b.taxCapacity)}/year of local tax` : "";
   const terms = `${(b.bondRate * 100).toFixed(2)}% over ${Math.round(b.bondTermMonths / 12)} years, payments start next month`;
   const status =
     b.bankruptMonth !== null
@@ -76,11 +81,14 @@ function renderBudget(b: Budget): void {
     `<br>This month: ${money(b.capitalSpentThisMonth)} built, ${money(b.grantsThisMonth)} federal grants` +
     (b.debt > 0 ? `<br>Debt ${money(b.debt)}, ${money(b.debtServicePerMonth)}/month in payments` : "") +
     status +
-    (b.bankruptMonth === null
-      ? `<div class="row"><select id="bond-size" title="${terms}">${sizes
-          .map((x) => `<option value="${x}">${money(x)}${x === cover ? " (covers deficit)" : ""}</option>`)
-          .join("")}</select> <button id="btn-bond" title="${terms}">Issue bond</button></div>`
-      : "") +
+    (b.bankruptMonth !== null
+      ? ""
+      : sizes.length
+        ? `<div class="row"><select id="bond-size" title="${terms}">${sizes
+            .map((x) => `<option value="${x}">${money(x)}${x === cover ? (cover < -b.cash ? " (all you can borrow)" : " (covers deficit)") : ""}</option>`)
+            .join("")}</select> <button id="btn-bond" title="${terms}">Issue bond</button></div>` +
+          (capText ? `<small>${capText}</small>` : "")
+        : `<div class="row"><small>No borrowing capacity: bonds are backed by the local tax around open and planned stops. Draw a line first.</small></div>`) +
     renderStatements(b);
 }
 
@@ -110,7 +118,10 @@ function renderStatements(b: Budget): string {
             .map((m) => `<td class="${f(m) < 0 ? "neg" : ""}">${money(f(m))}</td>`)
             .join("")}</tr>`,
       ).join("")}</table>` +
-      (cols[0].interest > 0 ? `<small>Interest in last month's payments: ${money(cols[0].interest)}</small>` : "")
+      (cols[0].interest > 0 ? `<small>Interest in last month's payments: ${money(cols[0].interest)}</small>` : "") +
+      (cols[0].capitalizedInterest > 0
+        ? `<small>${cols[0].interest > 0 ? "<br>" : ""}Interest added to debt during construction last month (no cash): ${money(cols[0].capitalizedInterest)}</small>`
+        : "")
     : `<small>No month has closed yet. Fares, operating cost and tax are booked when a month ends (Skip to next month to see one).</small>`;
   return `<details id="statements" ${statementsOpen ? "open" : ""}><summary>Monthly statements</summary>${body}</details>`;
 }
@@ -143,6 +154,20 @@ const stopBoardings = (routeId: string, stopId: string) =>
 /** "Day 184 (in 183 days)" for a sim-core day number. */
 const openingLabel = (day: number) => `Day ${day + 1}` + (simDay >= 0 ? ` (in ${day - simDay} days)` : "");
 
+/**
+ * Street path for a bus-like line (SIM-8). The line being edited draws straight so stops track the
+ * cursor. A pending line uses the shape from its build preview, because sim-core's results describe
+ * the running version (or nothing, before it first opens).
+ */
+function busPath(r: RouteSpec): LngLat[] {
+  const pts = r.stops.map((s) => s.lngLat);
+  if (editor.route?.id === r.id) return pts;
+  const shape = pending.has(r.id) ? drawnShape.get(r.id) : (results.get(r.id)?.shape ?? drawnShape.get(r.id));
+  return routePath(pts, shape);
+}
+/** Street shape from the last build preview of each drawn line, until sim-core reports its own. */
+const drawnShape = new Map<string, LngLat[][]>();
+
 function render(): void {
   const z = map.getZoom();
   // While editing, draw true geography so dragged stops land where the cursor is.
@@ -174,7 +199,7 @@ function render(): void {
     bus.map((r) => ({
       type: "Feature",
       properties: { color: r.color, building: building(r.id) },
-      geometry: { type: "LineString", coordinates: r.stops.map((s) => s.lngLat) },
+      geometry: { type: "LineString", coordinates: busPath(r) },
     })),
   );
   for (const r of bus)
@@ -308,7 +333,12 @@ map.on("zoom", render);
 const DRAW_HINT = "Click to place stops. Enter or double-click to finish, Esc to cancel.";
 const drawer = new LineDrawer(
   map,
-  (mode, pts) => addRoute(mode, pts),
+  (mode, pts) => {
+    const shape = draftShape && draftShape.pts.length === pts.length && draftShape.pts.every((p, i) => p === pts[i]) ? draftShape.shape : undefined;
+    draftShape = null;
+    addRoute(mode, pts);
+    if (shape) drawnShape.set(`r${nextId - 1}`, shape);
+  },
   (drawing) => {
     $("draw-hint").hidden = !drawing;
     $("draw-hint").textContent = DRAW_HINT;
@@ -320,6 +350,7 @@ const drawer = new LineDrawer(
 // Each placed stop asks the sim what the line would cost and carry. Previews go
 // through the same queue as edits; a newer stop makes older pending ones skip.
 let draftGen = 0;
+let draftShape: { pts: LngLat[]; shape: LngLat[][] } | null = null;
 function previewDraft(mode: Mode, pts: LngLat[]): void {
   const gen = ++draftGen;
   if (pts.length < 2) return;
@@ -331,13 +362,27 @@ function previewDraft(mode: Mode, pts: LngLat[]): void {
   void queued(async () => (gen === draftGen ? sim.previewRoute(draft) : null))
     .then((p) => {
       if (!p || gen !== draftGen) return;
+      if (p.shape) {
+        draftShape = { pts, shape: p.shape };
+        drawer.showPath(pts, routePath(pts, p.shape));
+      }
+      const road = p.lengthKm !== undefined && p.shape ? ` (${p.lengthKm.toFixed(1)} km by road)` : "";
+      // Capital is charged even if it cannot be financed (SIM-9): compare with what can be raised now.
+      const b = lastBudget;
+      const net = p.capitalCost - p.federalGrant;
+      const raise = b ? Math.max(0, b.cash) + (Number.isFinite(b.bondCapacity) ? b.bondCapacity : Infinity) : Infinity;
+      const finance =
+        b && net > raise
+          ? `<br><span class="neg">${money(net)} after the grant is more than you can raise now: ${money(Math.max(0, b.cash))} cash + ${money(b.bondCapacity)} borrowing capacity. Building it adds its stops' tax, which backs more borrowing.</span>`
+          : "";
       const grant =
         p.federalGrant > 0 ? `${money(p.federalGrant)} federal grant` : "no federal grant (over $600k per daily rider)";
       $("draw-hint").innerHTML =
-        `${head} · <b>${money(p.capitalCost)}</b> to build, ${grant} · ` +
+        `${head}${road} · <b>${money(p.capitalCost)}</b> to build, ${grant} · ` +
         `<b>${p.dailyRiders.toLocaleString()}</b> riders/day` +
         (p.operatingCostPerDay !== undefined ? ` · ${money(p.operatingCostPerDay)}/day to run` : "") +
         (p.opensDay !== undefined && p.opensDay > simDay ? ` · opens ${openingLabel(p.opensDay)}` : "") +
+        finance +
         `<br>Enter or double-click to build, Esc to cancel.`;
     })
     .catch((e) => {

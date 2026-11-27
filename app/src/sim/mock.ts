@@ -151,6 +151,8 @@ export class MockSim implements SimClient {
     bankruptMonth: null,
     bondRate: 0.0543,
     bondTermMonths: 360,
+    bondCapacity: Infinity, // the mock has no tax base or borrowing cap
+    taxCapacity: 0,
     statements: [], // the mock never settles a month
   };
 

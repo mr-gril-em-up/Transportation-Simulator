@@ -209,3 +209,18 @@ for bars and a step line. Daily segment loads are drawn rather than
 peak-hour ones because that is what sim-core reports per segment; the
 peak-hour figure exists only for the busiest segment and is shown as text
 against capacity.
+
+### A29. Draw sim-core's street route; do not route in the app
+Bus paths come from sim-core (`segment_shapes`, SIM-8) instead of an app
+router. sim-core already holds the road graph and uses the path for length,
+cost and travel time, so drawing its shape keeps the map and the score in
+agreement and avoids shipping 93k road nodes over IPC. Agreed with the
+sim-core thread before either side was built. Rail stays straight: rail
+alignments are not modeled.
+
+### A30. Bond menu capped at capacity; financing warning in the preview
+Sizes sim-core would refuse are not offered, and the deficit-cover option
+shrinks to the capacity ("all you can borrow"). The build preview warns,
+but does not block, when capital after grant exceeds cash plus capacity:
+sim-core charges capital regardless (SIM-9), and the line's own stops raise
+capacity once built, so blocking would stop the first line on every map.

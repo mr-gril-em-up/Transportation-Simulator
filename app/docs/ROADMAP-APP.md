@@ -28,6 +28,8 @@ doc.
   peak/off-peak headways (`offpeakHeadwayMin`); about 1,860 riders/day vs APTA 1,500 (#31, #38)
 - Monthly statements: last two closed months under the budget (F26)
 - Line inspector: boardings by stop, segment loads both ways, peak load vs capacity (F17)
+- Bus lines drawn along the streets from sim-core's `segment_shapes`, draft included (SIM-8, A29)
+- Bond menu capped at borrowing capacity; financing warning in the build preview (SIM-9, A30)
 - Bonds (issue from the budget panel), debt and payments, distress count and
   bankruptcy banner (F26)
 
@@ -35,7 +37,6 @@ doc.
 
 | Item | Blocked on |
 |---|---|
-| Snap drawn bus routes to the road graph | sim-core's router (agreed: sim-core routes bus, trolleybus and BRT on the road graph and returns `LineResult.segment_shapes`; the app draws them) |
 | M1 exit check in the UI: Red Line replica vs reported ridership | calibrated mode split (F14) and real scenario |
 
 ## M2 (money, clock, agents)

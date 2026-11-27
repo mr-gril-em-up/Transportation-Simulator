@@ -14,6 +14,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
 ![Editing a line: stops ringed in black can be dragged, added or deleted](docs/img/stop-editing.png)
 ![Budget after a bond: debt, payments and the distress count toward bankruptcy](docs/img/bonds.png)
+![A bus line drawn along the streets, with borrowing capacity in the budget](docs/img/road-snapping.png)
 ![Line inspector: boardings by stop, segment loads both ways, peak load against capacity](docs/img/inspector.png)
 ![Monthly statements: two closed months of fares, costs, tax, debt and capital](docs/img/statements.png)
 ![A line under construction: faded on the map, opening day in the panel](docs/img/under-construction.png)
@@ -67,7 +68,12 @@ then waits for the build. The terminal prints
   finishes, **Esc** cancels. Clicking an existing stop snaps to it, so lines can share an
   interchange. From the second stop on, the hint box shows a **build cost preview**: length,
   capital cost, the federal grant it would win (or why not), forecast riders per day and daily
-  operating cost. Nothing is charged until you finish the line.
+  operating cost. Nothing is charged until you finish the line. Bus lines follow the streets
+  (sim-core routes bus, trolleybus and BRT on the road graph, SIM-8): the draft redraws along the
+  roads after each stop and the hint adds the length by road, which is what sim-core charges and
+  times. A stop more than 500 m from a road gets a straight segment. If the capital after the grant
+  is more than cash plus borrowing capacity, the hint says so in red (building is still allowed;
+  the new line's stops add tax that backs more borrowing).
 - **Edit stops** (per line, in the ridership panel): zooms to the line and draws it in true
   geography. Drag a stop to move it, click the map to add a stop (it goes where it lengthens the
   line least), and right-click a stop to delete it (a line keeps at least two). Dragging an
@@ -96,19 +102,24 @@ then waits for the build. The terminal prints
 - **Monthly statements** (F26, under the budget, click to open): the last two closed months side
   by side, newest first. Rows: fares, operating assistance, local sales tax, operating cost,
   operating surplus, debt payments, capital spent, federal capital grants, bonds issued, change in
-  cash; the interest part of the last month's payments shows below. Fares, operating cost and tax
+  cash; the interest part of the last month's payments, and any interest added to debt during
+  construction, show below. Fares, operating cost and tax
   are booked only when a month ends, so the table is empty until the first one closes. It stays
   open across the daily refresh.
 - **Bonds and bankruptcy** (F26, in the budget panel): pick an amount (the first option covers the
-  current deficit, rounded up to $10M) and **Issue bond**. Cash arrives at once; monthly payments
+  current deficit, rounded up to $10M, or is all you can borrow if that is less) and **Issue
+  bond**. Sizes above the **borrowing capacity** are not offered. Capacity is what the local tax
+  around the stops of open and planned lines can back (sim-core SIM-7/SIM-9), shown under the
+  button; with no lines it is 0 and the panel says to draw a line first. Cash arrives at once; monthly payments
   (30-year level payment at 5.43%, the rates in the button tooltip) start next month. The panel
   shows debt and monthly payments. A month that ends with cash below zero, or with debt payments
   above the operating surplus (fares + operating assistance + local tax - operating cost), is
   distressed; the panel counts them ("3 of 12 months in a row in distress"). Twelve in a row is
   bankruptcy: a red banner says the game is over, the bond button disappears, and the sim keeps
-  running so you can see why. While any line is under construction, sim-core skips the
-  payments-vs-surplus test (a line being built has no riders to pay for it yet), so only a month
-  ending with cash below zero counts. Borrow enough to stay above zero while you build.
+  running so you can see why. A bond issued while a line is under construction pays nothing until
+  construction ends: its interest is added to the debt instead (capitalized interest, SIM-9), so a
+  month ending with cash below zero is what counts while you build. Borrow enough to stay above
+  zero.
 - **Construction** (F24): a new line is paid for when you draw it but opens only after its
   mode's build time divided by 12 (light rail about 6 months, so about 183 game days; the Red
   Line demo, commuter rail, about 122). Until then the panel says "Under construction, opens Day
@@ -179,7 +190,8 @@ interface SimClient {
   daily rider exceeds $600k), optional `operatingCostPerDay`.
 - `Budget`: `cash`, `capitalSpentThisMonth`, `grantsThisMonth`, `debt`, `debtServicePerMonth` (all
   USD), `distressedMonths`, `bankruptcyMonths` (12), `bankruptMonth` (game month or `null`),
-  `bondRate`, `bondTermMonths`, `statements` (settled months, newest first, at most 12: `month`,
+  `bondRate`, `bondTermMonths`, `bondCapacity`, `taxCapacity` (annual), `statements` (settled
+  months, newest first, at most 12: `capitalizedInterest` and `month`,
   `fares`, `operatingCost`, `operatingAssistance`, `localTax`, `capitalSpent`, `federalGrants`,
   `bondProceeds`, `debtService`, `interest`, `net`).
 
@@ -193,7 +205,9 @@ interface SimClient {
 - `RouteResult`: `routeId`, `dailyRiders` (weekday boardings, rounded), `boardingsByStop` (keyed by
   stop id), plus optional `operatingCostPerDay` (USD), `fareboxRecovery` (fare revenue over
   operating cost) and `detail` (`LineDetail`: `lengthKm`, `runMin`, `vehicles`, `passengerKm`,
-  `segmentLoads` as `[outbound, inbound]` per segment, `peakHourLoad`, `peakHourCapacity`). The
+  `segmentLoads` as `[outbound, inbound]` per segment, `peakHourLoad`, `peakHourCapacity`) and
+  `shape` (street route per segment for road modes, `[lng, lat][][]`; an empty segment is
+  straight). `RoutePreview` also carries optional `lengthKm` and `shape`. The
   mock leaves the optional fields out, so it has no inspector.
 
 `createSim()` ([src/sim/index.ts](src/sim/index.ts)) returns `TauriSim` when
@@ -267,7 +281,8 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 
 | Gap | Fixed by |
 |---|---|
-| Lines are straight from stop to stop, not snapped to roads | Road graph from the pipeline plus a router (F16 follow-up) |
+| Rail lines are straight from stop to stop (bus lines follow the streets); the schematic view draws bus lines on their street path too | Track alignments are not modeled (rail is charged straight-line km times its alignment factor) |
+| A line edited with Edit stops draws straight until the edit is re-run and sim-core returns the new street route | Not planned: stops must track the cursor while dragging |
 | Desire lines are straight zone-to-zone chords capped at 300 pairs; no filtering by purpose or mode | F06 follow-up if playtests want it |
 | The browser mock builds instantly (no construction period) | Not planned: construction rules live in sim-core |
 | Cost preview only while drawing; a stop edit is charged on release with no preview first (the budget shows what it cost) | F16 follow-up if it matters in play |
