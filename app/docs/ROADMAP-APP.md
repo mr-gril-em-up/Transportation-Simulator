@@ -23,7 +23,9 @@ doc.
 - Real Travis County data by default (`npm run data`, then the shell finds the
   downloaded build); panel names the scenario source (#26)
 - Construction period on: lines under construction draw faded with their
-  opening day in the panel and the drawing hint (F24)
+  opening day in the panel and the drawing hint (F24) (#27)
+- Real Red Line preset: OSM route 550 stations, $3.50 fare, 32/51-minute
+  peak/off-peak headways (`offpeakHeadwayMin`); about 1,860 riders/day vs APTA 1,500 (#31)
 
 ## Next, M0/M1 (blocked items say on what)
 

@@ -124,7 +124,8 @@ interface RouteResult { routeId; dailyRiders; boardingsByStop: Record<stopId, nu
 | `stops[].lngLat` | `stops[].lon`, `stops[].lat` |
 | `stops[].name` | `stops[].name` |
 | (derived) | `stops[].park_ride` = `isRegional(mode)` |
-| `headwayMin` | `headway_min` |
+| `headwayMin` | `headway_min` (peak; work trips) |
+| `offpeakHeadwayMin` (optional) | `offpeak_headway_min` (omitted when absent, so sim-core uses the peak value) |
 | `fare` | `fare` |
 | `id` | kept in the shell's `route_id` to `LineId` map |
 | `color` | app-only |
