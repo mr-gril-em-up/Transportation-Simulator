@@ -805,6 +805,50 @@ fn line_edit_while_the_day_loads_ridership_matches_an_edit_after_it() {
 }
 
 #[test]
+fn preview_while_the_day_loads_ridership_leaves_the_day_alone() {
+    // SIM-22: a preview puts the transit state back, including the edit
+    // counter, so the day job carries on and lands where a blocking day does.
+    let start = || {
+        let mut s = sim();
+        s.add_line(rail()).unwrap();
+        s.clock.set_timelapse(60.0);
+        s
+    };
+    let zero = std::time::Duration::ZERO;
+    let mut n = start();
+    n.tick_budgeted(24.0, zero);
+    let mut calls = 1;
+    while n.day_progress().is_some() {
+        n.tick_budgeted(0.0, zero);
+        calls += 1;
+    }
+    let mut a = start();
+    a.tick(24.0);
+    let mut b = start();
+    let yesterday = b.results().lines[0].daily_boardings;
+    b.tick_budgeted(24.0, zero);
+    for _ in 0..calls - 3 {
+        b.tick_budgeted(0.0, zero);
+    }
+    assert!(b.day_progress().expect("day still running") > 0.75);
+    b.preview_line(straight_line(Mode::Bus, (-7.0, 3.0), (7.0, 3.0), 0.8, 10.0))
+        .unwrap();
+    assert!(
+        b.results().car_times_stale,
+        "preview put the day's results in early"
+    );
+    while b.day_progress().is_some() {
+        b.tick_budgeted(0.0, zero);
+    }
+    let (ra, rb) = (a.results(), b.results());
+    assert!(!rb.car_times_stale);
+    let close = |x: f64, y: f64| (x - y).abs() <= 1e-6 * x.abs().max(1.0);
+    assert!(close(ra.peak_vehicle_km, rb.peak_vehicle_km));
+    let (la, lb) = (ra.lines[0].daily_boardings, rb.lines[0].daily_boardings);
+    assert!(close(la, lb), "{la} vs {lb} (yesterday {yesterday})");
+}
+
+#[test]
 fn warm_start_from_saved_roads_matches_and_rejects_another_graph() {
     // SIM-19: saved road volumes start the next game near the same state,
     // and a state from a different road network is ignored.

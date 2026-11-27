@@ -266,6 +266,9 @@ struct TransitState {
     pnr_cars: Vec<f64>,
     pnr_penalty: HashMap<(LineId, usize), f64>,
     loads: LineLoads,
+    /// `lines_version` before the change, so undoing a preview does not
+    /// look like an edit to a running day job.
+    lines_version: u64,
 }
 
 /// What a line edit can change (SIM-21). A transit search only explores the
@@ -1468,8 +1471,10 @@ impl Sim {
     /// results and park-and-ride prices, which are small.
     fn on_lines_changed(&mut self) -> TransitState {
         let t0 = Instant::now();
+        let version = self.lines_version;
         self.lines_version += 1;
         let saved = TransitState {
+            lines_version: version,
             net: self.rebuild_transit(),
             tsk: [
                 std::mem::take(&mut self.tsk_walk),
@@ -1513,6 +1518,7 @@ impl Sim {
         self.pnr_cars = s.pnr_cars;
         self.pnr_penalty = s.pnr_penalty;
         self.loads = s.loads;
+        self.lines_version = s.lines_version;
     }
 
     /// Which origins and lines the edit from `old` to `self.net` can change,

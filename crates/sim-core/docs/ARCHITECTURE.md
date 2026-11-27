@@ -410,7 +410,9 @@ origins per step and sums the loads, so the work spreads over calls like the
 passes do. While it runs, the stored per-line loads are cleared, because
 they no longer match the committed car times; an edit in that window
 therefore recomputes in full (`edit_scope` sees no stored loads), and its
-results stand: the job ends without overwriting them. Statewide, 455 lines,
+results stand: the job ends without overwriting them. A preview is not an
+edit: it puts `lines_version` back with the rest of the transit state, so
+the job carries on. Statewide, 455 lines,
 100 ms budget: longest call **0.45 s** (was 2.5 s), the day 22.9 s over
 106 calls (was 23.0 s over 85). `day_progress` counts the loading as one
 more pass.
@@ -420,7 +422,7 @@ more pass.
 | Test | Covers |
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
-| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), an edit while the day loads ridership matches the same edit after a blocking day (SIM-22), warm start from saved roads matches and rejects another graph (SIM-19), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
+| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), an edit while the day loads ridership matches the same edit after a blocking day and a preview then leaves the day alone (SIM-22), warm start from saved roads matches and rejects another graph (SIM-19), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share, bond rate and term) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
 | unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, `PointGrid` matches brute force, scoped line edits match a full recompute (SIM-21), clock rates, logit, grant gate and settlement arithmetic |
