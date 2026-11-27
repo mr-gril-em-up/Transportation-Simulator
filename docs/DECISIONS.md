@@ -6,7 +6,7 @@ Status values: **Decided** (by Collins), **Approved** (proposed in the design do
 
 | # | Date | Decision | Why | Status | Source |
 |---|---|---|---|---|---|
-| D14 | 2026-11-27 | Data pipeline written in Rust, not Python | Not recorded by the implementer. Effect: one toolchain, and the pipeline can emit sim-core's schema types directly. Pipeline owner to confirm | As built | `crates/data-pipeline` |
+| D14 | 2026-11-27 | Data pipeline written in Rust, not Python | One toolchain (`cargo` only); builds `sim_core::ScenarioInput` so a schema change breaks the pipeline's compile, not the game at load; streams the statewide OSM extract fast; few dependencies, no GDAL. Cost: ad-hoc analysis is easier in Python | As built | [pipeline architecture](../crates/data-pipeline/docs/ARCHITECTURE.md) |
 | D13 | 2026-11-27 | Pipeline zones are 2020 block groups (12-digit GEOID); LODES 8 blocks roll up by their first 12 digits | LODES 8 uses 2020 blocks, so no crosswalk is needed | As built | [data-pipeline README](../crates/data-pipeline/README.md) |
 | D12 | 2026-11-27 | sim-core owns the input schema (`ScenarioInput`); the pipeline conforms to it | One source of truth for the contract between build time and run time | As built | [sim-core README](../crates/sim-core/README.md) |
 | D11 | 2026-11-27 | Releases tagged `v0.1.0`..`v0.5.0` at milestone exits; v0.5.0 is the Texas MVP; 1.0 is the post-MVP mode set | Matches the design doc's MVP vs 1.0 phase split | Proposed | [ROADMAP.md](ROADMAP.md) |

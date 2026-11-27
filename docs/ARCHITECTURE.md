@@ -40,7 +40,7 @@ Links to component READMEs resolve once each component's first PR merges.
 
 ### Dependency direction
 
-`app` depends on `sim-core`. `data-pipeline` depends on `sim-core` only for the input schema types (target state, see [interface gaps](#known-interface-gaps)). `sim-core` depends on neither. Keep it that way: the design doc requires the core to stay a headless library so a future client swap does not touch it, and keeps the zone hierarchy and population decoupled from transport code so the city-builder path stays open.
+`app` depends on `sim-core`. `data-pipeline` depends on `sim-core` only for the input schema types. `sim-core` depends on neither. Keep it that way: the design doc requires the core to stay a headless library so a future client swap does not touch it, and keeps the zone hierarchy and population decoupled from transport code so the city-builder path stays open.
 
 ## Data flow
 
@@ -76,21 +76,16 @@ Owned by sim-core. Source of truth: [`crates/sim-core/src/schema.rs`](../crates/
 
 Not built yet (roadmap F15). Planned surface from the sim-core README: build a `Sim` from a scenario, add/update/remove lines with sub-2-second re-evaluation, read results, advance the shared clock. The app calls it only through Tauri commands and receives results as events; the webview never holds simulation state.
 
-### Known interface gaps
+### Pipeline output files
 
-As of 2026-11-27 the data-pipeline branch writes an interim format (`zones.json`, `flows.json`, `roads.json`, `transit.json`, `manifest.json`, types in `crates/data-pipeline/src/model.rs`) that does not yet match `ScenarioInput`. Roadmap F03 closes this. Differences to resolve:
+The pipeline writes `scenario.json` as `sim_core::ScenarioInput` directly (it depends on sim-core and calls `validate()` before writing), plus detail files sim-core does not need, keyed by the same ids: `zones.json` (GEOID, worker and commute counts), `roads.json` (OSM class, name, drawing shape, **total** lanes), `transit.json` (existing OSM routes, for calibration and the keep-existing-transit toggle) and `manifest.json` (summary, top 20 flows). Full spec: [data-pipeline OUTPUT_FORMAT.md](../crates/data-pipeline/docs/OUTPUT_FORMAT.md).
 
-| Field | Pipeline (interim) | sim-core `ScenarioInput` |
-|---|---|---|
-| Zone key | `geoid` string; references use position index | `id: u32` |
-| Zone to road link | none | `road_node` (nearest drivable node) required |
-| Road nodes | `nodes: [[lon, lat]]`, index = id | `road_nodes: [{id, lon, lat}]` |
-| Lanes | total, both directions unless oneway | per direction |
-| Commute flows | `flows` with `home`/`work` as zone indexes | `commutes` with `home`/`work` as zone ids |
-| Files | one file per layer | one file per region |
-| Extra pipeline fields | `resident_workers`, `commute_out`, `commute_in`, road `class`, `name`, `shape` | not in schema (shape is needed by the app for drawing) |
+Traps for consumers:
 
-The lanes semantics difference is the one that silently produces wrong capacities if missed.
+- `road_links[].lanes` in `scenario.json` is **per direction** (two-way OSM total halved, minimum 1). `roads.json` `edges[].lanes` is the **total**. Do not mix them.
+- Zone and road-node ids equal array positions in the detail files, but are not stable across areas or OSM snapshots. Use GEOID or OSM id for anything that must survive a rebuild.
+- `zero_car_share`, `median_income`, `parking_cost`, `area_km2` are written as sim-core defaults until ACS and TIGER inputs are added (roadmap F31).
+- OSM transit `mode` values (`train`, `subway`, ...) are not sim-core `Mode` values; mapping (for example `train` to `commuter_rail` for the Red Line) is the consumer's job (F19, F44).
 
 ## Repository layout
 
@@ -108,11 +103,11 @@ docs/                   this hub: roadmap, architecture, decisions, docs standar
 
 | Design doc says | Built | Notes |
 |---|---|---|
-| Data pipeline in Python (osmnx, geopandas, pandas) | Rust crate `data-pipeline` | Rationale not yet recorded; effect is one toolchain and shared schema types. See D14 in [DECISIONS.md](DECISIONS.md) |
+| Data pipeline in Python (osmnx, geopandas, pandas) | Rust crate `data-pipeline` | One toolchain, compile-time schema check, statewide PBF speed, few dependencies. See [pipeline architecture](../crates/data-pipeline/docs/ARCHITECTURE.md) and D14 |
 | Census tract and block-group polygons from TIGER | Block-group population-weighted centroids only | Polygons deferred until the map needs zone fills |
 
 ## Open engineering questions
 
-- **Crate licences disagree.** The workspace sets `license = "UNLICENSED"`; `data-pipeline` declares `MIT OR Apache-2.0`. Pick one before anything ships.
+- **Licence.** All crates inherit the workspace `license = "UNLICENSED"`. Decide before any release.
 - **Package format.** JSON is interim. A binary format and tile streaming land with M3 (F33).
 - **OSM ODbL.** The derived road database ships with the game; it needs attribution and share-alike review before any sale (F46).

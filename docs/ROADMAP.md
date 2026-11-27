@@ -30,7 +30,7 @@ gantt
     section M0 Data spike (Travis)
     Workspace and sim-core input schema        :done,   f01, 2026-11-26, 1d
     Pipeline zones, LODES flows, OSM roads     :active, f02, 2026-11-26, 5d
-    Pipeline output to ScenarioInput           :        f03, after f02, 3d
+    Pipeline writes ScenarioInput              :active, f03, 2026-11-27, 2d
     Synthetic population (IPF from PUMS)       :        f04, 2026-11-30, 6d
     Tauri and MapLibre shell                   :active, f05, 2026-11-26, 5d
     Desire-line layer                          :        f06, after f05, 4d
@@ -101,8 +101,8 @@ Goal: one county of real public data, turned into zones, flows and a road graph,
 | ID | Feature | Area | Depends on | Done when | Status |
 |---|---|---|---|---|---|
 | F01 | Cargo workspace and sim-core input schema (`ScenarioInput`, `validate()`) | core | none | Schema compiles, `tiny.json` fixture validates | Done (#1) |
-| F02 | Pipeline: block-group zones, LODES OD flows, OSM drivable road graph, OSM transit relations | pipeline | none | `cargo run --release` writes zones, flows, roads, transit and manifest for Travis | In progress |
-| F03 | Pipeline writes `ScenarioInput` (or converts to it) and runs `validate()` on its output | pipeline, core | F01, F02 | Travis output loads in sim-core with zero validation errors. See [interface gaps](ARCHITECTURE.md#known-interface-gaps) | Planned |
+| F02 | Pipeline: block-group zones, LODES OD flows, OSM drivable road graph, OSM transit relations | pipeline | none | `cargo run --release` writes zones, roads, transit and manifest for Travis | In review (#3) |
+| F03 | Pipeline writes `scenario.json` as `sim_core::ScenarioInput` (lanes per direction, `road_node` per zone, `commutes`) and runs `validate()` | pipeline, core | F01, F02 | Travis output loads in sim-core with zero validation errors. Format: [OUTPUT_FORMAT.md](../crates/data-pipeline/docs/OUTPUT_FORMAT.md) | In review (#3) |
 | F04 | Synthetic population: expand ACS PUMS households to ACS block-group totals with IPF; home block, age, income band, car availability, value of time | pipeline | F02 | Block-group marginals (household size, income, vehicles) reproduced within 5% | Planned |
 | F05 | Tauri app shell with MapLibre GL base map, sim-core linked as native Rust | app | F01 | App launches on desktop and shows the Travis base map | In progress |
 | F06 | Desire-line layer (deck.gl) from zone-to-zone flows | app | F03, F05 | Flows render, line width scales with workers | Planned |
@@ -211,7 +211,7 @@ Excluded for good: hyperloop, multiplayer.
 | Red Line replica misses the 30% band | M1 | Fix the demand model before going statewide (design doc rule); do not start M3 on a failed M1 |
 | Playtest says the loop is not fun | M2 | Exaggeration factor (F2e) and clock tuning before M3 |
 | Schematic auto-layout unreadable | M4 | Fallback to smoothed geographic lines |
-| Pipeline and sim-core schemas diverge | M0 | F03 makes the pipeline emit `ScenarioInput` and run `validate()` |
+| Pipeline and sim-core schemas diverge | M0 | Closed by F03: the pipeline builds sim-core's types, so drift fails the compile |
 
 ## Keeping this current
 

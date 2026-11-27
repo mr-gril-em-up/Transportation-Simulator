@@ -48,4 +48,4 @@ Docs are part of every change. Read the [docs standard](docs/DOCS_STANDARD.md) b
 
 ## Data and licences
 
-Built from OpenStreetMap (ODbL: attribution required, derived database stays open), Census LODES, ACS, PUMS and TIGER/Line. "Map data © OpenStreetMap contributors." Crate licence is not settled yet (see [open questions](docs/ARCHITECTURE.md#open-engineering-questions)).
+Built from OpenStreetMap (ODbL: attribution required, derived database stays open), Census LODES, ACS, PUMS and TIGER/Line. "Map data © OpenStreetMap contributors." Crates are `UNLICENSED` (workspace setting) until a licence is chosen.
