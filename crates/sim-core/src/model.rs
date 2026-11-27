@@ -19,15 +19,22 @@ pub type LineId = u32;
 /// Trips by choice, in the same order as the `DRIVE..BIKE` constants.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModeSplit {
+    /// Drive alone.
     pub drive: f64,
+    /// Shared ride (driver or passenger).
     pub carpool: f64,
+    /// Transit reached on foot.
     pub transit_walk: f64,
+    /// Transit reached by car (park-and-ride).
     pub transit_drive: f64,
+    /// Walk the whole trip.
     pub walk: f64,
+    /// Bike the whole trip.
     pub bike: f64,
 }
 
 impl ModeSplit {
+    /// Build from an array indexed by the `params::DRIVE..BIKE` constants.
     pub fn from_array(a: [f64; N_CHOICES]) -> Self {
         ModeSplit {
             drive: a[DRIVE],
@@ -38,6 +45,7 @@ impl ModeSplit {
             bike: a[BIKE],
         }
     }
+    /// Array indexed by the `params::DRIVE..BIKE` constants.
     pub fn to_array(self) -> [f64; N_CHOICES] {
         [
             self.drive,
@@ -48,9 +56,11 @@ impl ModeSplit {
             self.bike,
         ]
     }
+    /// Sum over all choices.
     pub fn total(&self) -> f64 {
         self.to_array().iter().sum()
     }
+    /// Transit with walk access plus transit with drive access.
     pub fn transit(&self) -> f64 {
         self.transit_walk + self.transit_drive
     }
@@ -64,44 +74,62 @@ impl ModeSplit {
 /// Ridership and economics for one line.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LineResult {
+    /// Stable id returned by `Sim::add_line`.
     pub id: LineId,
+    /// Line name as given in `TransitLine::name`.
     pub name: String,
+    /// Transit technology.
     pub mode: Mode,
+    /// Route length (stop-to-stop distance x alignment factor), km.
     pub length_km: f64,
     /// One-way end-to-end time including dwell, minutes.
     pub run_min: f64,
+    /// Boardings per day, transfers included (one rider who transfers counts twice).
     pub daily_boardings: f64,
     /// Daily boardings at each stop, in stop order.
     pub boardings_by_stop: Vec<f64>,
+    /// Passenger-km per day.
     pub passenger_km: f64,
     /// Highest daily load on any segment and direction.
     pub max_segment_load: f64,
     /// That load in the peak hour, vs. capacity per direction per hour.
     pub peak_hour_load: f64,
+    /// Passengers per hour per direction the line can carry: 60 / headway x vehicle capacity.
     pub peak_hour_capacity: f64,
+    /// Vehicles (trains) needed to run the headway: round trip x 1.1 layover / headway, rounded up.
     pub vehicles_required: f64,
+    /// Vehicle revenue hours per day: vehicles x span.
     pub revenue_hours_per_day: f64,
+    /// Operating cost per day, dollars: revenue hours x mode cost per revenue hour.
     pub operating_cost_per_day: f64,
+    /// Fare revenue per day, dollars (boardings x fare + passenger-km x fare per km; overstates when transfers are free).
     pub fare_revenue_per_day: f64,
+    /// Fare revenue / operating cost.
     pub farebox_recovery: f64,
     /// Daily passengers per segment: [forward (stop k -> k+1), reverse].
     pub segment_loads: Vec<[f64; 2]>,
 }
 
+/// Region-wide results after the latest evaluation. Serialized to the app as JSON.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Results {
     /// Person trips per day by choice.
     pub daily_trips: ModeSplit,
+    /// Work (home-based work) trips, both directions.
     pub work_trips: ModeSplit,
+    /// Non-work trips.
     pub other_trips: ModeSplit,
+    /// `daily_trips` as shares of the total.
     pub mode_share: ModeSplit,
     /// Trips with no available option (no car, no transit, too far to walk).
     pub unserved_trips: f64,
+    /// One entry per active line, in id order.
     pub lines: Vec<LineResult>,
     /// Peak-hour vehicle-km on the road network.
     pub peak_vehicle_km: f64,
     /// Peak-hour vehicle-km weighted mean speed.
     pub peak_avg_speed_kph: f64,
+    /// Share of commuters whose desired arrival falls in the busiest hour.
     pub work_peak_hour_share: f64,
     /// True after a line edit until the next `equilibrate` (car times not re-run).
     pub car_times_stale: bool,
@@ -109,34 +137,48 @@ pub struct Results {
     pub eval_ms: f64,
 }
 
+/// Per-zone results, for heatmaps.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneResult {
+    /// Zone id from the input.
     pub zone: u32,
     /// Daily trips starting in the zone.
     pub trips: f64,
+    /// Daily transit trips starting in the zone.
     pub transit_trips: f64,
+    /// `transit_trips / trips`.
     pub transit_share: f64,
     /// Share of the zone within walking range of a stop.
     pub stop_coverage: f64,
 }
 
+/// Peak-hour flow on one directed road edge.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinkFlow {
     /// Index into `ScenarioInput::road_links`.
     pub link: u32,
+    /// Start node id.
     pub from: u32,
+    /// End node id.
     pub to: u32,
+    /// Peak-hour vehicles per hour.
     pub volume_vph: f64,
+    /// Volume / capacity.
     pub vc: f64,
+    /// Congested speed, km/h.
     pub speed_kph: f64,
 }
 
+/// A zone pair and its daily travel, for the desire-line view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DesireLine {
+    /// First zone id.
     pub from: u32,
+    /// Second zone id.
     pub to: u32,
     /// Daily trips both directions, all modes.
     pub trips: f64,
+    /// Daily transit trips, both directions.
     pub transit_trips: f64,
 }
 
@@ -158,8 +200,14 @@ struct Row {
     unserved: f64,
 }
 
+/// The simulation. Owns the scenario, the networks, the demand and the latest results.
+///
+/// Build with `Sim::new`, edit lines with `add_line` / `update_line` / `remove_line`
+/// (fast), advance time with `tick` (re-equilibrates once per game day).
 pub struct Sim {
+    /// Model parameters. After changing them call `equilibrate`.
     pub params: Params,
+    /// The one game clock. `tick` advances it.
     pub clock: Clock,
     input: ScenarioInput,
     nz: usize,
@@ -289,16 +337,19 @@ impl Sim {
         Ok(sim)
     }
 
+    /// Parse a JSON `ScenarioInput` and build the `Sim` (see `new`).
     pub fn from_json(json: &str, params: Params) -> Result<Sim, SimError> {
         Sim::new(ScenarioInput::from_json(json)?, params)
     }
 
     // ---------------------------------------------------------------- API
 
+    /// Latest results; refreshed by every call that changes state.
     pub fn results(&self) -> &Results {
         &self.results
     }
 
+    /// The scenario as loaded. Its `lines` field is empty: lines live in `lines()`.
     pub fn input(&self) -> &ScenarioInput {
         &self.input
     }
@@ -320,6 +371,7 @@ impl Sim {
         Ok((self.lines.len() - 1) as LineId)
     }
 
+    /// Replace line `id` in place (same id) and re-evaluate. Errors if the id is unknown or removed.
     pub fn update_line(&mut self, id: LineId, line: TransitLine) -> Result<(), SimError> {
         line.validate()?;
         match self.lines.get_mut(id as usize) {
@@ -330,6 +382,7 @@ impl Sim {
         Ok(())
     }
 
+    /// Remove line `id` and re-evaluate. The id is retired, never reused.
     pub fn remove_line(&mut self, id: LineId) -> Result<(), SimError> {
         match self.lines.get_mut(id as usize) {
             Some(slot @ Some(_)) => *slot = None,
@@ -399,6 +452,7 @@ impl Sim {
         self.finish(Instant::now(), self.results.car_times_stale);
     }
 
+    /// Per-zone trips, transit trips and stop coverage.
     pub fn zone_results(&self) -> Vec<ZoneResult> {
         (0..self.nz)
             .map(|i| {

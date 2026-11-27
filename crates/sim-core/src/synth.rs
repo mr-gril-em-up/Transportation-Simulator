@@ -5,8 +5,10 @@
 use crate::geo::{dist_km, offset};
 use crate::schema::*;
 
+/// Size and shape of the synthetic region.
 #[derive(Debug, Clone)]
 pub struct SynthConfig {
+    /// Random seed; same seed, same scenario.
     pub seed: u64,
     /// Square region side, km (Travis County is ~2,600 km², ~51 km square).
     pub extent_km: f64,
@@ -14,7 +16,9 @@ pub struct SynthConfig {
     pub road_spacing_km: f64,
     /// Zones per side (26 gives 676, close to Travis County's block group count).
     pub zones_per_side: usize,
+    /// Total residents.
     pub population: f64,
+    /// Total jobs.
     pub jobs: f64,
 }
 

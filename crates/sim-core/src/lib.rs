@@ -1,14 +1,16 @@
 //! Transpo-Sim simulation core: aggregate zone-to-zone demand, mode choice and
 //! network assignment. See README.md for the public API and docs/ for the model.
 
+#![warn(missing_docs)]
+
 pub mod clock;
-pub mod geo;
-pub mod graph;
+mod geo;
+mod graph;
 pub mod model;
 pub mod params;
 pub mod schema;
 pub mod synth;
-pub mod transit;
+mod transit;
 
 pub use clock::Clock;
 pub use model::{DesireLine, LineId, LineResult, LinkFlow, ModeSplit, Results, Sim, ZoneResult};
@@ -17,6 +19,7 @@ pub use schema::*;
 use std::collections::HashSet;
 use std::fmt;
 
+/// Error returned by validation and `Sim` calls; the string is a readable message.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SimError(pub String);
 
@@ -40,6 +43,7 @@ fn err<T>(msg: impl Into<String>) -> Result<T, SimError> {
 }
 
 impl ScenarioInput {
+    /// Parse a scenario from JSON. Does not validate; call `validate` (or `Sim::new`, which does).
     pub fn from_json(s: &str) -> Result<Self, SimError> {
         serde_json::from_str(s).map_err(|e| SimError(format!("bad scenario json: {e}")))
     }
@@ -113,6 +117,7 @@ impl ScenarioInput {
 }
 
 impl TransitLine {
+    /// Check the line has two or more stops, a positive headway, and non-negative fares, speed and span.
     pub fn validate(&self) -> Result<(), SimError> {
         if self.stops.len() < 2 {
             return err(format!("line '{}' needs at least two stops", self.name));

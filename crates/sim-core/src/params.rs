@@ -6,13 +6,20 @@ use serde::{Deserialize, Serialize};
 
 /// Person-level travel options the logit model chooses between.
 pub const N_CHOICES: usize = 6;
+/// Index of drive alone.
 pub const DRIVE: usize = 0;
+/// Index of carpool.
 pub const CARPOOL: usize = 1;
+/// Index of transit with walk access.
 pub const TRANSIT_WALK: usize = 2;
+/// Index of transit with drive (park-and-ride) access.
 pub const TRANSIT_DRIVE: usize = 3;
+/// Index of walk.
 pub const WALK: usize = 4;
+/// Index of bike.
 pub const BIKE: usize = 5;
 
+/// Every tunable number in the model. See docs/MODEL.md for what each does and where defaults come from.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Params {
     /// Logit coefficient per generalized minute (negative).
@@ -21,6 +28,7 @@ pub struct Params {
     pub asc: [f64; N_CHOICES],
     /// Out-of-vehicle time weights relative to in-vehicle time.
     pub wait_weight: f64,
+    /// Weight on walk minutes (access, egress, transfers) relative to in-vehicle time.
     pub walk_weight: f64,
     /// Penalty per transfer, minutes.
     pub transfer_penalty_min: f64,
@@ -36,17 +44,24 @@ pub struct Params {
 
     /// Perceived car operating cost, $/km (fuel + wear, ~$0.20/mile).
     pub car_cost_per_km: f64,
+    /// Average persons per carpool vehicle.
     pub carpool_occupancy: f64,
+    /// Extra minutes for picking up or dropping off.
     pub carpool_extra_min: f64,
     /// Park and walk at each end of a car trip, minutes.
     pub car_terminal_min: f64,
     /// Share of the daily parking cost charged per work trip / other trip.
     pub parking_share_work: f64,
+    /// Share of the daily parking cost charged per non-work trip.
     pub parking_share_other: f64,
 
+    /// Walking speed, km/h.
     pub walk_kph: f64,
+    /// Cycling speed, km/h.
     pub bike_kph: f64,
+    /// Longest trip anyone walks, km (network distance).
     pub max_walk_km: f64,
+    /// Longest trip anyone bikes, km (network distance).
     pub max_bike_km: f64,
     /// Network distance / straight-line distance for walk, bike and access legs.
     pub detour_factor: f64,
@@ -54,7 +69,9 @@ pub struct Params {
     pub stop_walk_km: f64,
     /// Max walk between stops of different lines for a transfer.
     pub transfer_walk_km: f64,
+    /// Longest drive to a park-and-ride, minutes.
     pub pnr_max_drive_min: f64,
+    /// Minutes to park and walk to the platform.
     pub pnr_park_min: f64,
 
     /// Share of workers commuting on a given day (absence + work from home).
@@ -65,11 +82,14 @@ pub struct Params {
     pub gravity_decay_per_min: f64,
     /// Desired arrival time at work: shares per 15-minute bin from `arrival_profile_start_h`.
     pub work_arrival_profile: Vec<f64>,
+    /// Hour of day (decimal) the first profile bin starts.
     pub arrival_profile_start_h: f64,
     /// Share of daily non-work trips in the AM peak hour.
     pub other_peak_hour_share: f64,
 
+    /// BPR curve alpha (time = t0 x (1 + alpha x (v/c)^beta)).
     pub bpr_alpha: f64,
+    /// BPR curve beta.
     pub bpr_beta: f64,
     /// Outer iterations of mode choice <-> car assignment (method of successive averages).
     pub feedback_iterations: usize,
@@ -178,12 +198,17 @@ pub struct ModeDefaults {
     pub alignment_factor: f64,
     /// Passengers per vehicle (or train).
     pub vehicle_capacity: f64,
+    /// Operating cost per vehicle (train) revenue hour, dollars.
     pub cost_per_revenue_hour: f64,
+    /// Default flat fare per boarding, dollars.
     pub fare: f64,
+    /// Default distance fare, dollars per km.
     pub fare_per_km: f64,
+    /// Default hours of service per day.
     pub span_hours: f64,
 }
 
+/// Default speeds, capacities, costs and fares for a mode.
 pub fn mode_defaults(m: Mode) -> ModeDefaults {
     let d = |speed_kph,
              dwell_s,

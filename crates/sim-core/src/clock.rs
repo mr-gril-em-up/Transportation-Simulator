@@ -3,17 +3,21 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Game seconds per real second at 1x (one game minute per real second).
 pub const GAME_SECONDS_PER_REAL_SECOND: f64 = 60.0;
+/// Seconds in a game day.
 pub const SECONDS_PER_DAY: f64 = 86_400.0;
 /// Budgets settle monthly; months are 30 game days.
 pub const DAYS_PER_MONTH: u64 = 30;
 
+/// The shared game clock. Serialize it into saves.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Clock {
     /// Game seconds since the scenario started (day 0, 00:00).
     pub game_seconds: f64,
     /// Time-lapse multiplier (1, 2, 10, 60 in the UI; any value > 0 works).
     pub timelapse: f64,
+    /// While true, `advance` does nothing.
     pub paused: bool,
 }
 
@@ -29,10 +33,12 @@ impl Default for Clock {
 }
 
 impl Clock {
+    /// Whole game days since the start (day 0).
     pub fn day(&self) -> u64 {
         (self.game_seconds / SECONDS_PER_DAY) as u64
     }
 
+    /// Game month index (30-day months).
     pub fn month(&self) -> u64 {
         self.day() / DAYS_PER_MONTH
     }
@@ -42,6 +48,7 @@ impl Clock {
         (self.game_seconds % SECONDS_PER_DAY) / 3600.0
     }
 
+    /// Set the time-lapse multiplier. Ignores non-positive or non-finite values.
     pub fn set_timelapse(&mut self, x: f64) {
         if x > 0.0 && x.is_finite() {
             self.timelapse = x;
