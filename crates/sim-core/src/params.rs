@@ -95,6 +95,14 @@ pub struct Params {
     /// Hours a day a line runs its peak headway (two 3-hour peaks); the rest
     /// of `span_hours` runs the off-peak headway. Sets revenue hours.
     pub peak_service_hours: f64,
+    /// Shadow-price step for park-and-ride lots with `park_ride_spaces`:
+    /// each round the lot's access penalty moves by this many generalized
+    /// minutes x ln(cars / spaces), the ratio clamped to [0.2, 5], floored
+    /// at 0 (SIM-11).
+    pub pnr_penalty_step_min: f64,
+    /// Re-skim and mode-choice rounds a network change or `equilibrate` may
+    /// run to fit cars into limited lots; `equilibrate_warm` runs one a day.
+    pub pnr_iterations: usize,
     /// Outer iterations of mode choice <-> car assignment (method of successive averages).
     pub feedback_iterations: usize,
     /// Rounds for the daily warm-started re-run (`Sim::equilibrate_warm`).
@@ -146,10 +154,12 @@ impl Default for Params {
             beta_per_min: -0.035,
             // F14: fitted on real Travis (build data-48453-2023 with ACS
             // income and zero-car share) with today's CapMetro network loaded,
-            // to ACS 2019-2023 B08301 commute shares excluding work-from-home,
-            // and a 3% park-and-ride share of transit (tuned; no survey source).
+            // to ACS 2019-2023 B08301 commute shares excluding work-from-home.
+            // Transit is fitted as one share; the drive-access gap (-3.76)
+            // was tuned in SIM-10 and is not sourced. Red Line park-and-ride
+            // is limited to its three lots and their spaces (SIM-11).
             // Reproduce with `examples/calibrate.rs`.
-            asc: [0.0, -2.44, -0.42, -4.18, -0.41, -3.89],
+            asc: [0.0, -2.44, -0.40, -4.16, -0.41, -3.89],
             wait_weight: 2.0,
             walk_weight: 2.0,
             transfer_penalty_min: 5.0,
@@ -185,6 +195,8 @@ impl Default for Params {
             bpr_alpha: 0.15,
             bpr_beta: 4.0,
             peak_service_hours: 6.0,
+            pnr_penalty_step_min: 10.0,
+            pnr_iterations: 6,
             feedback_iterations: 4,
             daily_iterations: 1,
             construction_speedup: 12.0,

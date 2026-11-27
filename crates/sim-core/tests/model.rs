@@ -509,3 +509,34 @@ fn bus_stop_off_the_road_network_falls_back_to_a_straight_segment() {
         "off-network: straight"
     );
 }
+
+#[test]
+fn full_park_and_ride_lots_price_drivers_out() {
+    // Unlimited lots first: how many cars each end terminal draws.
+    let mut s = sim();
+    let id = s.add_line(rail()).unwrap();
+    let free = s.results().lines[0].park_ride_cars_by_stop.clone();
+    let last = free.len() - 1;
+    assert!(free[0] > 20.0 && free[last] > 20.0, "{free:?}");
+    assert!(free[1..last].iter().all(|&c| c == 0.0), "{free:?}");
+    let free_riders = s.results().lines[0].daily_boardings;
+
+    // Lots a third that size: the shadow price fills them, no more.
+    let mut line = rail();
+    let spaces = [free[0] / 3.0, free[last] / 3.0];
+    line.stops[0].park_ride_spaces = Some(spaces[0]);
+    line.stops[last].park_ride_spaces = Some(spaces[1]);
+    s.remove_line(id).unwrap();
+    s.add_line(line).unwrap();
+    let l = &s.results().lines[0];
+    for (cars, cap) in [l.park_ride_cars_by_stop[0], l.park_ride_cars_by_stop[last]]
+        .into_iter()
+        .zip(spaces)
+    {
+        assert!(
+            cars <= cap * 1.1 && cars >= cap * 0.5,
+            "{cars} vs {cap} spaces"
+        );
+    }
+    assert!(l.daily_boardings < free_riders);
+}

@@ -269,6 +269,7 @@ mod tests {
             run_min: 20.0,
             daily_boardings: boardings,
             boardings_by_stop: vec![],
+            park_ride_cars_by_stop: vec![],
             passenger_km: 0.0,
             max_segment_load: 0.0,
             peak_hour_load: 0.0,

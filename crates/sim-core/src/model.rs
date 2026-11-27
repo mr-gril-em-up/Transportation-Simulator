@@ -5,7 +5,7 @@
 use crate::clock::Clock;
 use crate::economy::{self, Ledger};
 use crate::geo::dist_km;
-use crate::graph::{RoadGraph, Tree};
+use crate::graph::{RoadGraph, Tree, NONE};
 use crate::params::*;
 use crate::roads::Router;
 use crate::schema::*;
@@ -13,6 +13,7 @@ use crate::transit::{Access, LineLoads, Searcher, TOd, TransitNet, ZonePt};
 use crate::SimError;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::Instant;
 
 /// Stable handle for a transit line. Never reused within a `Sim`.
@@ -90,6 +91,9 @@ pub struct LineResult {
     pub daily_boardings: f64,
     /// Daily boardings at each stop, in stop order.
     pub boardings_by_stop: Vec<f64>,
+    /// Cars parked per day at each stop's park-and-ride lot, in stop order
+    /// (0 where the stop has no lot). Compare with `Stop::park_ride_spaces`.
+    pub park_ride_cars_by_stop: Vec<f64>,
     /// Passenger-km per day.
     pub passenger_km: f64,
     /// Highest daily load on any segment and direction.
@@ -277,6 +281,12 @@ pub struct Sim {
     pending: Vec<Option<(TransitLine, u64)>>,
     /// Road snapping and route cache for bus, trolleybus and BRT (SIM-8).
     router: Router,
+    /// Park-and-ride shadow price per (line, stop index), generalized minutes
+    /// (SIM-11). Kept by stop, not platform, so it survives line edits.
+    pnr_penalty: HashMap<(LineId, usize), f64>,
+    /// Cars parked per platform on the last loading (drive-access commuters
+    /// plus half the drive-access other trips).
+    pnr_cars: Vec<f64>,
 }
 
 /// A line (or a new version of one) under construction.
@@ -398,6 +408,8 @@ impl Sim {
             lines: initial_lines.into_iter().map(Some).collect(),
             net: TransitNet::build(&[], &[], &Params::default(), &mut |_, _| None),
             router: Router::default(),
+            pnr_penalty: HashMap::new(),
+            pnr_cars: vec![],
             tsk_walk: vec![],
             tsk_drive: vec![],
             tsk_walk_off: vec![],
@@ -818,6 +830,50 @@ impl Sim {
         self.feedback(k, 0);
         let (rows, _) = self.pass(false);
         self.finish(t0, false, Some(rows));
+        self.fit_park_and_ride(t0);
+    }
+
+    /// Full lots: re-price, re-skim and re-choose until park-and-ride fits
+    /// the spaces (SIM-11). Road volumes stay as they are; only the transit
+    /// skims and mode choice move. No-op when no lot has a space limit.
+    fn fit_park_and_ride(&mut self, t0: Instant) {
+        for _ in 0..self.params.pnr_iterations {
+            if !self.update_pnr_penalties() {
+                break;
+            }
+            self.transit_skims();
+            // Lot overflow is a small share of trips: keep the stale flag.
+            self.finish(t0, self.results.car_times_stale, None);
+        }
+    }
+
+    /// One shadow-price step for lots with a space limit: raise the access
+    /// penalty where parked cars exceed spaces, relax it where they fall
+    /// short. Returns true if any lot is over by more than 5% (worth another
+    /// pass) or a penalty changed materially.
+    fn update_pnr_penalties(&mut self) -> bool {
+        let mut again = false;
+        let step = self.params.pnr_penalty_step_min;
+        for (pi, pl) in self.net.platforms.iter().enumerate() {
+            if !pl.park_ride || !pl.pnr_spaces.is_finite() {
+                continue;
+            }
+            let cars = self.pnr_cars.get(pi).copied().unwrap_or(0.0);
+            let ratio = cars / pl.pnr_spaces.max(1.0);
+            let old = self.net.pnr_penalty[pi];
+            // Log step with the ratio clamped to [0.2, 5]: each round moves
+            // the price at most step x 1.6 either way, so a lot 30x over on
+            // the first pass does not price itself empty for days.
+            let new = (old + step * ratio.clamp(0.2, 5.0).ln()).max(0.0);
+            if ratio > 1.05 || (new - old).abs() > 0.5 {
+                again = true;
+            }
+            self.net.pnr_penalty[pi] = new;
+            let line = &self.net.lines[pl.line as usize];
+            self.pnr_penalty
+                .insert((line.id, pi - line.first_platform as usize), new);
+        }
+        again
     }
 
     /// Daily re-run, warm-started from the previous day's link volumes, so
@@ -827,6 +883,10 @@ impl Sim {
         // The previous solution counts as `feedback_iterations` rounds of MSA,
         // so each new round moves volumes by a correspondingly small step.
         let prior = self.params.feedback_iterations;
+        // Yesterday's lot use sets today's park-and-ride prices (SIM-11).
+        if self.update_pnr_penalties() {
+            self.transit_skims();
+        }
         self.feedback(self.params.daily_iterations.max(1), prior);
         let (rows, _) = self.pass(false);
         self.finish(t0, false, Some(rows));
@@ -983,6 +1043,7 @@ impl Sim {
         self.rebuild_transit();
         self.transit_skims();
         self.finish(t0, true, None);
+        self.fit_park_and_ride(t0);
     }
 
     fn rebuild_transit(&mut self) {
@@ -996,6 +1057,11 @@ impl Sim {
         self.net = TransitNet::build(&active, &self.zpts, &self.params, &mut |a, b| {
             router.route(graph, a, b)
         });
+        for (pi, pl) in self.net.platforms.iter().enumerate() {
+            let line = &self.net.lines[pl.line as usize];
+            let key = (line.id, pi - line.first_platform as usize);
+            self.net.pnr_penalty[pi] = self.pnr_penalty.get(&key).copied().unwrap_or(0.0);
+        }
     }
 
     /// Mode choice on current skims, transit loading, and results.
@@ -1029,6 +1095,25 @@ impl Sim {
                 } else {
                     d_walk[k] += wt_other[k];
                     d_drive[k] += dt_other[k];
+                }
+            }
+        }
+        self.pnr_cars = vec![0.0; self.net.platforms.len()];
+        if !self.net.pnr.is_empty() {
+            for k in 0..z * z {
+                let w = self.tsk_drive[k].pnr_plat;
+                if w != NONE && dt_work[k] > 0.0 {
+                    self.pnr_cars[w as usize] += dt_work[k];
+                }
+                let tsk = if off {
+                    &self.tsk_drive_off
+                } else {
+                    &self.tsk_drive
+                };
+                let o = tsk[k].pnr_plat;
+                if o != NONE && dt_other[k] > 0.0 {
+                    // A round trip of two one-way other trips parks one car.
+                    self.pnr_cars[o as usize] += 0.5 * dt_other[k];
                 }
             }
         }
@@ -1123,6 +1208,12 @@ impl Sim {
                     run_min: l.run_min(),
                     daily_boardings: loads.boardings[li],
                     boardings_by_stop: loads.stop_boardings[li].clone(),
+                    park_ride_cars_by_stop: (0..loads.stop_boardings[li].len())
+                        .map(|i| {
+                            let pi = l.first_platform as usize + i;
+                            self.pnr_cars.get(pi).copied().unwrap_or(0.0)
+                        })
+                        .collect(),
                     passenger_km: loads.pkm[li],
                     max_segment_load: max_seg,
                     peak_hour_load: max_seg * peak_factor,
@@ -1509,6 +1600,7 @@ impl Sim {
                 + p.walk_weight * o.walk_min as f64
                 + p.transfer_penalty_min * o.xfers as f64
                 + (o.fare + o.drive_cost) as f64 / vot
+                + o.pnr_penalty as f64
                 + sd
         };
         let tw = if work { &inp.tw[j] } else { &inp.tw_off[j] };

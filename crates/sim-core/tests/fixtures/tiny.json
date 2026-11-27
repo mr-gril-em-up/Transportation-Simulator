@@ -21,6 +21,6 @@
   ],
   "lines": [
     {"name": "Red", "mode": "commuter_rail", "headway_min": 30, "offpeak_headway_min": 60,
-     "stops": [{"lon": -97.745, "lat": 30.268, "name": "Downtown"}, {"lon": -97.682, "lat": 30.398, "park_ride": true}]}
+     "stops": [{"lon": -97.745, "lat": 30.268, "name": "Downtown"}, {"lon": -97.682, "lat": 30.398, "park_ride": true, "park_ride_spaces": 600}]}
   ]
 }

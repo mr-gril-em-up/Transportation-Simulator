@@ -121,6 +121,15 @@ the intrazonal distance x `detour_factor [1.3]` at 25 km/h.
 - Park-and-ride access: drive from the origin to stops flagged `park_ride`
   within `pnr_max_drive_min [25]`, plus `pnr_park_min [3]`. Drive time comes from
   the car skim to the zone nearest the stop.
+- Lot capacity (SIM-11): a stop with `park_ride_spaces` adds a shadow price
+  `pnr_penalty` (generalized minutes) to drive access there. After each
+  network change and in `equilibrate`, up to `pnr_iterations [6]` rounds
+  update it, `penalty += pnr_penalty_step_min [10] x ln(cars / spaces)` with
+  the ratio clamped to [0.2, 5] and the penalty floored at 0, then re-skim
+  transit and re-run mode choice (road volumes stay put). `equilibrate_warm`
+  runs one round a day, so a lot overfilled by a new line settles over a few
+  game days. Cars per lot = drive-access commuters + half the drive-access
+  other trips (one car per round trip). Lots without a space limit are free.
 
 **Road routing for bus, trolleybus and BRT (SIM-8).** Code:
 [src/roads.rs](../src/roads.rs). Each stop snaps to the nearest routable road
@@ -232,7 +241,16 @@ Travis by `examples/calibrate.rs`:
   taxi/motorcycle/other are not modeled trips, so the five travel modes are
   renormalized by their 71.5% total: drive 83.5%, carpool 10.4%, transit 2.3%,
   walk 2.9%, bike 0.8%. The fit reproduces them to 0.1 point (F14 target: 2).
-- Park-and-ride share of transit commuters: 3%. **Tuned, not sourced**: ACS
+- **SIM-11 update:** transit is now fitted as one share. Park-and-ride runs
+  only at the Red Line's three real lots, capped at their spaces (Leander 619,
+  Lakeline 935, Howard 301; the other seven stations have none). They hold
+  277 / 37 / 3 cars, so the cap does not bind, and the Red Line carries
+  1,471/day against 1,500. The drive-access constant keeps the gap SIM-10
+  tuned (-3.76 vs walk access). Probe: with no gap the full lots alone put
+  about 4,800 a day on the Red Line, and with a gap of -1 about 4,200, so lot
+  capacity cannot replace the tuned constant; real lots are not full either.
+  The constants are now `[0, -2.44, -0.40, -4.16, -0.41, -3.89]`.
+- SIM-10 (superseded split): park-and-ride share of transit commuters 3%. **Tuned, not sourced**: ACS
   has no access mode and no CapMetro on-board survey split was found. It
   decides the Red Line: with walk and drive access fitted together, modeled
   park-and-ride put 6k-16k riders a day on it against ~1.5k real; at 8% of

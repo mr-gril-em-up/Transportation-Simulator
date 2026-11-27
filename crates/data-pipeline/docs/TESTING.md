@@ -128,3 +128,7 @@ Actions run [45949840370](https://github.com/mr-gril-em-up/Transportation-Simula
 
 The Red Line reads 40 / 60 min in the current feed (19 trips per direction), sparser than the 32 / 51 min in `figures.csv`, which came from the published timetable earlier. A count-based mean is coarse for a line with three trains in the peak window, so the timetable figures stay the calibration reference for route 550. That run took the busier direction for every window, which gave the peak-only express 985 no peak headway; windows now take the more frequent direction.
 
+
+## Existing lines (2026-11-27)
+
+Actions run [45951673767](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45951673767), Travis with roads, branch build: `scenario.json` carries 61 existing lines (`existing_lines`), one per GTFS-matched route number, and passes sim-core `validate()`. The same day's main build (run 45951703196) republished `data-48453-2023` with GTFS headways (143 routes) and `commute_mode_shares`, but without lines.

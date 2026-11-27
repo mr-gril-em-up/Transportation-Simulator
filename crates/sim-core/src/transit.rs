@@ -54,6 +54,8 @@ pub struct Platform {
     pub lon: f64,
     pub lat: f64,
     pub park_ride: bool,
+    /// Parking spaces for this line's riders (infinite if unlimited).
+    pub pnr_spaces: f64,
     /// Zone whose centroid is nearest (used for park-and-ride drive times).
     pub zone_near: u32,
 }
@@ -82,6 +84,9 @@ pub struct TransitNet {
     /// Per platform: zones in walking range and the walk distance.
     pub egress: Vec<Vec<(u32, f64)>>,
     pub pnr: Vec<u32>,
+    /// Per platform: generalized minutes added to park-and-ride access when
+    /// the lot is full (shadow price, SIM-11). Set by `Sim`.
+    pub pnr_penalty: Vec<f64>,
     /// Per zone: share of the zone within walking range of a stop (0..1).
     pub coverage: Vec<f64>,
 }
@@ -144,6 +149,7 @@ impl TransitNet {
                     lon: s.lon,
                     lat: s.lat,
                     park_ride: s.park_ride,
+                    pnr_spaces: s.park_ride_spaces.unwrap_or(f64::INFINITY),
                     zone_near: nearest_zone(s.lon, s.lat),
                 });
                 adj.push(Vec::new());
@@ -241,6 +247,7 @@ impl TransitNet {
             .collect();
         TransitNet {
             lines: metas,
+            pnr_penalty: vec![0.0; platforms.len()],
             platforms,
             adj,
             walk_access,
@@ -275,6 +282,10 @@ pub struct TOd {
     pub last_headway: f32,
     pub drive_min: f32,
     pub drive_cost: f32,
+    /// Park-and-ride platform used (drive access only; `NONE` otherwise).
+    pub pnr_plat: u32,
+    /// Full-lot shadow price at that platform, generalized minutes (SIM-11).
+    pub pnr_penalty: f32,
 }
 
 impl TOd {
@@ -288,6 +299,8 @@ impl TOd {
         last_headway: 0.0,
         drive_min: 0.0,
         drive_cost: 0.0,
+        pnr_plat: NONE,
+        pnr_penalty: 0.0,
     };
     pub fn ok(&self) -> bool {
         self.gc.is_finite()
@@ -308,6 +321,8 @@ pub struct Label {
     pub xfers: u32,
     pub pred: u32,
     pub pred_edge: u32,
+    /// Park-and-ride platform where the path started (`NONE` for walk access).
+    pub access: u32,
 }
 
 impl Label {
@@ -324,6 +339,7 @@ impl Label {
         xfers: 0,
         pred: NONE,
         pred_edge: NONE,
+        access: NONE,
     };
 }
 
@@ -432,9 +448,10 @@ impl<'a> Searcher<'a> {
                     }
                     let cost = car_km[z] as f64 * self.p.car_cost_per_km;
                     let start = Label {
-                        gc: dm + cost / self.vot_min,
+                        gc: dm + cost / self.vot_min + net.pnr_penalty[plat as usize],
                         drive_min: dm,
                         drive_cost: cost,
+                        access: plat,
                         ..Label::UNSET
                     };
                     let l = self.board(start, plat, 0.0);
@@ -506,6 +523,12 @@ impl<'a> Searcher<'a> {
             last_headway: l.last_h as f32,
             drive_min: l.drive_min as f32,
             drive_cost: l.drive_cost as f32,
+            pnr_plat: l.access,
+            pnr_penalty: if l.access == NONE {
+                0.0
+            } else {
+                self.net.pnr_penalty[l.access as usize] as f32
+            },
         }
     }
 

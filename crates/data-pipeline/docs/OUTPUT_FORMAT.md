@@ -41,7 +41,11 @@ Coordinates are WGS84 longitude, latitude in degrees. Lengths in meters, speeds 
 | `road_links[].capacity_vph`, `toll` | Not set | sim-core derives capacity from speed and lanes |
 | `road_links[].oneway` | OSM `oneway`, motorway class, roundabouts | `oneway=-1` ways are flipped so `from → to` is the legal direction |
 | `commutes[]` | LODES OD `S000` summed to block-group pairs | Only pairs with both ends in the area |
+<<<<<<< HEAD
 | `lines` | Today's network: one line per route `ref` that has GTFS headways (DATA-7); empty without a GTFS feed | sim-core treats these as existing service (no capital charge, open from day 0). The app drops them when the "start with today's network" setting is off. Red Line 550 uses the `figures.csv` timetable headways; Leander, Lakeline and Howard stops carry `park_ride` and `park_ride_spaces` |
+=======
+| `lines` | Always empty | The game starts with no transit; see `transit.json`. `Stop.park_ride_spaces` (SIM-11, optional) is never written; lot counts are figures.csv rows `pnr_spaces_*` (pending) |
+>>>>>>> origin/main
 
 Zero-length links and self-loops are dropped from `scenario.json` (they remain in `roads.json`).
 
