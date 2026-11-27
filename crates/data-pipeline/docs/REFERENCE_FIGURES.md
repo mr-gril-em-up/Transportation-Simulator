@@ -36,18 +36,19 @@ Collected 2026-11-27 from the pages linked in the CSV.
 | — | Commuter/hybrid rail $716 (DART) to $1,227 (CapMetro Red Line) per revenue hour | New. Low-frequency rail is expensive per hour |
 | Fares $1.25–2.50 | CapMetro $1.25 local ($1.50 from Jan 2027), $3.50 rail; METRO $1.25; VIA $1.30 | Doc right for local; rail/express fares are higher |
 | — | Farebox recovery 4.8% (METRO) to 5.8% (DART), 2023 | New. Fares cover about 5% of operating cost in big Texas systems, which matters for the budget model |
-| Tolls $0.20–0.50/mi | Published as per-plaza tolls (183A Park Street $2.00 with TxTag, 2026); no per-mile rate found | Still unverified |
+| Tolls $0.20–0.50/mi | SH 130 full length: $20.01 over 91 mi ≈ $0.22/mi with a tag (2026); CTRMA publishes per-plaza tolls only (183A Park Street $2.00) | Doc's low end is right; $0.50/mi is unsupported outside dynamic express lanes |
 | ~3.5 trips per person per day (NHTS) | 2.28 (2022 NHTS), 3.37 (2017) | Doc used the 2017 value. 2022 is post-pandemic and changed survey method; use 3.37 as the steady-state default and 2.28 as a low case |
-| Value of time ~$18/h, wait and walk ~2x | 2x multiplier confirmed (USDOT BCA 2025 guidance, from a summary); hourly dollar value not yet extracted | Still open |
+| Value of time ~$18/h, wait and walk ~2x | $19.60/h personal local, $35.80/h walk/wait, car operating cost $0.52/mi (2022 USD; USDOT Dec 2023 tables via a grant application) | Doc close; figures are secondary-source and `unverified` until the USDOT appendix is read directly |
+| Fares $1.25–2.50 (DART) | DART local 3-hour pass $3.00, day pass $6.00 (March 2025) | DART sits above the doc's range |
+| — | Transit sales tax 1% (CapMetro, DART, METRO); about $20,600 taxable sales per resident per year in the CapMetro service area (2023, derived from NTD); federal plus state operating assistance 14.3% of CapMetro operating funds, no state money | New. These feed sim-core's local tax base and grant model (F26). The per-capita figure assumes all non-fare directly generated funds are sales tax |
 | — | CapMetro MetroRail 477,322 annual trips (2023); Austin light rail forecast 18,700 weekday trips at opening | New. These are the M1 calibration targets |
 
 ## Still open
 
-1. **Value of travel time in dollars.** USDOT BCA Guidance Appendix A Table A-2 (2023 USD). The fetch tools could not read the appendix pages.
-2. **Toll per mile.** Needs segment lengths for CTRMA/TxDOT plazas, or TxDOT's published per-mile schedule for SH 130 / SH 45.
-3. **DART local fare.** DART's fare pages did not list the local single-ride price in readable text.
-4. **Texas-specific road costs.** FDOT's models stand in for Texas. TxDOT bid tabulations would give Texas unit costs.
-5. **Dollar-year normalization.** Figures span 2019–2027 dollars. A small helper to inflate to 2024 USD (CPI-U) is needed before sim-core consumes them.
+1. **Value of travel time from the primary source.** USDOT BCA Guidance Appendix A (Tables A-2, A-4) could not be read directly; current rows come from a grant application quoting the Dec 2023 tables.
+2. **Express-lane tolls.** TxDOT TEXpress and MoPac Express dynamic per-mile ranges were not retrievable.
+3. **Texas-specific road costs.** FDOT's models stand in for Texas. TxDOT bid tabulations would give Texas unit costs.
+4. **Dollar-year normalization.** Figures span 2019–2027 dollars. A small helper to inflate to 2024 USD (CPI-U) is needed before sim-core consumes them.
 
 ## Updating
 

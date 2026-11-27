@@ -12,6 +12,7 @@ Read before changing code:
 Rules:
 
 - **Docs ship with the code.** Follow [docs/DOCS_STANDARD.md](docs/DOCS_STANDARD.md). Update the component README, doc comments, ROADMAP status, and DECISIONS.md in the same PR as the change.
+- Decision IDs are per stream: `SIM-`, `DATA-`, `APP-`, `DOC-`. Append to your stream's section of docs/DECISIONS.md, never to the frozen `D1`–`D31` table.
 - Do not add scope that is not in the roadmap or design doc without recording the decision. No hyperloop, no multiplayer.
 - sim-core stays headless: no app, UI or pipeline dependencies inside it.
 - `ScenarioInput` (`crates/sim-core/src/schema.rs`) is the contract between pipeline and core. Change it only with both READMEs and the fixture updated.
