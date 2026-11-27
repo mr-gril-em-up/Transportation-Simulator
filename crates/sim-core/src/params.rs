@@ -93,6 +93,8 @@ pub struct Params {
     pub bpr_beta: f64,
     /// Outer iterations of mode choice <-> car assignment (method of successive averages).
     pub feedback_iterations: usize,
+    /// Rounds for the daily warm-started re-run (`Sim::equilibrate_warm`).
+    pub daily_iterations: usize,
 
     /// Build and permitting times are divided by this (12x default, 1x-24x setting).
     pub construction_speedup: f64,
@@ -138,6 +140,7 @@ impl Default for Params {
             bpr_alpha: 0.15,
             bpr_beta: 4.0,
             feedback_iterations: 4,
+            daily_iterations: 1,
             construction_speedup: 12.0,
         }
     }
