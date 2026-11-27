@@ -54,7 +54,7 @@ One-line CI check: `cd app && npm ci && npm run build && npm test && (cd src-tau
 - **Ridership panel** (top right): weekday riders per line, re-computed on every
   change. Change the headway dropdown to see ridership respond. `sim N ms`
   shows the round-trip time of the last simulation call (M1 target: under 2 s).
-- **Clock** (top center): pause with the button or **Space**; **Time-lapse**
+- **Clock** (top center): pause with the button or **Space** (ignored while a button or dropdown has focus, so it never double-toggles); **Time-lapse**
   (or **T**) cycles 1x, 2x, 10x, 60x. At 1x one real second is one game minute.
 - **Zoom badge** (bottom left): current zoom band (State, Region, City,
   Neighborhood), whether lines are drawn schematic or geographic, and jump
