@@ -43,6 +43,7 @@ npm run dev         # browser only at http://localhost:1420, mock sim, no Rust n
 | `npm run tauri build` | Installable desktop bundle |
 | `npm run dev` | Browser client against `MockSim` |
 | `npm run build` | Type-check (`tsc --noEmit`) then production build into `dist/` |
+| `npm run data:texas` | Download the statewide build (release `data-48-2023-tract-highway`, 47 MB, 6,896 tracts, highway roads) into `crates/data-pipeline/data/out/48-2023-tract-highway/` |
 | `npm run data` | Download the data pipeline's published Travis build (release `data-48453-2023`) into `crates/data-pipeline/data/out/48453-2023/` (gitignored). Runs the pipeline's `scripts/download-build.sh` |
 | `TRANSPO_SCENARIO=path/to/scenario.json npm run tauri dev` | Load any `ScenarioInput` file (another pipeline build) instead of the default |
 
@@ -74,6 +75,49 @@ Travis in a release build. The window opens right away, the ridership panel head
 `sim-core · Travis data · loading…` until `sim_status` reports ready, and a line drawn before
 then waits for the build. The terminal prints
 `[sim] ready in N ms` or `[sim] failed to start: ...`.
+
+### Statewide Texas (F34, decisions A32 to A34)
+
+```bash
+npm run data:texas
+TRANSPO_SCENARIO=$PWD/../crates/data-pipeline/data/out/48-2023-tract-highway/scenario.json npm run tauri dev
+```
+
+- **Tier.** A scenario with more than 2,000 zones runs on sim-core's strategic tier (A32):
+  zone pairs within 60 free-flow car minutes, 8 cold assignment rounds (sim-core's settings after
+  SIM-15). Travis keeps the dense model. The panel header says `sim-core · Texas data`.
+- **Loading screen.** Startup is over a minute statewide, so a card shows the stage (reading the
+  scenario, then the first traffic equilibrium for 6,896 census tracts), a bar and the seconds
+  elapsed and left against an estimate of 80 s. The bar stops at 97% and the text says when it
+  is taking longer than the estimate. sim-core has no progress callback, so the bar is time
+  against the estimate, not work done. A county build shows no card.
+- **Opens on all of Texas.** Once the scenario is read, the map fits the zone extent.
+- **Real regional rail and intercity lines** (A33). The pipeline's `transit.json` holds every
+  OSM transit route in Texas. The shell keeps rail, light rail and tram, one variant per line
+  (the one with most stops), and leaves out CapMetro's (they run in sim-core as today's network).
+  That is 18 lines: DART Red, Blue, Green, Orange and Silver, TRE, TEXRail, DCTA A-train, METRORail Red,
+  Green and Purple, Amtrak Texas Eagle, Sunset Limited and Heartland Flyer, the Dallas, El Paso
+  and McKinney Avenue streetcars, and the Grapevine Vintage Railroad. They are drawn in the tube
+  view with their own colors and listed under **Other real rail** in the panel. They are drawn
+  only: sim-core does not run them, so they carry no riders and cost nothing. Making them real
+  service needs headways for them in `existing_lines.json` (pipeline).
+- **County detail** (A34). From City zoom in, the zoom badge names the county under the map
+  center (`City z11.5 · geographic · Travis County`), from the nearest tract's GEOID in
+  `zones.json`. Zooming in is a view change only: the strategic tier still scores the whole
+  state, because the camera never changes the score. A county's own detailed model (block
+  groups, every street) is sim-core's local tier (F28, F35), not built.
+
+Measured 2026-11-27 in `tauri dev` under Xvfb on 4 cores (software rendering competing for
+CPU): ready in 155 s with today's 61 CapMetro lines; sim-core's `examples/statewide.rs` on the
+same machine took 77 s cold and 20.5 s for the next day (release, no lines). Today's network
+carries 45,163 riders/day on the statewide tier (tract zones, highway roads only), against
+about 79k on the Travis build: not comparable, and not calibrated. A line edit takes about
+4.5 s (300 ms on Travis); each day boundary re-runs the day for about 20 s while holding the
+Sim lock, so an edit made then waits.
+
+![Loading the statewide build](docs/img/statewide-loading.png)
+![All of Texas at State zoom: real rail and intercity lines in the tube view](docs/img/statewide-texas.png)
+![Dallas-Fort Worth at Region zoom](docs/img/statewide-dfw.png)
 
 ### Controls
 
@@ -185,7 +229,7 @@ cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo fmt --ch
 ```ts
 interface SimClient {
   readonly label: string;                                // shown in the ridership panel
-  ready(): Promise<void>;                                // resolves when the backend is built
+  ready(onProgress?): Promise<void>;                     // resolves when built; onProgress gets LoadProgress
   desireLines(n: number): Promise<DesireLine[]>;         // top n zone pairs by daily trips
   upsertRoute(route: RouteSpec): Promise<RouteResult[]>; // add or replace; results for EVERY route
   removeRoute(id: string): Promise<RouteResult[]>;
@@ -193,6 +237,8 @@ interface SimClient {
   budget(): Promise<Budget>;                             // cash, month, debt, distress, bankruptcy
   issueBond(principal: number): Promise<Budget>;         // borrow; rejects once bankrupt
   existingRoutes(): Promise<RouteSpec[]>;                 // lines present at start (F44)
+  referenceLines(): Promise<RouteSpec[]>;                // real rail sim-core does not run; drawn only
+  zoneCounties(): Promise<[lon, lat, fips][]>;           // zone centroids with county FIPS
   results(): Promise<RouteResult[]>;                     // re-read after the daily re-run
   clock(): Promise<ClockState>;                          // { gameSeconds, timelapse, paused, day }
   setClock(c: { paused?; timelapse? }): Promise<ClockState>;
@@ -224,6 +270,9 @@ interface SimClient {
   straight). `RoutePreview` also carries optional `lengthKm` and `shape`. The
   mock leaves the optional fields out, so it has no inspector.
 
+- `LoadProgress`: `stage` (`reading`, `equilibrium`, `ready`), `elapsedS`, `expectedS`, `zones`,
+  `statewide`, optional `bounds` (`[[west, south], [east, north]]` of the zone centroids).
+
 `createSim()` ([src/sim/index.ts](src/sim/index.ts)) returns `TauriSim` when
 `"__TAURI_INTERNALS__" in window`, and `MockSim` otherwise.
 
@@ -243,7 +292,9 @@ interface SimClient {
 | `set_clock` | `paused?: boolean`, `timelapse?: number` | Same as `clock`; omitted fields unchanged, non-positive time-lapse ignored |
 | `skip_to_next_month` | none | Same as `clock`, after re-running the day and settling the month |
 | `results` | none | `RouteResultOut[]` for every route, no change |
-| `sim_status` | none | `{ ready, error, source }`; `source` is the scenario file path or `"synthetic"` |
+| `sim_status` | none | `{ ready, error, source, load }`; `source` is the scenario file path or `"synthetic"`; `load` is `LoadInfo` (`stage`, `elapsed_s`, `expected_s`, `zones`, `statewide`, `bounds`) |
+| `reference_lines` | none | `RefLine[]` (`id`, `name`, `operator`, `mode`, `ref`, `stops` of `{name, lon, lat}`) from `transit.json` beside the scenario; empty without it |
+| `zone_counties` | none | `[lon, lat, fips][]`, one per zone, from `zones.json` beside the scenario; empty without it |
 
 `RouteResultOut` is sim-core's `LineResult` with `route_id` (the client id) flattened into it.
 `boardings_by_stop` is aligned with the line's stops. The shell keeps the map from client
@@ -312,7 +363,11 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | Desire lines are straight zone-to-zone chords capped at 300 pairs; no filtering by purpose or mode | F06 follow-up if playtests want it |
 | The browser mock builds instantly (no construction period) | Not planned: construction rules live in sim-core |
 | Cost preview only while drawing; a stop edit is charged on release with no preview first (the budget shows what it cost) | F16 follow-up if it matters in play |
-| A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (well under a second on the synthetic region, about 2 s on real Travis) | Fine for M1; revisit with the statewide scenario (M3) |
+| A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (about 2 s on real Travis, about 20 s statewide) | Run the daily re-run off the lock on a copy (sim-core), or show "re-running the day" in the HUD |
+| Statewide loading bar is elapsed time against an 80 s estimate, not work done | A progress callback from `Sim::new` (sim-core) |
+| Statewide startup recomputes the first equilibrium every launch (about 70 s to 155 s) | Cache the equilibrium with the save format (F43) |
+| Real rail outside CapMetro is drawn only, not simulated | Headways for those lines in the pipeline's `existing_lines.json` |
+| County names cover 40 metro counties; others show the FIPS code | A county name list from the pipeline |
 | `npm run tauri build` bundles no scenario: an installed app on another machine opens on the synthetic region | Bundle the build as a Tauri resource when packaging matters (M3 release) |
 | Startup on real Travis takes about 11 s in `tauri dev` (measured before SIM-2 and DATA-2 merged; expect less now) | Re-measure; further gains are sim-core startup work |
 | Mode picker is two buttons (bus, light rail); fare fixed per mode ($3.50 commuter rail like MetroRail, $1.25 otherwise) | F16 |
@@ -334,7 +389,8 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | F24 Construction period | Done (app): lines under construction draw faded, opening day in panel and drawing hint; rebuilds keep the old version running |
 | F26 Funding | Partial (app): bonds, debt and payments, distress count, bankruptcy banner, monthly statements. Missing: state appropriation (sim-core) |
 | F21 Clock and time-lapse | Done (app): sim-core's clock driven by a shell worker; pause, 1/2/10/60x, skip to next month; daily re-run refreshes ridership |
-| F41 / F42 Schematic and morph | Prototype: heuristic layout, no pins |
+| F41 / F42 Schematic and morph | Prototype: heuristic layout aimed at real positions, stops thinned when zoomed out, no pins; draws the real statewide rail network |
+| F34 Strategic tier (app side) | Statewide build loads behind a loading screen, opens on Texas, county name from City zoom |
 | F06 Desire lines | Done (app): layer from `Sim::desire_lines`; the M0 exit check (F07) is the pipeline's |
 
 ## Layout
@@ -350,6 +406,7 @@ app/
 │   ├── geo.ts            km(): distance helper shared by the editor, schematic and mock
 │   ├── edit.ts           Stop editor: drag, insert (least added length), delete; bestInsertIndex()
 │   ├── schematic.ts      Tube-map layout + geo/schematic morph
+│   ├── statewide.ts      Loading text, reference-line colors, county under the camera
 │   ├── clock.ts          Display clock: interpolates and syncs to the sim's clock
 │   ├── style.css         HUD styling
 │   ├── data/geo.ts       Texas/Travis outlines, bounds, Red Line preset

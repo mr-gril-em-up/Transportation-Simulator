@@ -26,6 +26,27 @@ fn game_params() -> Params {
     }
 }
 
+/// A scenario with more zones than this runs on sim-core's strategic tier
+/// (F34): the statewide tract build has 6,896, a county build under 1,000.
+const STRATEGIC_ZONES: usize = 2_000;
+
+/// The strategic tier's settings, as sim-core recommends after SIM-15 (#70):
+/// zone pairs within 60 free-flow car minutes and 8 cold assignment rounds
+/// (about 69 s cold on 4 cores, 33 km/h statewide peak; 4 rounds is 41 s but
+/// leaves the peak at 12 km/h). Each game day after that takes about 14 s.
+fn strategic(p: Params) -> Params {
+    Params {
+        strategic_max_min: Some(60.0),
+        feedback_iterations: 8,
+        ..p
+    }
+}
+
+/// Startup estimates for the loading screen, seconds, measured in `tauri dev`
+/// on 4 cores (2026-11-27). Rough on other machines; the screen says so.
+const EXPECT_COUNTY_S: f64 = 17.0;
+const EXPECT_STATEWIDE_S: f64 = 80.0;
+
 /// Set TRANSPO_SCENARIO to a ScenarioInput JSON file (data-pipeline output)
 /// to load it instead of the default below.
 const SCENARIO_ENV: &str = "TRANSPO_SCENARIO";
@@ -43,6 +64,28 @@ struct Inner {
     ids: HashMap<String, LineId>,
     /// Lines present at start (today's network, `network.rs`) with their client ids.
     existing: Vec<ExistingOut>,
+    /// Startup progress for the loading screen.
+    load: LoadInfo,
+}
+
+/// What the startup thread is doing, for the loading screen.
+#[derive(Serialize, Debug, Clone, Default)]
+pub struct LoadInfo {
+    /// `reading` (file and JSON), `equilibrium` (`Sim::new`: skims, demand and
+    /// the first road assignment) or `ready`.
+    stage: &'static str,
+    /// Seconds since startup began; set when polled.
+    elapsed_s: f64,
+    /// Rough total startup time for this scenario size, seconds.
+    expected_s: f64,
+    /// Zones in the scenario, once read.
+    zones: usize,
+    /// Running on the strategic tier (statewide, F34).
+    statewide: bool,
+    /// Zone centroid extent `[west, south, east, north]`, once read.
+    bounds: Option<[f64; 4]>,
+    #[serde(skip)]
+    started: Option<Instant>,
 }
 
 /// A line present at start, for the client to show and edit like its own.
@@ -79,12 +122,31 @@ impl SimState {
         params: Params,
     ) -> Self {
         let state = SimState::default();
+        let t0 = Instant::now();
+        state.0 .0.lock().unwrap().load = LoadInfo {
+            stage: "reading",
+            expected_s: EXPECT_COUNTY_S,
+            started: Some(t0),
+            ..LoadInfo::default()
+        };
         let s = state.clone();
         std::thread::spawn(move || {
-            let t0 = std::time::Instant::now();
             // Lines present at start become sim-core LineIds 0..n in input order.
             let mut existing = Vec::new();
             let built = load().and_then(|input| {
+                let statewide = input.zones.len() > STRATEGIC_ZONES;
+                {
+                    let mut inner = s.0 .0.lock().unwrap();
+                    let l = &mut inner.load;
+                    l.stage = "equilibrium";
+                    l.zones = input.zones.len();
+                    l.statewide = statewide;
+                    l.bounds = bounds(&input);
+                    if statewide {
+                        l.expected_s = EXPECT_STATEWIDE_S;
+                    }
+                }
+                let params = if statewide { strategic(params) } else { params };
                 existing = input
                     .lines
                     .iter()
@@ -101,10 +163,17 @@ impl SimState {
             match built {
                 Ok(sim) => {
                     eprintln!(
-                        "[sim] ready in {} ms ({} lines at start)",
+                        "[sim] ready in {} ms ({} lines at start, {} zones{})",
                         t0.elapsed().as_millis(),
-                        existing.len()
+                        existing.len(),
+                        inner.load.zones,
+                        if inner.load.statewide {
+                            ", strategic tier"
+                        } else {
+                            ""
+                        }
                     );
+                    inner.load.stage = "ready";
                     inner.ids = existing
                         .iter()
                         .enumerate()
@@ -415,6 +484,15 @@ fn scenario_path() -> Option<PathBuf> {
     p.exists().then_some(p)
 }
 
+/// Extent of the zone centroids, `[west, south, east, north]`.
+fn bounds(input: &ScenarioInput) -> Option<[f64; 4]> {
+    let first = input.zones.first()?;
+    Some(input.zones.iter().fold(
+        [first.lon, first.lat, first.lon, first.lat],
+        |[w, s, e, n], z| [w.min(z.lon), s.min(z.lat), e.max(z.lon), n.max(z.lat)],
+    ))
+}
+
 fn load_scenario() -> Result<ScenarioInput, String> {
     match scenario_path() {
         Some(path) => {
@@ -468,6 +546,8 @@ pub struct Status {
     error: Option<String>,
     /// Scenario file path (`TRANSPO_SCENARIO` or the downloaded Travis build), or `"synthetic"`.
     source: String,
+    /// Startup progress for the loading screen.
+    load: LoadInfo,
 }
 
 fn all_results(inner: &Inner) -> Vec<RouteResultOut> {
@@ -488,12 +568,48 @@ fn all_results(inner: &Inner) -> Vec<RouteResultOut> {
 /// Report whether the Sim is built. Never blocks.
 #[tauri::command]
 pub fn sim_status(state: tauri::State<'_, SimState>) -> Status {
-    let inner = state.0 .0.lock().unwrap();
-    Status {
-        ready: inner.sim.is_some(),
-        error: inner.error.clone(),
-        source: scenario_path().map_or_else(|| "synthetic".into(), |p| p.display().to_string()),
+    state.status()
+}
+
+impl SimState {
+    fn status(&self) -> Status {
+        let inner = self.0 .0.lock().unwrap();
+        let mut load = inner.load.clone();
+        load.elapsed_s = load.started.map_or(0.0, |t| t.elapsed().as_secs_f64());
+        Status {
+            ready: inner.sim.is_some(),
+            error: inner.error.clone(),
+            source: scenario_path().map_or_else(|| "synthetic".into(), |p| p.display().to_string()),
+            load,
+        }
     }
+
+    /// Real rail and intercity lines beside the scenario (`network::reference`), for drawing only.
+    pub fn reference(&self) -> Result<Vec<crate::network::RefLine>, String> {
+        match scenario_path() {
+            Some(p) => crate::network::reference(&p),
+            None => Ok(Vec::new()),
+        }
+    }
+}
+
+/// Every zone's centroid and county FIPS, `[lon, lat, fips]`, for naming the county in view.
+#[tauri::command]
+pub async fn zone_counties() -> Result<Vec<[f64; 3]>, String> {
+    blocking(|| match scenario_path() {
+        Some(p) => crate::network::zone_counties(&p),
+        None => Ok(Vec::new()),
+    })
+    .await
+}
+
+/// Real rail and intercity lines that sim-core does not run yet, for the map only.
+#[tauri::command]
+pub async fn reference_lines(
+    state: tauri::State<'_, SimState>,
+) -> Result<Vec<crate::network::RefLine>, String> {
+    let s = state.inner().clone();
+    blocking(move || s.reference()).await
 }
 
 /// Add or replace a line (`routeId` from the client) and return results for every line.
@@ -782,6 +898,11 @@ mod tests {
         });
         let ex = state.existing().unwrap();
         assert_eq!(ex.len(), 1);
+        let load = state.status().load;
+        assert_eq!(load.stage, "ready");
+        assert!(!load.statewide, "a small region stays on the dense model");
+        let [w, s, e, n] = load.bounds.unwrap();
+        assert!(w < e && s < n);
         assert_eq!(ex[0].route_id, "e0");
         let res = state.results().unwrap();
         assert_eq!(res[0].route_id, "e0");

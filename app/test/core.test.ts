@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { GameClock } from "../src/clock";
 import { RED_LINE } from "../src/data/geo";
 import { elbow, layoutSchematic } from "../src/schematic";
-import type { RouteSpec } from "../src/sim/api";
+import { isRegional, type RouteSpec } from "../src/sim/api";
 import { MockSim } from "../src/sim/mock";
+import { countyAt, countyName, fromRef, loadingText } from "../src/statewide";
 
 const redLine = (headwayMin = 20): RouteSpec => ({
   id: "red",
@@ -46,8 +47,14 @@ describe("schematic", () => {
   });
 
   it("lays out the Red Line with one point per stop and keeps it near its real location", () => {
+    expect(layoutSchematic([redLine()], 20000)[0].stops).toHaveLength(RED_LINE.length); // Neighborhood zoom: every stop
     const [l] = layoutSchematic([redLine()], 300);
-    expect(l.stops).toHaveLength(RED_LINE.length);
+    // Region zoom: stops closer than the minimum gap are left out; the ends stay, indices point into the route.
+    const idx = l.stops.map((s) => s.idx);
+    expect(idx[0]).toBe(0);
+    expect(idx[idx.length - 1]).toBe(RED_LINE.length - 1);
+    expect(idx.length).toBeLessThan(RED_LINE.length);
+    expect(idx).toEqual([...idx].sort((a, b) => a - b));
     expect(l.geo).toHaveLength(l.schem.length);
     const cx = l.stops.reduce((a, s) => a + s.schem[0], 0) / l.stops.length;
     expect(cx).toBeGreaterThan(-98);
@@ -416,5 +423,42 @@ describe("lines present at start (F44)", () => {
       ["e3-s0", "Downtown"],
       ["e3-s1", "Stop 2"],
     ]);
+  });
+});
+
+describe("statewide view", () => {
+  it("frames the scenario from the shell's load report", async () => {
+    const { fromLoad, sourceLabel } = await import("../src/sim/tauri");
+    expect(sourceLabel("/x/data/out/48-2023-tract-highway/scenario.json")).toBe("sim-core · Texas data");
+    const p = fromLoad({ stage: "equilibrium", elapsed_s: 20, expected_s: 80, zones: 6896, statewide: true, bounds: [-106.6, 25.9, -93.6, 36.5] });
+    expect(p.bounds).toEqual([[-106.6, 25.9], [-93.6, 36.5]]);
+    expect(fromLoad({ stage: "reading", elapsed_s: 0, expected_s: 17, zones: 0, statewide: false, bounds: null }).bounds).toBeUndefined();
+    const t = loadingText(p);
+    expect(t.stage).toContain("6,896 census tracts");
+    expect(t.fill).toBeCloseTo(0.25);
+    expect(t.detail).toBe("20 s, about 60 s left");
+    expect(loadingText({ ...p, elapsedS: 200 }).fill).toBe(0.97); // never claims done before it is
+    expect(loadingText({ ...p, elapsedS: 200 }).detail).toContain("longer than the estimate");
+  });
+
+  it("names the county of the nearest zone", () => {
+    const zones: [number, number, number][] = [
+      [-97.75, 30.3, 48453],
+      [-96.8, 32.8, 48113],
+      [-100.0, 31.0, 48999],
+    ];
+    expect(countyName(countyAt(zones, [-97.7, 30.27])!)).toBe("Travis County");
+    expect(countyName(countyAt(zones, [-96.7, 32.9])!)).toBe("Dallas County");
+    expect(countyName(countyAt(zones, [-100.1, 31.1])!)).toBe("County 48999");
+    expect(countyAt([], [0, 0])).toBeNull();
+  });
+
+  it("turns reference lines into regional routes with operator colors", () => {
+    const r = fromRef({ id: "r1", name: "DART Red Line", operator: "Dallas Area Rapid Transit", mode: "light_rail", ref: "RED", stops: [{ name: "", lon: -96.8, lat: 32.7 }, { name: "B", lon: -96.7, lat: 32.9 }] });
+    expect(r.mode).toBe("light_rail");
+    expect(isRegional(r.mode)).toBe(true);
+    expect(r.color).toBe("#d0202e");
+    expect(r.stops.map((s) => s.name)).toEqual(["Stop 1", "B"]);
+    expect(fromRef({ id: "r2", name: "Amtrak Texas Eagle", operator: "Amtrak", mode: "train", ref: "Texas Eagle", stops: [] }).mode).toBe("commuter_rail");
   });
 });

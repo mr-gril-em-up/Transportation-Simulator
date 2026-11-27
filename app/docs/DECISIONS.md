@@ -232,3 +232,30 @@ same paths as lines the player drew. A separate read-only layer would need
 its own results mapping and would stop the player changing a real route.
 They are grouped in a collapsed section because 61 rows would bury the
 player's own lines.
+
+### A32. The tier follows the scenario size
+More than 2,000 zones runs sim-core's strategic tier with its recommended
+settings (60-minute pair cutoff, 8 cold rounds). A county build has under
+1,000 zones and the statewide tract build 6,896, so the threshold separates
+them with room either way, and no setting has to be kept in step with the
+file. 8 rounds over 4: sim-core measured 69 s and 33 km/h statewide peak
+against 41 s and 12 km/h, and a congested state that is wrong costs more
+than half a minute of loading.
+
+### A33. Real rail the sim does not run is drawn, never scored
+A statewide view with only Austin's network on it reads as an empty state,
+and the player plans against the real DART and METRORail lines. The
+pipeline's `transit.json` already has them (OSM), but no headways outside
+CapMetro, so sim-core cannot run them yet. Drawing them as reference keeps
+the score honest (no riders, no cost) and the panel says "drawn only".
+They join the schematic layout so a drawn line meets them at real
+interchanges. When the pipeline writes them to `existing_lines.json` with
+headways, they move to today's network and this layer shrinks to nothing.
+
+### A34. County detail is a view, not a second model
+"Hand off to county detail" is the camera crossing into City zoom: the
+schematic has morphed to geography, local lines and stops show, and the
+badge names the county. The shell does not swap to the county's block-group
+build, because the architecture's invariant is that the camera never changes
+the score: two models would give two answers for the same line. A detailed
+local model under the camera is the local and regional tiers (F28, F35).

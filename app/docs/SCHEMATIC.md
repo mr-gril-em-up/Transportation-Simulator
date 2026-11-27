@@ -1,8 +1,8 @@
 # Tube-style schematic
 
 Design doc rule: at State and Region zoom, regional transit switches from
-geographic lines to a tube-style schematic (0/45/90 degree angles, evenly
-spaced stations, a color per line, interchanges as rings) and morphs back to
+geographic lines to a tube-style schematic (0/45/90 degree angles, spaced
+stations, a color per line, interchanges as rings) and morphs back to
 true geography between Region and City zoom so the player never loses a line.
 The doc flags auto-layout as an unsolved problem in general and recommends a
 fast heuristic recomputed when the network changes. This is that heuristic.
@@ -29,22 +29,27 @@ back to lng/lat for MapLibre.
    on more than one line are interchanges.
 2. **Order lines** longest first, so the trunk sets the frame and branches
    attach to it.
-3. **Spacing** per line = max(average geographic stop spacing, 34 px on
-   screen). The minimum keeps stations legible when zoomed out; above it the
-   schematic keeps the line's real scale. Because the minimum is in pixels, the
-   layout is recomputed on every zoom frame (cheap: a few lines, tens of
-   stops).
-4. **Free layout.** From the origin, each hop goes one `spacing` in the
-   direction of the real hop snapped to the nearest of 8 directions
-   (`snapDir`).
-5. **Anchor.** If any station on the line was already placed by an earlier
-   line, translate so that station lands on its placed position. Otherwise
-   translate so the schematic's centroid sits on the geographic centroid: the
-   line stays roughly where it really is.
-6. **Walk and connect.** Place each stop: reuse its station's position if
-   already placed, else previous position plus the free-layout hop. When a hop
-   lands on a pre-placed station at a non-octilinear angle, `elbow()` inserts one
-   bend: a 45 degree leg for the shorter axis, then a straight leg.
+3. **Thin stops** (statewide view). The minimum gap between stations is 34 px
+   on screen (`MIN_PX`). A line keeps its ends, its interchanges, and every
+   stop at least one gap from the last stop kept; the rest are left out at
+   this zoom, as a tube overview does. Each drawn stop carries `idx`, its
+   index in the route, so the stop editor still finds it. Fully geographic
+   (`t = 1`), `main.ts` lays out with an infinite scale, so every stop shows.
+   Because the gap is in pixels, the layout is recomputed on every zoom frame
+   (cheap: a few dozen lines, hundreds of stops).
+4. **Walk toward the real stops.** The first stop sits at its real position.
+   Each next hop goes in the direction from the previous *placed* stop to the
+   next stop's real position, snapped to the nearest of 8 directions
+   (`snapDir`), with length max(that distance, one gap). Aiming at the real
+   position each hop keeps snapping error from building up: an intercity line
+   with 300 km hops stays in its corridor instead of drifting off the state.
+   Stations are therefore spaced as in reality above the minimum gap, not
+   evenly (the earlier version walked an evenly spaced free layout and pushed
+   Amtrak lines into Mexico at State zoom).
+5. **Reuse placed stations.** A stop whose station an earlier line already
+   placed reuses that position. When a hop lands on such a station at a
+   non-octilinear angle, `elbow()` inserts one bend: a 45 degree leg for the
+   shorter axis, then a straight leg.
 7. **Morph pairing.** For each hop, the geographic polyline gets the same
    number of vertices as the schematic one (points placed at the same
    fraction of length), so `morph(schem, geo, t)` can lerp vertex by vertex.
@@ -57,9 +62,10 @@ draws `morph(schem, geo, t)` for lines and stops. `t = 0` is pure schematic,
 
 - Lines are laid out greedily. Two lines that run in parallel without sharing
   stations can cross or overlap; there is no edge-bundling or line offsetting.
-- At State zoom the 34 px minimum makes a metro line look larger than its
-  county. That is normal tube-map distortion, but statewide lines (M3) will
-  need a smaller minimum at low zoom or a proper global layout.
+- At State zoom a metro's lines collapse to a tangle a few gaps wide (DFW's
+  DART, TRE, TEXRail and A-train); they read from Region zoom (about z8.5).
+  See [statewide-dfw.png](img/statewide-dfw.png).
+- Stations are not evenly spaced; long hops keep their real length.
 - No player pinning/nudging of stations yet (the doc wants manual pins that
   survive re-layout). Planned: store pins per station id and treat them as
   pre-placed in step 5.

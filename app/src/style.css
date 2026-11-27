@@ -45,3 +45,11 @@ button.on { background: #1b1d22; color: #fff; border-color: #1b1d22; }
 .inspector .load path.rev { stroke-dasharray: 3 2; stroke: #888; }
 .inspector .ends { display: flex; justify-content: space-between; color: #666; }
 .route .toggle { cursor: pointer; font-size: 12px; color: #444; margin-top: 4px; }
+#loading { top: 40%; left: 50%; transform: translate(-50%, -50%); width: 360px; display: flex; flex-direction: column; gap: 6px; }
+#loading .bar { height: 8px; background: #e3e6ea; border-radius: 4px; overflow: hidden; }
+#loading-fill { height: 100%; width: 0; background: #2b6cb0; transition: width 0.5s linear; }
+#loading small { color: #5a606a; }
+#route-list details.ref { color: #5a606a; }
+#route-list details.ref li { list-style: none; display: flex; gap: 6px; align-items: center; }
+#route-list details.ref ul { padding: 0; margin: 4px 0; }
+#loading[hidden] { display: none; }

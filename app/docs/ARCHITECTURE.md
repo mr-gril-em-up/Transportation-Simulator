@@ -139,6 +139,21 @@ And back (`fromLineResult`): `daily_boardings` becomes `dailyRiders`,
 required) already cross the IPC boundary and are ignored until the UI renders
 them.
 
+### Statewide build (F34)
+
+`start_with_params` sets `LoadInfo` (stage, estimate, zones, bounds) under
+the lock as it goes: `reading` until `load()` returns, then `equilibrium`
+for `Sim::new`, then `ready`. Past `STRATEGIC_ZONES` (2,000) it swaps in
+`strategic(params)`. `sim_status` adds `elapsed_s` when polled, so the
+client's `ready(onProgress)` loop (every 500 ms) drives the loading card and
+fits the map to `bounds`. After ready, `main.ts` asks once for
+`reference_lines` and `zone_counties` (both read files beside the scenario
+in `network.rs`, never touching the Sim) and keeps them in `reference` and
+`zoneCounty`. `render()` lays out `reference` with the player's regional
+lines, so interchanges between a real DART line and a drawn one merge; the
+lines are never sent to sim-core. The badge runs `countyAt` (nearest zone
+centroid, 6,896 checks) on every zoom and `moveend`.
+
 ### Lines present at start (F44)
 
 sim-core treats `ScenarioInput.lines` as existing service: LineIds 0..n in

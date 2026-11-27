@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "data": "bash ../crates/data-pipeline/scripts/download-build.sh",
+    "data:texas": "AREA=48 LEVEL=tract ROADS=highway bash ../crates/data-pipeline/scripts/download-build.sh",
     "tauri": "tauri"
   },
   "dependencies": {

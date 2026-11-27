@@ -50,8 +50,11 @@ doc.
 
 ## M3 (statewide)
 
+- Done: statewide build behind a loading screen, opens on Texas, real rail and intercity lines
+  drawn in the tube view, county named from City zoom (F34 app side, A32 to A34)
+- Next: cache the first equilibrium (F43); progress callback from sim-core; the daily re-run off
+  the Sim lock; real rail as simulated lines once the pipeline has headways
 - Stream statewide tract-level layers; regional tier per metro
-- Schematic at State zoom for intercity lines (needs a smaller minimum spacing or a global layout)
 
 ## M4 (MVP polish)
 
