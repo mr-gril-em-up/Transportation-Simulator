@@ -11,7 +11,7 @@
   ],
   "road_links": [
     {"from": 10, "to": 20, "length_m": 6200, "speed_kph": 60, "lanes": 2},
-    {"from": 20, "to": 30, "length_m": 11500, "speed_kph": 100, "lanes": 3, "toll": 1.5},
+    {"from": 20, "to": 30, "length_m": 11500, "speed_kph": 100, "lanes": 3, "toll": 1.5, "class": "motorway"},
     {"from": 10, "to": 30, "length_m": 17000, "speed_kph": 50, "capacity_vph": 900, "oneway": true}
   ],
   "commutes": [

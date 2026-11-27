@@ -83,9 +83,9 @@ impl RoadGraph {
         for (li, l) in input.road_links.iter().enumerate() {
             let (a, b) = (index[&l.from], index[&l.to]);
             let len_km = l.length_m / 1000.0;
-            let cap = l
-                .capacity_vph
-                .unwrap_or(lane_capacity_vph(l.speed_kph) * l.lanes.max(1) as f64);
+            let cap = l.capacity_vph.unwrap_or(
+                lane_capacity_vph(l.speed_kph, l.class.as_deref()) * l.lanes.max(1) as f64,
+            );
             let mk = |from, to| Member {
                 link: li as u32,
                 from,
@@ -464,6 +464,7 @@ mod tests {
             capacity_vph: None,
             toll: 0.0,
             oneway: false,
+            class: None,
         };
         ScenarioInput {
             road_nodes: vec![node(1), node(2), node(3)],

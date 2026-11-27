@@ -236,6 +236,7 @@ pub fn to_scenario(zones: &[Zone], flows: &[Flow], roads: Option<&Roads>) -> Sce
             capacity_vph: None,
             toll: 0.0,
             oneway: e.oneway,
+            class: None,
         })
         .collect();
     let mut protect = vec![false; roads.nodes.len()];
@@ -312,6 +313,7 @@ mod tests {
             capacity_vph: None,
             toll: 0.0,
             oneway,
+            class: None,
         }
     }
 

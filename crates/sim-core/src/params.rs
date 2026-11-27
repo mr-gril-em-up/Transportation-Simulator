@@ -428,13 +428,49 @@ pub fn mode_defaults(m: Mode) -> ModeDefaults {
 /// Kilometers per mile, for converting the per-mile cost figures.
 pub const MI_KM: f64 = 1.609_344;
 
-/// Default road capacity per lane by free-flow speed (HCM-style rough values).
-pub fn lane_capacity_vph(speed_kph: f64) -> f64 {
+/// Default road capacity per lane and direction, vehicles/hour.
+///
+/// With an OSM `class` (F38): freeways 2,000 and their ramps 1,500;
+/// expressways (`trunk`) 1,800 and ramps 1,300; other classes at 80 km/h or
+/// more are uncontrolled highways at 1,700 (HCM two-lane and multilane
+/// highway capacity, ~1,700-1,900 pc/h/ln, less ~10% trucks); below 80 km/h
+/// they fall back to the speed rule, which assumes signals. Without a class
+/// the speed rule applies throughout: 1,900 at 80 km/h or more, 900 at
+/// 55-80 (a signalized arterial: ~1,900 saturation flow x ~0.45 green), 600
+/// below. These are first estimates for F38 to fit against TxDOT counts.
+pub fn lane_capacity_vph(speed_kph: f64, class: Option<&str>) -> f64 {
+    match class.map(|c| c.trim_end_matches("_link")) {
+        Some("motorway") if class.is_some_and(|c| c.ends_with("_link")) => return 1500.0,
+        Some("motorway") => return 2000.0,
+        Some("trunk") if class.is_some_and(|c| c.ends_with("_link")) => return 1300.0,
+        Some("trunk") => return 1800.0,
+        Some(_) if speed_kph >= 80.0 => return 1700.0,
+        _ => {}
+    }
     if speed_kph >= 80.0 {
         1900.0
     } else if speed_kph >= 55.0 {
         900.0
     } else {
         600.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn road_class_sets_capacity_and_speed_rule_is_the_fallback() {
+        assert_eq!(lane_capacity_vph(110.0, Some("motorway")), 2000.0);
+        assert_eq!(lane_capacity_vph(60.0, Some("motorway_link")), 1500.0);
+        assert_eq!(lane_capacity_vph(90.0, Some("trunk")), 1800.0);
+        assert_eq!(lane_capacity_vph(60.0, Some("trunk_link")), 1300.0);
+        // A rural two-lane highway: uncontrolled, not a signalized arterial.
+        assert_eq!(lane_capacity_vph(90.0, Some("primary")), 1700.0);
+        assert_eq!(lane_capacity_vph(60.0, Some("primary")), 900.0);
+        assert_eq!(lane_capacity_vph(40.0, Some("residential")), 600.0);
+        assert_eq!(lane_capacity_vph(90.0, None), 1900.0);
+        assert_eq!(lane_capacity_vph(60.0, None), 900.0);
     }
 }

@@ -104,8 +104,12 @@ minutes) in M3. The profile is already in place to feed it.
 
 **Road graph.** Directed edges from `road_links` (two per link unless `oneway`).
 Free-flow time = length / speed. Capacity per direction from the input, else
-lanes x per-lane capacity by speed: 1,900 veh/h at 80+ km/h (freeway), 900 at
-55+ (arterial), 600 below (local). Car skims (time, distance, tolls between
+lanes x per-lane capacity. With the link's OSM `class` (F38): motorway 2,000
+veh/h, motorway ramps 1,500, trunk 1,800, trunk ramps 1,300, any other class
+at 80+ km/h 1,700 (an uncontrolled highway: HCM two-lane and multilane
+capacity less ~10% trucks); otherwise, and without a class, by speed: 1,900
+at 80+ km/h (freeway), 900 at 55+ (signalized arterial), 600 below (local).
+First estimates, to be fitted to TxDOT counts (F38). Car skims (time, distance, tolls between
 every kept pair of zones) come from one Dijkstra tree per origin zone, stopped as
 soon as every zone's road node is reached or, with a strategic cutoff, past
 it (below). Same-zone or same-node trips use
