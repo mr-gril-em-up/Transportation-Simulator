@@ -1,5 +1,5 @@
 //! F19 calibration probe: the CapMetro Red Line (OSM route 550) on a real build.
-//! `cargo run --release -p sim-core --example redline -- <scenario.json> <transit.json> [headway_min]`
+//! `cargo run --release -p sim-core --example redline -- <scenario.json> <transit.json> [peak_headway] [offpeak_headway]`
 //! Prints daily boardings per stop and the mode split, to compare with NTD
 //! (`ridership_capmetro_rail_annual` in the pipeline's figures.csv).
 use sim_core::{Mode, Params, Sim, Stop, TransitLine};
@@ -33,6 +33,7 @@ fn main() {
         mode: Mode::CommuterRail,
         stops: stops.clone(),
         headway_min: headway,
+        offpeak_headway_min: args.get(4).and_then(|h| h.parse().ok()),
         fare: None,
         fare_per_km: None,
         speed_kph: None,
@@ -42,10 +43,11 @@ fn main() {
     let r = sim.results();
     let l = &r.lines[0];
     println!(
-        "Red Line, {} stops, {:.1} km, {:.0} min, headway {headway}: {:.0} boardings/day",
+        "Red Line, {} stops, {:.1} km, {:.0} min, headway {headway} (off-peak {:?}): {:.0} boardings/day",
         stops.len(),
         l.length_km,
         l.run_min,
+        args.get(4),
         l.daily_boardings
     );
     for (s, b) in stops.iter().zip(&l.boardings_by_stop) {

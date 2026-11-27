@@ -92,6 +92,9 @@ pub struct Params {
     pub bpr_alpha: f64,
     /// BPR curve beta.
     pub bpr_beta: f64,
+    /// Hours a day a line runs its peak headway (two 3-hour peaks); the rest
+    /// of `span_hours` runs the off-peak headway. Sets revenue hours.
+    pub peak_service_hours: f64,
     /// Outer iterations of mode choice <-> car assignment (method of successive averages).
     pub feedback_iterations: usize,
     /// Rounds for the daily warm-started re-run (`Sim::equilibrate_warm`).
@@ -159,6 +162,7 @@ impl Default for Params {
             other_peak_hour_share: 0.07,
             bpr_alpha: 0.15,
             bpr_beta: 4.0,
+            peak_service_hours: 6.0,
             feedback_iterations: 4,
             daily_iterations: 1,
             construction_speedup: 12.0,

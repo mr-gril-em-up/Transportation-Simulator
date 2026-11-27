@@ -170,7 +170,9 @@ Fields marked optional may be omitted.
 ```
 
 `TransitLine`: `{ "name"?, "mode", "stops": [{ "lon", "lat", "name"?, "park_ride"? }],
-"headway_min", "fare"?, "fare_per_km"?, "speed_kph"?, "span_hours"? }`. Omitted
+"headway_min", "offpeak_headway_min"?, "fare"?, "fare_per_km"?, "speed_kph"?, "span_hours"? }`.
+`headway_min` is the peak headway (work trips, fleet size); `offpeak_headway_min`
+(default: the same) is what non-work trips see and sets off-peak revenue hours. Omitted
 values take per-mode defaults ([src/params.rs](src/params.rs) `mode_defaults`).
 Modes: `bus, trolleybus, brt, tram, light_rail, commuter_rail, metro,
 high_speed_rail, monorail, people_mover, gondola, maglev, ferry`. Hyperloop is
@@ -180,10 +182,10 @@ deliberately absent.
 zero-lane links without an explicit capacity; the pipeline should run it on its
 output. A small working example is [tests/fixtures/tiny.json](tests/fixtures/tiny.json).
 
-M0/M1 zones are Travis County block groups. The pipeline can send the road
-graph as split at intersections; sim-core drops dead ends and contracts
-degree-2 chains itself (SIM-2), so tens of thousands of nodes is fine (see the
-performance table).
+M0/M1 zones are Travis County block groups. The pipeline now prunes and
+contracts the road graph itself (DATA-2); sim-core also drops dead ends and
+contracts degree-2 chains at load (SIM-2). The two compose exactly, so a
+scenario from either an old or a new pipeline build gives the same results.
 
 ### Performance on the real Travis build (4-thread container, release build)
 
@@ -251,25 +253,28 @@ First results, default `Params` (logit constants not yet calibrated to ACS):
 | 52 min (real service average) | 1,495 | 0% |
 | 60 min | 1,282 | -15% |
 
+With separate peak and off-peak headways (SIM-3), the replica at the real
+32-minute peak and 51-minute midday headway gives **1,738 boardings/day**:
+
+```
+cargo run --release -p sim-core --example redline -- scenario.json transit.json 32 51
+```
+
 The reference is APTA's 2023 average weekday, 1,500 boardings
 (`ridership_capmetro_rail_avg_weekday`; NTD's annual 477,322 includes Saturday
-and event service, so dividing it by days overstates weekdays). The real
-weekday service runs every 32 minutes in the peaks and about every 51 midday
-over 15.1 hours (`headway_capmetro_rail_peak_min`, `..._midday_min`,
-`span_capmetro_rail_weekday_hours`), about 35 trips in all, a 52-minute
-average. The model has one headway per line, so the fair answer lies between
-the 32 and 52 minute rows: commuters see the peak headway, other trips the
-midday one. Until lines carry a peak and an off-peak headway, the forecast is
-0 to 47% high, likely near the edge of the F19 30% band.
+and event service, so dividing it by days overstates weekdays). Headways come
+from `headway_capmetro_rail_peak_min` (32) and `..._midday_min` (51), span
+`span_capmetro_rail_weekday_hours` (15.1). **1,738 is 16% high, inside the F19
+30% band**, before any ACS calibration of the logit constants. The table above
+uses one headway for both purposes and brackets the answer.
 
 Caveats:
 - Leander and Lakeline sit in Williamson County, whose residents are not zones
   in the Travis build, so the north end is undercounted (24 and 28 boardings).
 - Nearly all riders arrive by park-and-ride (`transit_drive` 0.07% of trips vs
   `transit_walk` 0.006%); the walk side needs checking against stop-level counts.
-- The model has one headway per line; a peak/off-peak headway (work trips on
-  the peak one, other trips on the off-peak one) is the next change for a fair
-  comparison.
+- Each purpose sees one headway all day (SIM-3); there is no hour-by-hour
+  service profile.
 
 ## Design and rationale
 

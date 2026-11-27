@@ -145,8 +145,13 @@ pub struct TransitLine {
     pub mode: Mode,
     /// Stops in order. At least two.
     pub stops: Vec<Stop>,
-    /// Minutes between vehicles in each direction.
+    /// Minutes between vehicles in each direction in the peak periods. Work
+    /// trips see this headway, and it sets the fleet size.
     pub headway_min: f64,
+    /// Minutes between vehicles outside the peaks (midday, evening). Non-work
+    /// trips see this headway. Default: same as `headway_min`.
+    #[serde(default)]
+    pub offpeak_headway_min: Option<f64>,
     /// Flat fare per boarding. Default from mode.
     #[serde(default)]
     pub fare: Option<f64>,

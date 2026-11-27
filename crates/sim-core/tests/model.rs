@@ -340,3 +340,24 @@ fn service_changes_apply_now_and_realignments_wait() {
     s.remove_line(id).unwrap();
     assert!(s.pending_lines().is_empty() && s.lines().is_empty());
 }
+
+#[test]
+fn offpeak_headway_thins_non_work_riders_and_cost() {
+    let mut s = sim();
+    let id = s.add_line(rail()).unwrap();
+    let all_day = s.results().lines[0].clone();
+    // Same off-peak headway as peak: identical to leaving it unset.
+    let mut same = rail();
+    same.offpeak_headway_min = Some(same.headway_min);
+    s.update_line(id, same).unwrap();
+    let r = &s.results().lines[0];
+    assert!((r.daily_boardings - all_day.daily_boardings).abs() < 1e-9);
+    // Thinner midday service: fewer riders and fewer revenue hours, same fleet.
+    let mut thin = rail();
+    thin.offpeak_headway_min = Some(30.0);
+    s.update_line(id, thin).unwrap();
+    let r = &s.results().lines[0];
+    assert!(r.daily_boardings < all_day.daily_boardings);
+    assert!(r.revenue_hours_per_day < all_day.revenue_hours_per_day);
+    assert_eq!(r.vehicles_required, all_day.vehicles_required);
+}

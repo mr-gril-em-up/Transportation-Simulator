@@ -24,6 +24,7 @@ pub struct LineMeta {
     pub mode: Mode,
     pub defaults: ModeDefaults,
     pub headway: f64,
+    pub offpeak_headway: f64,
     pub fare: f64,
     pub fare_per_km: f64,
     pub span_hours: f64,
@@ -164,6 +165,7 @@ impl TransitNet {
                 mode: l.mode,
                 defaults: dflt,
                 headway: l.headway_min,
+                offpeak_headway: l.offpeak_headway_min.unwrap_or(l.headway_min),
                 fare: l.fare.unwrap_or(dflt.fare),
                 fare_per_km: l.fare_per_km.unwrap_or(dflt.fare_per_km),
                 span_hours: l.span_hours.unwrap_or(dflt.span_hours),
@@ -225,6 +227,12 @@ impl TransitNet {
 
     pub fn is_empty(&self) -> bool {
         self.platforms.is_empty()
+    }
+
+    /// True if some line runs a different headway off-peak, so off-peak
+    /// paths need their own search.
+    pub fn offpeak_differs(&self) -> bool {
+        self.lines.iter().any(|l| l.offpeak_headway != l.headway)
     }
 }
 
@@ -324,6 +332,8 @@ pub struct Searcher<'a> {
     vot_min: f64,
     /// Per destination zone: (gc, platform, egress walk minutes).
     pub best: Vec<(f64, u32, f64)>,
+    /// Search with off-peak headways (non-work trips) instead of peak ones.
+    pub offpeak: bool,
 }
 
 impl<'a> Searcher<'a> {
@@ -335,6 +345,7 @@ impl<'a> Searcher<'a> {
             heap: BinaryHeap::new(),
             vot_min: p.path_vot_per_hour / 60.0,
             best: vec![(f64::INFINITY, NONE, 0.0); n_zones],
+            offpeak: false,
         }
     }
 
@@ -345,14 +356,19 @@ impl<'a> Searcher<'a> {
     fn board(&self, mut l: Label, plat: u32, walk_km: f64) -> Label {
         let line = &self.net.lines[self.net.platforms[plat as usize].line as usize];
         let w = self.walk_min(walk_km);
-        let wait = self.p.wait_min(line.headway);
+        let h = if self.offpeak {
+            line.offpeak_headway
+        } else {
+            line.headway
+        };
+        let wait = self.p.wait_min(h);
         let fare_add = (line.fare - l.max_base).max(0.0);
         l.gc += self.p.walk_weight * w + self.p.wait_weight * wait + fare_add / self.vot_min;
         l.walk_min += w;
         l.wait += wait;
         l.fare += fare_add;
         l.max_base = l.max_base.max(line.fare);
-        l.last_h = line.headway;
+        l.last_h = h;
         l
     }
 

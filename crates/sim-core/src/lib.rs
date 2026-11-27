@@ -127,7 +127,7 @@ impl TransitLine {
         if self.stops.len() < 2 {
             return err(format!("line '{}' needs at least two stops", self.name));
         }
-        if !positive(self.headway_min) {
+        if !positive(self.headway_min) || !self.offpeak_headway_min.is_none_or(positive) {
             return err(format!("line '{}' needs a positive headway", self.name));
         }
         let pos = |v: Option<f64>| v.is_none_or(|x| x >= 0.0);
