@@ -35,9 +35,8 @@ impl SimState {
         let s = state.clone();
         std::thread::spawn(move || {
             let t0 = std::time::Instant::now();
-            let built = load().and_then(|input| {
-                Sim::new(input, Params::default()).map_err(|e| e.to_string())
-            });
+            let built = load()
+                .and_then(|input| Sim::new(input, Params::default()).map_err(|e| e.to_string()));
             let (lock, cv) = &*s.0;
             let mut inner = lock.lock().unwrap();
             match built {
@@ -59,7 +58,9 @@ impl SimState {
     fn with<T>(&self, f: impl FnOnce(&mut Inner) -> Result<T, String>) -> Result<T, String> {
         let (lock, cv) = &*self.0;
         let mut inner = cv
-            .wait_while(lock.lock().unwrap(), |i| i.sim.is_none() && i.error.is_none())
+            .wait_while(lock.lock().unwrap(), |i| {
+                i.sim.is_none() && i.error.is_none()
+            })
             .unwrap();
         if let Some(e) = &inner.error {
             return Err(format!("simulation failed to start: {e}"));
@@ -70,7 +71,11 @@ impl SimState {
 
 impl SimState {
     /// Add the route (new client id) or replace it (known id); results for every route.
-    pub fn upsert(&self, route_id: String, line: TransitLine) -> Result<Vec<RouteResultOut>, String> {
+    pub fn upsert(
+        &self,
+        route_id: String,
+        line: TransitLine,
+    ) -> Result<Vec<RouteResultOut>, String> {
         self.with(|inner| {
             let sim = inner.sim.as_mut().unwrap();
             match inner.ids.get(&route_id) {
@@ -88,7 +93,12 @@ impl SimState {
     pub fn remove(&self, route_id: &str) -> Result<Vec<RouteResultOut>, String> {
         self.with(|inner| {
             if let Some(id) = inner.ids.remove(route_id) {
-                inner.sim.as_mut().unwrap().remove_line(id).map_err(|e| e.to_string())?;
+                inner
+                    .sim
+                    .as_mut()
+                    .unwrap()
+                    .remove_line(id)
+                    .map_err(|e| e.to_string())?;
             }
             Ok(all_results(inner))
         })
@@ -113,12 +123,22 @@ impl SimState {
     pub fn desire_lines(&self, n: usize) -> Result<Vec<DesireLineOut>, String> {
         self.with(|inner| {
             let sim = inner.sim.as_ref().unwrap();
-            let at: HashMap<u32, [f64; 2]> = sim.input().zones.iter().map(|z| (z.id, [z.lon, z.lat])).collect();
+            let at: HashMap<u32, [f64; 2]> = sim
+                .input()
+                .zones
+                .iter()
+                .map(|z| (z.id, [z.lon, z.lat]))
+                .collect();
             Ok(sim
                 .desire_lines(n)
                 .into_iter()
                 .filter_map(|d| {
-                    Some(DesireLineOut { from: *at.get(&d.from)?, to: *at.get(&d.to)?, trips: d.trips, transit_trips: d.transit_trips })
+                    Some(DesireLineOut {
+                        from: *at.get(&d.from)?,
+                        to: *at.get(&d.to)?,
+                        trips: d.trips,
+                        transit_trips: d.transit_trips,
+                    })
                 })
                 .collect())
         })
@@ -163,7 +183,10 @@ fn all_results(inner: &Inner) -> Vec<RouteResultOut> {
         .lines
         .iter()
         .filter_map(|r| {
-            by_line.get(&r.id).map(|rid| RouteResultOut { route_id: (*rid).clone(), result: r.clone() })
+            by_line.get(&r.id).map(|rid| RouteResultOut {
+                route_id: (*rid).clone(),
+                result: r.clone(),
+            })
         })
         .collect()
 }
@@ -203,7 +226,10 @@ pub async fn remove_route(
 
 /// Top `n` zone pairs by daily trips, with endpoint coordinates (F06 desire lines).
 #[tauri::command]
-pub async fn desire_lines(state: tauri::State<'_, SimState>, n: usize) -> Result<Vec<DesireLineOut>, String> {
+pub async fn desire_lines(
+    state: tauri::State<'_, SimState>,
+    n: usize,
+) -> Result<Vec<DesireLineOut>, String> {
     let s = state.inner().clone();
     blocking(move || s.desire_lines(n)).await
 }
@@ -213,7 +239,9 @@ pub async fn desire_lines(state: tauri::State<'_, SimState>, n: usize) -> Result
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| format!("sim task failed: {e}"))?
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("sim task failed: {e}"))?
 }
 
 #[cfg(test)]
@@ -227,8 +255,10 @@ mod tests {
     #[test]
     fn upsert_update_remove_round_trip() {
         let state = SimState::start_with(|| Ok(synth::generate(&synth::SynthConfig::small())));
-        let a = line(r#"{"name":"A","mode":"bus","headway_min":15,
-            "stops":[{"lon":-97.76,"lat":30.25},{"lon":-97.743,"lat":30.268},{"lon":-97.73,"lat":30.29}]}"#);
+        let a = line(
+            r#"{"name":"A","mode":"bus","headway_min":15,
+            "stops":[{"lon":-97.76,"lat":30.25},{"lon":-97.743,"lat":30.268},{"lon":-97.73,"lat":30.29}]}"#,
+        );
         let out = state.upsert("r1".into(), a.clone()).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].route_id, "r1");
@@ -250,9 +280,14 @@ mod tests {
         let state = SimState::start_with(|| Ok(synth::generate(&synth::SynthConfig::small())));
         let lines = state.desire_lines(10).unwrap();
         assert!(!lines.is_empty() && lines.len() <= 10);
-        assert!(lines.windows(2).all(|w| w[0].trips >= w[1].trips), "sorted by trips");
+        assert!(
+            lines.windows(2).all(|w| w[0].trips >= w[1].trips),
+            "sorted by trips"
+        );
         // Synthetic region is centered on downtown Austin.
-        assert!(lines.iter().all(|d| (d.from[0] + 97.7).abs() < 1.0 && (d.from[1] - 30.3).abs() < 1.0));
+        assert!(lines
+            .iter()
+            .all(|d| (d.from[0] + 97.7).abs() < 1.0 && (d.from[1] - 30.3).abs() < 1.0));
     }
 
     #[test]
