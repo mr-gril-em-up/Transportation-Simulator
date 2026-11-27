@@ -60,6 +60,9 @@ fn write_sample(raw: &Path) {
     road(&mut m, 5, -97.735, 30.270);
     road(&mut m, 6, -97.730, 30.290);
     road(&mut m, 9, -96.800, 32.780); // Dallas, outside the clip box
+                                      // A disconnected fragment right next to the downtown centroid.
+    road(&mut m, 40, -97.7449, 30.2701);
+    road(&mut m, 41, -97.7448, 30.2705);
     m.node(
         20,
         -97.7431,
@@ -88,6 +91,7 @@ fn write_sample(raw: &Path) {
     m.way(102, &[3, 6], &[("highway", "motorway"), ("lanes", "3")]);
     m.way(103, &[5, 9], &[("highway", "residential")]);
     m.way(104, &[4, 6], &[("highway", "footway")]);
+    m.way(105, &[40, 41], &[("highway", "residential")]);
     m.relation(
         200,
         vec![
@@ -196,8 +200,8 @@ fn builds_travis_sample() {
 
     // Roads: ways split at the shared node 2; the Dallas link and footway are dropped.
     let roads: Roads = read(&out, "roads.json");
-    assert_eq!(roads.nodes.len(), 6);
-    assert_eq!(roads.edges.len(), 5);
+    assert_eq!(roads.nodes.len(), 8, "6 connected + 2 in the fragment");
+    assert_eq!(roads.edges.len(), 6);
     let congress: Vec<&RoadEdge> = roads
         .edges
         .iter()
@@ -224,8 +228,8 @@ fn builds_travis_sample() {
 
     // Scenario roads: same nodes; two-way 4-lane-default primary -> 2 per direction;
     // zones load onto local nodes, never the freeway-only node 6.
-    assert_eq!(sc.road_nodes.len(), 6);
-    assert_eq!(sc.road_links.len(), 5);
+    assert_eq!(sc.road_nodes.len(), 8);
+    assert_eq!(sc.road_links.len(), 6);
     let fwy_end = roads
         .nodes
         .iter()
@@ -236,7 +240,7 @@ fn builds_travis_sample() {
     let n = roads.nodes[downtown.road_node as usize];
     assert!(
         near(n, [-97.743, 30.270]),
-        "nearest local node to the centroid"
+        "nearest local node in the main component, not the closer fragment"
     );
     assert!(sc.road_links.iter().any(|l| l.lanes == 2 && !l.oneway));
     assert!(sc.lines.is_empty(), "game starts with no transit");

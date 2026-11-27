@@ -79,7 +79,7 @@ If `texas-latest.osm.pbf` is missing, this step is skipped with a note, and the 
 Converts the layers into `sim_core::ScenarioInput`:
 
 - Zone `id` = index in the sorted zone list. Road node `id` = index in `roads.nodes`. Ids are therefore dense and line up with the detail files.
-- Each zone's `road_node` is the nearest node to its centroid that touches a **local** road (anything except motorway and trunk classes and their links). Loading trips onto a freeway node would let them skip the local network and make access look free. Search uses a 0.01° grid and expanding rings, so statewide matching is fast.
+- Each zone's `road_node` is the nearest node to its centroid that touches a **local** road (anything except motorway and trunk classes and their links). Loading trips onto a freeway node would let them skip the local network and make access look free. Candidates are also limited to the largest connected component of the road graph: clipping at the margin leaves small fragments, and a zone loaded onto one would pass validation but reach nothing. Search uses a 0.01° grid and expanding rings, so statewide matching is fast.
 - Road lanes are converted from OSM's total-lane count to sim-core's lanes per direction.
 - Zero-length links and self-loops are dropped (sim-core's validator rejects them).
 - `lines` is empty: the game starts with no transit by default (design doc, "Starting map"). Existing routes stay in `transit.json`.

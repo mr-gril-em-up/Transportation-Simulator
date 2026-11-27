@@ -51,4 +51,4 @@ Docs are part of every change. Read the [docs standard](docs/DOCS_STANDARD.md) b
 
 ## Data and licences
 
-Built from OpenStreetMap (ODbL: attribution required, derived database stays open), Census LODES, ACS, PUMS and TIGER/Line. "Map data © OpenStreetMap contributors." Crates are `UNLICENSED` (workspace setting) until a licence is chosen.
+Built from OpenStreetMap (ODbL: attribution required, derived database stays open), Census LODES, ACS, PUMS and TIGER/Line. "Map data © OpenStreetMap contributors." Copyright (c) 2026. All rights reserved. The repository is public to read, but no licence is granted: see [LICENSE](LICENSE). OpenStreetMap-derived data stays under the ODbL (D16, D17 in the [decision log](docs/DECISIONS.md)).
