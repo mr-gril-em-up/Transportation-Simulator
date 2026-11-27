@@ -86,3 +86,17 @@ Timing on a standard `ubuntu-latest` runner: download 7.5 min, compile plus buil
 | `transit_routes` | 691 | 65 rail routes (33 light rail, 22 train, 6 tram, 4 monorail): DART light rail and Silver Line, Houston METRORail, CapMetro Red Line (route 550), TEXRail, TRE, DCTA A-Train, three Amtrak services |
 
 Not yet done: loading the statewide scenario into sim-core. With 18.6k zones and 1.1M road nodes it is far beyond the Travis timing; the statewide performance chain (F31–F33) addresses that with coarser zones and a binary format.
+
+## First ACS and TIGER build (2026-11-27)
+
+Actions run [45946718823](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45946718823), `--area 48453`, year 2023, `skip_osm: true`. Geofabrik refused connections from Actions at the time, so this run checked the census inputs only and did not publish a release.
+
+| Input or manifest field | Value | Check |
+|---|---|---|
+| ACS B19013 and B25044 summary files, Texas rows | 18,638 each | Exact match to the Texas block group count, so the `1500000US48` filter in `fetch.sh` keeps every block group |
+| TIGER `tl_2020_48_bg.dbf` | read | Source line "US Census Bureau, TIGER/Line 2020 block groups (ALAND)" in the manifest |
+| `acs_income_zones` | 703 of 766 | 63 block groups have suppressed or missing median income and take the household-weighted tract value, or the county value if the whole tract is suppressed |
+| `acs_zero_car_zones` | 761 of 766 | 5 fall back the same way |
+| `area_zones` | 766 of 766 | Every zone gets ALAND |
+
+Still to do: a full build with roads once Geofabrik answers again, which republishes `data-48453-2023` with these fields.
