@@ -144,7 +144,12 @@ impl Default for Params {
     fn default() -> Self {
         Params {
             beta_per_min: -0.035,
-            asc: [0.0, -1.6, -1.2, -2.2, -0.8, -2.6],
+            // F14: fitted on real Travis (build data-48453-2023 with ACS
+            // income and zero-car share) with today's CapMetro network loaded,
+            // to ACS 2019-2023 B08301 commute shares excluding work-from-home,
+            // and a 3% park-and-ride share of transit (tuned; no survey source).
+            // Reproduce with `examples/calibrate.rs`.
+            asc: [0.0, -2.44, -0.42, -4.18, -0.41, -3.89],
             wait_weight: 2.0,
             walk_weight: 2.0,
             transfer_penalty_min: 5.0,

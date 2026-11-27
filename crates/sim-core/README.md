@@ -103,7 +103,8 @@ let days_crossed = sim.tick(real_dt_seconds);
 | `equilibrate()` | seconds | Full mode choice and congested car assignment from free-flow times. Call after changing `params`. |
 | `equilibrate_warm()` | ~2 s at Travis size | Daily re-run starting from the previous day's road volumes (`daily_iterations` rounds). |
 | `tick(real_dt) -> u64` | free or ~2 s | Advances `sim.clock`; at a day boundary opens lines whose construction finished, runs `equilibrate_warm` once, and settles the ledger at month boundaries. Call from a worker thread. |
-| `calibrate_mode_shares(ModeSplit, iters)` | ~0.1 s/iter | Fits the logit constants to target mode shares. |
+| `calibrate_mode_shares(ModeSplit, iters)` | ~0.1 s/iter | Fits the logit constants so commute trips reproduce target shares (ACS journey to work); transit as one share unless `transit_drive` has its own target (SIM-10). |
+| `commute_mode_shares() -> ModeSplit` | ~0.3 s | Commute (home-work) shares under current constants: the quantity the fit targets. |
 | `input() -> &ScenarioInput` | free | The scenario as loaded (lines live in `lines()`). |
 | `sim.params`, `sim.clock` | | Public fields. Change params then call `equilibrate()`. |
 
@@ -235,7 +236,37 @@ densely so Dijkstra's arrays shrink with the graph.
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#what-is-recomputed-when).
+### Calibration: ACS commute shares with today's network (F14)
+
+`examples/calibrate.rs` loads today's CapMetro network from `transit.json`
+(74 route refs) into the real Travis build, fits the logit constants to ACS
+commute shares and reports the fit, bus and Red Line boardings:
+
+```
+cargo run --release -p sim-core --example calibrate -- \
+  ../data-pipeline/data/out/48453-2023/scenario.json \
+  ../data-pipeline/data/out/48453-2023/transit.json [bus_peak] [bus_offpeak]
+```
+
+| | Commute drive / carpool / transit / walk / bike | Buses/day | Red Line/day |
+|---|---|---|---|
+| Old defaults | 76.0 / 18.5 / 1.2 / 2.0 / 2.3 | 28,292 | 6,373 |
+| Fitted (now the defaults) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,518 | 1,917 |
+| Target / count | ACS 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | ~69-70k (NTD weekday) | 1,500 (APTA weekday) |
+
+Shares are % of commuters who travel (ACS less work from home and other).
+The park-and-ride share of transit commuters (3%) is tuned, not sourced, and
+sets the Red Line figure; see [MODEL.md section 6](docs/MODEL.md#6-mode-choice).
+It takes about 22 s (7 s load, 11 s fit).
+
 ### Calibration probe: CapMetro Red Line (F19)
+
+**Update (SIM-10):** with the fitted constants the Red Line is probed inside
+today's network by `examples/calibrate.rs` (1,917/day, 28% high, inside the
+30% band, but the park-and-ride share was tuned to it, so it is not an
+independent check). Run alone, as below, it now carries 861/day, because
+without bus feeders and with walk access fitted to all of CapMetro it loses
+riders. The rest of this section records the pre-calibration probe.
 
 `examples/redline.rs` builds the Red Line from the real stop positions in the
 pipeline's `transit.json` (OSM route 550, 10 stations Downtown to Leander, all
@@ -337,7 +368,7 @@ choices a reader is most likely to question:
 | F11 Car travel times and BPR assignment | Done |
 | F12 Transit skims (walk, wait, in-vehicle, transfers, park-and-ride) | Done |
 | F13 Non-work trips | Partial: gravity model, single purpose; total rate 2.28/person/day (2022 NHTS) minus work trips |
-| F14 Logit mode split | Partial: six-way MNL and `calibrate_mode_shares` done; ACS calibration needs pipeline data |
+| F14 Logit mode split | Done for Travis: constants fitted to ACS 2019-2023 commute shares with today's CapMetro network (SIM-10); other metros are M2+ |
 | F15 Sim API | sim-core side done; Tauri commands are the app's |
 | F18 Incremental re-evaluation | Done on the synthetic Travis-sized region (20-40 ms); confirm on real Travis data |
 | F21 One clock | Partial: `Clock` with time-lapse and skip-to-next-month in sim-core; app still runs its own client clock |

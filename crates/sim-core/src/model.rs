@@ -845,9 +845,15 @@ impl Sim {
         }
     }
 
-    /// Re-fit the alternative-specific constants so the model reproduces
-    /// `targets` (any scale; normalized). Choices with a zero target or no
-    /// modeled trips are left alone. Uses current skims; cheap.
+    /// Re-fit the alternative-specific constants so **commute** (home-work)
+    /// trips reproduce `targets`, e.g. ACS journey-to-work shares (any scale;
+    /// normalized). Non-work trips use the same constants. If
+    /// `targets.transit_drive` is 0, `transit_walk` is the whole transit
+    /// share and both access constants move together (ACS does not split
+    /// them); otherwise each access mode is fitted to its own target. Choices with a zero
+    /// target or no modeled trips are left alone. Each iteration re-runs
+    /// mode choice on current skims (cheap); call `equilibrate_warm` between
+    /// rounds to let congestion respond.
     pub fn calibrate_mode_shares(&mut self, targets: ModeSplit, iterations: usize) {
         let tgt = targets.shares().to_array();
         for _ in 0..iterations {
@@ -855,19 +861,49 @@ impl Sim {
             let mut tot = [0.0; N_CHOICES];
             for r in &rows {
                 for (m, t) in tot.iter_mut().enumerate() {
-                    *t += 2.0 * r.work[m] + r.other[m];
+                    *t += r.work[m];
                 }
             }
             let sum: f64 = tot.iter().sum();
-            for m in 0..N_CHOICES {
-                if m == DRIVE || tgt[m] <= 0.0 || tot[m] <= 0.0 {
-                    continue;
+            if sum <= 0.0 || tot[DRIVE] <= 0.0 {
+                break;
+            }
+            let base = (tgt[DRIVE] / (tot[DRIVE] / sum)).ln();
+            let step = |t: f64, m: f64| (t / (m / sum)).ln() - base;
+            for m in [CARPOOL, WALK, BIKE] {
+                if tgt[m] > 0.0 && tot[m] > 0.0 {
+                    self.params.asc[m] += step(tgt[m], tot[m]);
                 }
-                self.params.asc[m] +=
-                    (tgt[m] / (tot[m] / sum)).ln() - (tgt[DRIVE] / (tot[DRIVE] / sum)).ln();
+            }
+            if tgt[TRANSIT_DRIVE] > 0.0 {
+                // Both transit access modes have their own target.
+                for m in [TRANSIT_WALK, TRANSIT_DRIVE] {
+                    if tgt[m] > 0.0 && tot[m] > 0.0 {
+                        self.params.asc[m] += step(tgt[m], tot[m]);
+                    }
+                }
+            } else {
+                let (tt, mt) = (tgt[TRANSIT_WALK], tot[TRANSIT_WALK] + tot[TRANSIT_DRIVE]);
+                if tt > 0.0 && mt > 0.0 {
+                    let d = step(tt, mt);
+                    self.params.asc[TRANSIT_WALK] += d;
+                    self.params.asc[TRANSIT_DRIVE] += d;
+                }
             }
         }
         self.finish(Instant::now(), self.results.car_times_stale, None);
+    }
+
+    /// Commute (home-work) mode shares under the current constants and skims,
+    /// the quantity `calibrate_mode_shares` fits.
+    pub fn commute_mode_shares(&self) -> ModeSplit {
+        let mut tot = [0.0; N_CHOICES];
+        for r in &self.choose_all() {
+            for (m, t) in tot.iter_mut().enumerate() {
+                *t += r.work[m];
+            }
+        }
+        ModeSplit::from_array(tot).shares()
     }
 
     /// Per-zone trips, transit trips and stop coverage.
