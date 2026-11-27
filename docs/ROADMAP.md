@@ -29,8 +29,8 @@ gantt
 
     section M0 Data spike (Travis)
     Workspace and sim-core input schema        :done,   f01, 2026-11-26, 1d
-    Pipeline zones, LODES flows, OSM roads     :active, f02, 2026-11-26, 5d
-    Pipeline writes ScenarioInput              :active, f03, 2026-11-27, 2d
+    Pipeline zones, LODES flows, OSM roads     :done,   f02, 2026-11-26, 2d
+    Pipeline writes ScenarioInput              :done,   f03, 2026-11-27, 1d
     Synthetic population (IPF from PUMS)       :        f04, 2026-11-30, 6d
     Tauri and MapLibre shell                   :active, f05, 2026-11-26, 5d
     Desire-line layer                          :        f06, after f05, 4d
@@ -88,6 +88,8 @@ gantt
     v0.5.0 Texas MVP                           :milestone, r05, 2027-03-26, 0d
 ```
 
+Features marked "Prototype (#2)" or "Partial (#2)" in the tables already have an early version in `app/`: extend it, do not rebuild it.
+
 Red bars (`crit`) are the gates most likely to move the MVP date: exit tests that need calibration or outside players, and the statewide performance chain.
 
 ## Features by milestone
@@ -101,11 +103,11 @@ Goal: one county of real public data, turned into zones, flows and a road graph,
 | ID | Feature | Area | Depends on | Done when | Status |
 |---|---|---|---|---|---|
 | F01 | Cargo workspace and sim-core input schema (`ScenarioInput`, `validate()`) | core | none | Schema compiles, `tiny.json` fixture validates | Done (#1) |
-| F02 | Pipeline: block-group zones, LODES OD flows, OSM drivable road graph, OSM transit relations | pipeline | none | `cargo run --release` writes zones, roads, transit and manifest for Travis | In review (#3) |
-| F03 | Pipeline writes `scenario.json` as `sim_core::ScenarioInput` (lanes per direction, `road_node` per zone, `commutes`) and runs `validate()` | pipeline, core | F01, F02 | Travis output loads in sim-core with zero validation errors. Format: [OUTPUT_FORMAT.md](../crates/data-pipeline/docs/OUTPUT_FORMAT.md) | In review (#3) |
+| F02 | Pipeline: block-group zones, LODES OD flows, OSM drivable road graph, OSM transit relations | pipeline | none | `cargo run --release` writes zones, roads, transit and manifest for Travis | Done (#3) |
+| F03 | Pipeline writes `scenario.json` as `sim_core::ScenarioInput` (lanes per direction, `road_node` per zone, `commutes`) and runs `validate()` | pipeline, core | F01, F02 | Travis output loads in sim-core with zero validation errors. Format: [OUTPUT_FORMAT.md](../crates/data-pipeline/docs/OUTPUT_FORMAT.md) | Done (#3) |
 | F04 | Synthetic population: expand ACS PUMS households to ACS block-group totals with IPF; home block, age, income band, car availability, value of time | pipeline | F02 | Block-group marginals (household size, income, vehicles) reproduced within 5% | Planned |
-| F05 | Tauri app shell with MapLibre GL base map, sim-core linked as native Rust | app | F01 | App launches on desktop and shows the Travis base map | In progress |
-| F06 | Desire-line layer (deck.gl) from zone-to-zone flows | app | F03, F05 | Flows render, line width scales with workers | Planned |
+| F05 | Tauri app shell with MapLibre GL base map, sim-core linked as native Rust | app | F01 | App launches on desktop and shows the Travis base map | Partial (#2): shell and map done; sim-core not linked yet |
+| F06 | Desire-line layer from zone-to-zone flows (MapLibre; deck.gl deferred to M2 per app decision 2) | app | F03, F05 | Flows render, line width scales with workers | Planned |
 | F07 | M0 exit check | all | F03, F06 | **Top 20 commute flows match LODES totals** (pipeline manifest already lists them) | Planned |
 
 ### M1, the loop on Travis County (v0.2.0)
@@ -119,8 +121,8 @@ Goal: the core loop. Draw a transit line, see ridership respond in under 2 secon
 | F13 | Non-work trips: NHTS rates by purpose (~3.5 trips/person/day), gravity destinations weighted by OSM POIs and LODES jobs by sector | core, pipeline | F04 | Daily trips per person and purpose split match NHTS within 10%. *Placed in M1 because Red Line calibration (F19) counts all riders, not only commuters.* | Planned |
 | F14 | Multinomial logit mode split on generalized cost (wait and walk weighted ~2x in-vehicle); ASCs calibrated per metro to ACS mode share | core | F11, F12, F13 | Baseline reproduces Travis ACS commute mode shares within 2 points | Planned |
 | F15 | Sim API (`Sim`: build, add/update/remove lines, read results, advance clock) and Tauri command/event interface | core, app | F01, F05 | App calls sim-core through the message interface only, no direct state access | Planned |
-| F16 | Line drawing tool: place stops, pick mode, set headway and fare; preview cost and forecast before commit | app | F15 | A line can be drawn, edited and deleted in the app | Planned |
-| F17 | Ridership readout per line and stop | app, core | F14, F16 | Boardings per line and stop shown after each edit | Planned |
+| F16 | Line drawing tool: place stops, pick mode, set headway and fare; preview cost and forecast before commit | app | F15 | A line can be drawn, edited and deleted in the app | Partial (#2): drawing, headway and delete work against the mock sim; no cost preview |
+| F17 | Ridership readout per line and stop | app, core | F14, F16 | Boardings per line and stop shown after each edit | Partial (#2): panel works, mock-backed |
 | F18 | Incremental re-evaluation after a line edit | core | F14 | **A line edit updates ridership in under 2 seconds** on Travis | Planned |
 | F19 | Calibration harness: CapMetro Red Line replica from GTFS, compared against NTD ridership | core, pipeline | F17 | **Red Line replica forecasts within 30% of reported ridership** | Planned |
 
@@ -132,7 +134,7 @@ Goal: turn the loop into a game. Costs and a budget, one shared clock, people yo
 
 | ID | Feature | Area | Depends on | Done when | Status |
 |---|---|---|---|---|---|
-| F21 | One game clock for every tier (1 real s ≈ 1 game min); time-lapse 2x, 10x, 60x and skip-to-next-month; zoom never changes speed | core, app | F15 | Clock rate is identical at every zoom; time-lapse applies to all tiers | Planned |
+| F21 | One game clock for every tier (1 real s ≈ 1 game min); time-lapse 2x, 10x, 60x and skip-to-next-month; zoom never changes speed | core, app | F15 | Clock rate is identical at every zoom; time-lapse applies to all tiers | Prototype (#2): client clock, 1/2/10/60x, no skip-to-month; moves to sim-core with F15 |
 | F22 | Desired arrival times and departure-time choice (ACS departure-time distributions, late/early penalties) | core | F14, F21 | Jamming the 8:00 peak shifts some trips earlier (peak spreading visible) | Planned |
 | F23 | Capital cost model from the design doc's cost table; terrain (USGS 3DEP DEM) and land cover (NLCD) multipliers; right-of-way priced by block-group density | core, pipeline | F03 | Build preview shows cost; same line costs more through wetlands, water or dense block groups | Planned |
 | F24 | Construction time compressed 12x by default, realism setting 1x to 24x; bond terms and vehicle lifetimes compress by the same factor; capacity degraded on affected roads during construction | core | F21 | A 6-year light rail line builds in 6 game months at default | Planned |
@@ -169,8 +171,8 @@ Goal: the readable statewide map, a way in for new players, and a shippable buil
 
 | ID | Feature | Area | Depends on | Done when | Status |
 |---|---|---|---|---|---|
-| F41 | Tube-style schematic at State and Region zoom: octilinear heuristic layout (0/45/90°), even station spacing, line colors, interchange rings; recomputed on network change; player pins survive re-layout | app, core | F37 | Schematic readable for a 10-line statewide network. Fallback if not: smoothed geographic lines | Planned |
-| F42 | Morph between schematic and true geography across the Region-to-City zoom band | app | F41 | No line jumps or disappears while zooming | Planned |
+| F41 | Tube-style schematic at State and Region zoom: octilinear heuristic layout (0/45/90°), even station spacing, line colors, interchange rings; recomputed on network change; player pins survive re-layout | app, core | F37 | Schematic readable for a 10-line statewide network. Fallback if not: smoothed geographic lines | Prototype (#2): heuristic octilinear layout, no pins. See [SCHEMATIC.md](../app/docs/SCHEMATIC.md) |
+| F42 | Morph between schematic and true geography across the Region-to-City zoom band | app | F41 | No line jumps or disappears while zooming | Prototype (#2) |
 | F43 | Save and load: aggregate state plus seeds, never agents | core, app | F36 | Load restores identical results and the same agents on screen | Planned |
 | F44 | Starting map: real roads present, existing transit removed by default, toggle to keep it (from the pipeline's transit output) | core, app | F02, F43 | New game offers both starts | Planned |
 | F45 | Onboarding scenario with a goal (e.g. cut I-35 peak travel time) | app, core | F27, F41 | A new player completes it without help | Planned |

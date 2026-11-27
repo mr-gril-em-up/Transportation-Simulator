@@ -6,7 +6,9 @@ Last updated 2026-11-27.
 
 ## One-paragraph summary
 
-A Rust data pipeline turns public data (Census, LODES, OpenStreetMap) into a game package once per release. A headless Rust library, `sim-core`, loads that package and runs the travel model: aggregate zone-to-zone flows for the whole state, with individual agents only near the camera. A Tauri desktop app links `sim-core` as native code, talks to it through a message interface, and draws the map in its webview with MapLibre GL and deck.gl. There is no server.
+A Rust data pipeline turns public data (Census, LODES, OpenStreetMap) into a game package once per release. A headless Rust library, `sim-core`, loads that package and runs the travel model: aggregate zone-to-zone flows for the whole state, with individual agents only near the camera. A Tauri desktop app links `sim-core` as native code, talks to it through a message interface, and draws the map in its webview with MapLibre GL (deck.gl planned for the local tier in M2, see [app decision 2](../app/docs/DECISIONS.md)). There is no server.
+
+As built today (2026-11-27): the pipeline writes `scenario.json` for Travis County; sim-core has the input schema but no `Sim` API yet; the app runs against a TypeScript mock sim behind the same client interface it will use for sim-core.
 
 ## Components
 
@@ -22,7 +24,7 @@ flowchart LR
     subgraph app["Desktop app (Tauri)"]
         core["sim-core<br/>crates/sim-core<br/>headless Rust library"]
         shell["Tauri shell (Rust)<br/>app/"]
-        web["Webview UI<br/>MapLibre GL + deck.gl"]
+        web["Webview UI (TypeScript)<br/>MapLibre GL<br/>(deck.gl planned, M2)"]
         core <-->|"Rust API"| shell
         shell <-->|"commands / events"| web
     end
@@ -34,13 +36,11 @@ flowchart LR
 | Cargo workspace | `Cargo.toml` | Rust | Builds every crate under `crates/*` together | this page |
 | data-pipeline | `crates/data-pipeline` | Rust | Download, clip and join public data; write the game package | [README](../crates/data-pipeline/README.md) |
 | sim-core | `crates/sim-core` | Rust | Demand model, mode choice, assignment, clock, economy; owns the input schema | [README](../crates/sim-core/README.md) |
-| app | `app/` | Rust (Tauri) + TypeScript | Desktop shell, map rendering, player tools; no simulation logic | [README](../app/README.md) |
-
-Links to component READMEs resolve once each component's first PR merges.
+| app | `app/` | Rust (Tauri) + TypeScript | Desktop shell, map rendering, player tools; no simulation logic. `app/src-tauri` is its own Cargo workspace, outside `crates/*` | [README](../app/README.md), [app docs](../app/docs/ARCHITECTURE.md) |
 
 ### Dependency direction
 
-`app` depends on `sim-core`. `data-pipeline` depends on `sim-core` only for the input schema types. `sim-core` depends on neither. Keep it that way: the design doc requires the core to stay a headless library so a future client swap does not touch it, and keeps the zone hierarchy and population decoupled from transport code so the city-builder path stays open.
+`app` will depend on `sim-core` as a path dependency (stubbed, commented out in `app/src-tauri/Cargo.toml` until the `Sim` API exists). `data-pipeline` depends on `sim-core` only for the input schema types. `sim-core` depends on neither. Keep it that way: the design doc requires the core to stay a headless library so a future client swap does not touch it, and keeps the zone hierarchy and population decoupled from transport code so the city-builder path stays open.
 
 ## Data flow
 
@@ -74,7 +74,9 @@ Owned by sim-core. Source of truth: [`crates/sim-core/src/schema.rs`](../crates/
 
 ### sim-core to app: `Sim` API and Tauri messages
 
-Not built yet (roadmap F15). Planned surface from the sim-core README: build a `Sim` from a scenario, add/update/remove lines with sub-2-second re-evaluation, read results, advance the shared clock. The app calls it only through Tauri commands and receives results as events; the webview never holds simulation state.
+sim-core's side is not built yet (roadmap F15). Planned surface from the sim-core README: build a `Sim` from a scenario, add/update/remove lines with sub-2-second re-evaluation, read results, advance the shared clock.
+
+The app's side exists: [`app/src/sim/api.ts`](../app/src/sim/api.ts) defines `SimClient` (`upsertRoute`, `removeRoute`, each returning results for every route) with `RouteSpec` modes copied from sim-core's `TransitLine`. Today `createSim()` returns a TypeScript `MockSim`. The swap plan (Tauri state holding `sim_core::Sim`, `upsert_route`/`remove_route` commands, a `TauriSim` client) is in [app ARCHITECTURE, "Swapping in sim-core"](../app/docs/ARCHITECTURE.md#swapping-in-sim-core). The webview never holds simulation state. The game clock lives in the client until sim-core exposes clock advance (app decision 9).
 
 ### Pipeline output files
 
@@ -90,11 +92,11 @@ Traps for consumers:
 ## Repository layout
 
 ```
-Cargo.toml              workspace root (members = crates/*)
+Cargo.toml              Rust workspace root (members = crates/*)
 crates/
   sim-core/             simulation library, input schema
   data-pipeline/        tsim-data binary, public data -> game package
-app/                    Tauri desktop app (shell + webview UI)
+app/                    Tauri desktop app: TypeScript client (src/), Rust shell (src-tauri/, own workspace)
 docs/                   this hub: roadmap, architecture, decisions, docs standard
 .github/workflows/      CI (data-pipeline workflow can build a package in Actions)
 ```

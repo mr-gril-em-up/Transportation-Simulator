@@ -1,6 +1,6 @@
 # Working in this repo
 
-Transpo-Sim: a Texas transportation-network game. Rust workspace (`crates/*`) plus a Tauri app (`app/`).
+Transpo-Sim: a Texas transportation-network game. Rust workspace (`crates/*`) plus a Tauri app (`app/`, TypeScript client; `app/src-tauri` is its own Cargo workspace).
 
 Read before changing code:
 
@@ -15,4 +15,6 @@ Rules:
 - Do not add scope that is not in the roadmap or design doc without recording the decision. No hyperloop, no multiplayer.
 - sim-core stays headless: no app, UI or pipeline dependencies inside it.
 - `ScenarioInput` (`crates/sim-core/src/schema.rs`) is the contract between pipeline and core. Change it only with both READMEs and the fixture updated.
-- Run `cargo test --workspace` and `cargo doc --workspace --no-deps` before opening a PR.
+- Before opening a PR, run the checks for what you touched:
+  - Rust crates: `cargo test --workspace` and `cargo doc --workspace --no-deps`
+  - App: `cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo check)` (not covered by the root workspace)

@@ -23,9 +23,7 @@ Start here. Every doc in the repo is listed below. New docs get a row in the sam
 |---|---|---|
 | sim-core | [crates/sim-core/README.md](../crates/sim-core/README.md) | Travel model library; `ScenarioInput` input schema (contract with the pipeline); `Sim` API |
 | data-pipeline | [crates/data-pipeline/README.md](../crates/data-pipeline/README.md) | `tsim-data`: Census, LODES and OSM to `scenario.json` plus detail files. Deeper docs: [ARCHITECTURE](../crates/data-pipeline/docs/ARCHITECTURE.md), [OUTPUT_FORMAT](../crates/data-pipeline/docs/OUTPUT_FORMAT.md), [DATA_SOURCES](../crates/data-pipeline/docs/DATA_SOURCES.md), [ASSUMPTIONS](../crates/data-pipeline/docs/ASSUMPTIONS.md), [TESTING](../crates/data-pipeline/docs/TESTING.md) |
-| app | [app/README.md](../app/README.md) | Tauri shell and map UI |
-
-Component links resolve once each component's first PR is merged to `main`.
+| app | [app/README.md](../app/README.md) | Tauri shell and MapLibre map client, line drawing, tube schematic, clock; mock sim until sim-core's API lands. Deeper docs: [ARCHITECTURE](../app/docs/ARCHITECTURE.md), [DECISIONS](../app/docs/DECISIONS.md), [MOCK-SIM](../app/docs/MOCK-SIM.md), [SCHEMATIC](../app/docs/SCHEMATIC.md), [ROADMAP-APP](../app/docs/ROADMAP-APP.md) |
 
 ## For agent developers
 

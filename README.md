@@ -2,7 +2,7 @@
 
 A transportation-network game on the real map of Texas. Around 31 million synthetic residents, each with a real home block, job block and daily schedule, built from public Census and OpenStreetMap data. The player is the state transportation authority: build roads, transit and pricing that move people faster and cheaper than the car-only baseline without going broke. Zoom runs from statewide desire lines down to a single bus stop, and the numbers stay consistent the whole way.
 
-Single player desktop game. Rust simulation core, Tauri app shell, map drawn with MapLibre GL and deck.gl. No server.
+Single player desktop game. Rust simulation core, Tauri app shell, map drawn with MapLibre GL (deck.gl planned for the local tier, M2). No server.
 
 ## Status
 
@@ -22,17 +22,20 @@ Pre-alpha, milestone **M0** (data spike on Travis County). Target: Texas MVP as 
 |---|---|---|
 | `crates/sim-core` | Headless Rust library: demand, mode choice, assignment, clock, economy. Owns the input schema | [README](crates/sim-core/README.md) |
 | `crates/data-pipeline` | `tsim-data` binary: public data to game package | [README](crates/data-pipeline/README.md) |
-| `app/` | Tauri desktop app and map UI | [README](app/README.md) |
+| `app/` | Tauri desktop app and map UI (Vite + TypeScript). Its Rust shell `app/src-tauri` is its own Cargo workspace | [README](app/README.md) |
 | `docs/` | Roadmap, architecture, decisions, docs standard | [index](docs/README.md) |
 
 ## Build and test
 
-Requires a stable Rust toolchain (`rustup`). From the repo root:
+Requires a stable Rust toolchain (`rustup`) and Node 20+. From the repo root:
 
 ```sh
-cargo build --workspace
+cargo build --workspace                      # sim-core, data-pipeline
 cargo test --workspace
+cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo check)
 ```
+
+`cargo test --workspace` does not cover the app: `app/src-tauri` is a separate Cargo workspace. `npm run dev` in `app/` runs the map client in a plain browser against a mock sim, no Rust needed.
 
 Component-specific steps (data downloads, running the pipeline, launching the app) are in each component's README under **Run** and **Test**.
 
