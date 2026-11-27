@@ -9,13 +9,11 @@ import { layoutSchematic, morph } from "./schematic";
 import { km, routePath } from "./geo";
 import { money, escapeHtml } from "./format";
 import { inspectorHtml } from "./inspector";
-import { isRegional, type PendingRoute, type Budget, type Statement, type ClockState, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
+import { isRegional, defaultFare, type PendingRoute, type Budget, type Statement, type ClockState, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
 import { createSim } from "./sim";
 import { serialQueue } from "./sim/queue";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-// CapMetro fares (sim-core figures fare_capmetro_*): MetroRail $3.50, local bus $1.25.
-const DEFAULT_FARE: Partial<Record<Mode, number>> = { commuter_rail: 3.5 };
 const COLORS = ["#dc241f", "#0098d4", "#00782a", "#9b0056", "#f3a9bb", "#ee7c0e", "#6950a1", "#b36305"];
 
 const sim = createSim();
@@ -127,7 +125,7 @@ function renderStatements(b: Budget): string {
 }
 
 function makeRoute(id: string, mode: Mode, pts: LngLat[], stopNames?: string[], name?: string): RouteSpec {
-  const n = routes.filter((r) => isRegional(r.mode) === isRegional(mode)).length + 1;
+  const n = routes.filter((r) => !existing.has(r.id) && isRegional(r.mode) === isRegional(mode)).length + 1;
   return {
     id,
     name: name ?? (isRegional(mode) ? `Rail ${n}` : `Bus ${n}`),
@@ -135,7 +133,7 @@ function makeRoute(id: string, mode: Mode, pts: LngLat[], stopNames?: string[], 
     color: COLORS[(nextId - 2) % COLORS.length],
     stops: pts.map((p, i) => ({ id: `${id}-s${i}`, name: stopNames?.[i] ?? `Stop ${i + 1}`, lngLat: p })),
     headwayMin: isRegional(mode) ? 30 : 15,
-    fare: DEFAULT_FARE[mode] ?? 1.25,
+    fare: defaultFare(mode),
   };
 }
 
@@ -235,50 +233,62 @@ function stopFeature(
 /** Routes whose inspector is open (survives the panel's re-renders). */
 const inspecting = new Set<string>();
 
+/** Ids of lines present at start (today's network, F44); grouped apart in the panel. */
+const existing = new Set<string>();
+let existingOpen = false;
+const EXISTING_COLOR = { rail: "#dc241f", bus: "#8a8a8a" };
+
 function renderPanel(): void {
   const list = $("route-list");
   if (!routes.length) {
     list.innerHTML = "<em>No lines yet. Draw one.</em>";
     return;
   }
-  list.innerHTML = routes
-    .map((r) => {
-      const res = results.get(r.id);
-      const riders = res?.dailyRiders ?? 0;
-      const econ =
-        res?.operatingCostPerDay !== undefined
-          ? `<div class="econ">$${Math.round(res.operatingCostPerDay).toLocaleString()}/day to run · farebox ${Math.round((res.fareboxRecovery ?? 0) * 100)}%</div>`
-          : "";
-      // The preset's 32 min is not a menu step; keep the current value selectable.
-      const opts = [...new Set([5, 10, 15, 20, 30, 60, r.headwayMin])]
-        .sort((a, b) => a - b)
-        .map((h) => `<option value="${h}" ${h === r.headwayMin ? "selected" : ""}>every ${h} min</option>`)
-        .join("");
-      const offpeak =
-        r.offpeakHeadwayMin !== undefined ? `<div class="econ">Peak headway below; every ${r.offpeakHeadwayMin} min off-peak</div>` : "";
-      const p = pending.get(r.id);
-      const build = p
-        ? `<div class="econ building">${p.replacesOpenLine ? "Rebuild opens" : "Under construction, opens"} ${openingLabel(p.opensDay)}${p.replacesOpenLine ? "; current version keeps running" : ""}</div>`
-        : "";
-      const editing = editor.route?.id === r.id;
-      // During a rebuild sim-core's per-stop figures follow the running version's stops, not the drawn ones.
-      const canInspect = res?.detail !== undefined && !pending.has(r.id) && riders > 0;
-      const inspect =
-        canInspect && inspecting.has(r.id)
-          ? inspectorHtml(
-              r.stops.map((s) => ({ name: s.name, boardings: res.boardingsByStop[s.id] ?? 0 })),
-              res.detail!,
-            )
-          : "";
-      return `<div class="route${editing ? " editing" : ""}" data-id="${r.id}">
-        <span class="swatch" style="background:${r.color}"></span>
-        <b class="name" data-act="rename" title="Double-click to rename">${escapeHtml(r.name)}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day${econ}${build}${offpeak}
-        <div class="row"><select data-act="headway">${opts}</select>
-        <button data-act="edit">${editing ? "Done" : "Edit stops"}</button>
-        <button data-act="del" title="Delete line">✕</button></div>
-        ${canInspect ? `<div class="toggle" data-act="inspect" title="Boardings, loads and capacity">${inspecting.has(r.id) ? "▼" : "▶"} Inspect line</div>` : ""}${inspect}</div>`;
-    })
+  const own = routes.filter((r) => !existing.has(r.id));
+  const start = routes.filter((r) => existing.has(r.id));
+  const riders = start.reduce((t, r) => t + (results.get(r.id)?.dailyRiders ?? 0), 0);
+  list.innerHTML =
+    (own.length ? own.map(routeRow).join("") : "<em>No lines of your own yet. Draw one.</em>") +
+    (start.length
+      ? `<details id="existing" ${existingOpen ? "open" : ""}><summary>Today's network: ${start.length} lines, ${riders.toLocaleString()} riders/day</summary>${start.map(routeRow).join("")}</details>`
+      : "");
+}
+
+function routeRow(r: RouteSpec): string {
+  const res = results.get(r.id);
+  const riders = res?.dailyRiders ?? 0;
+  const econ =
+    res?.operatingCostPerDay !== undefined
+      ? `<div class="econ">$${Math.round(res.operatingCostPerDay).toLocaleString()}/day to run · farebox ${Math.round((res.fareboxRecovery ?? 0) * 100)}%</div>`
+      : "";
+  // The preset's 32 min is not a menu step; keep the current value selectable.
+  const opts = [...new Set([5, 10, 15, 20, 30, 60, r.headwayMin])]
+    .sort((a, b) => a - b)
+    .map((h) => `<option value="${h}" ${h === r.headwayMin ? "selected" : ""}>every ${h} min</option>`)
     .join("");
+  const offpeak =
+    r.offpeakHeadwayMin !== undefined ? `<div class="econ">Peak headway below; every ${r.offpeakHeadwayMin} min off-peak</div>` : "";
+  const p = pending.get(r.id);
+  const build = p
+    ? `<div class="econ building">${p.replacesOpenLine ? "Rebuild opens" : "Under construction, opens"} ${openingLabel(p.opensDay)}${p.replacesOpenLine ? "; current version keeps running" : ""}</div>`
+    : "";
+  const editing = editor.route?.id === r.id;
+  // During a rebuild sim-core's per-stop figures follow the running version's stops, not the drawn ones.
+  const canInspect = res?.detail !== undefined && !pending.has(r.id) && riders > 0;
+  const inspect =
+    canInspect && inspecting.has(r.id)
+      ? inspectorHtml(
+          r.stops.map((s) => ({ name: s.name, boardings: res.boardingsByStop[s.id] ?? 0 })),
+          res.detail!,
+        )
+      : "";
+  return `<div class="route${editing ? " editing" : ""}" data-id="${r.id}">
+    <span class="swatch" style="background:${r.color}"></span>
+    <b class="name" data-act="rename" title="Double-click to rename">${escapeHtml(r.name)}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day${econ}${build}${offpeak}
+    <div class="row"><select data-act="headway">${opts}</select>
+    <button data-act="edit">${editing ? "Done" : "Edit stops"}</button>
+    <button data-act="del" title="Delete line">✕</button></div>
+    ${canInspect ? `<div class="toggle" data-act="inspect" title="Boardings, loads and capacity">${inspecting.has(r.id) ? "▼" : "▶"} Inspect line</div>` : ""}${inspect}</div>`;
 }
 
 // Startup: sim-core takes a few seconds to build (longer on the real Travis road graph).
@@ -289,6 +299,18 @@ sim.ready().then(
     clearInterval(showLoading);
     $("sim-ms").textContent = `${sim.label} · ready`;
     renderBudget(await sim.budget());
+    // Today's network when the shell started with it (off by default, APP-4).
+    const start = await sim.existingRoutes();
+    if (start.length) {
+      for (const r of start) {
+        r.color = isRegional(r.mode) ? EXISTING_COLOR.rail : EXISTING_COLOR.bus;
+        existing.add(r.id);
+        routes.push(r);
+      }
+      // The Red Line is already running; a second copy would compete with it.
+      $("btn-demo").hidden = start.some((r) => r.mode === "commuter_rail");
+      await apply(() => sim.results());
+    }
     // Hand the clock to the sim, carrying over pause and speed set while it loaded.
     simReady = true;
     syncClock(await sim.setClock({ paused: clock.paused, timelapse: clock.speed }));
@@ -419,6 +441,9 @@ $("btn-demo").onclick = () =>
 
 // The budget panel re-renders every day; remember whether the statements are open.
 // "toggle" does not bubble, so listen in the capture phase.
+$("route-list").addEventListener("toggle", (e) => {
+  if ((e.target as HTMLElement).id === "existing") existingOpen = (e.target as HTMLDetailsElement).open;
+}, true);
 $("budget").addEventListener("toggle", (e) => {
   if ((e.target as HTMLElement).id === "statements") statementsOpen = (e.target as HTMLDetailsElement).open;
 }, true);
@@ -460,6 +485,7 @@ $("route-list").addEventListener("click", (e) => {
   }
   if (id && el.dataset.act === "del") {
     inspecting.delete(id);
+    existing.delete(id);
     if (editor.route?.id === id) editor.stop();
     routes.splice(routes.findIndex((x) => x.id === id), 1);
     void apply(() => sim.removeRoute(id));

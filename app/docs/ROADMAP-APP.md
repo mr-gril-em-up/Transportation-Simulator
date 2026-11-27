@@ -31,6 +31,9 @@ doc.
 - Line inspector: boardings by stop, segment loads both ways, peak load vs capacity (F17)
 - Bus lines drawn along the streets from sim-core's `segment_shapes`, draft included (SIM-8, A29)
 - Bond menu capped at borrowing capacity; financing warning in the build preview (SIM-9, A30)
+- Starting network setting: `TRANSPO_EXISTING_NETWORK=1` keeps the scenario's existing lines,
+  grouped under "Today's network" (F44, APP-4, A31); off by default until the budget balances.
+  Next: an in-app new-game choice instead of an environment variable
 - Bonds (issue from the budget panel), debt and payments, distress count and
   bankruptcy banner (F26)
 

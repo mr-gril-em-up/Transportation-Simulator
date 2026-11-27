@@ -107,6 +107,7 @@ interface SimClient {
   previewRoute(route: RouteSpec): Promise<RoutePreview>; // preview_route: nothing charged
   budget(): Promise<Budget>;                             // ledger
   issueBond(principal: number): Promise<Budget>;         // issue_bond
+  existingRoutes(): Promise<RouteSpec[]>;                 // existing_routes
 }
 interface RouteSpec { id; name; mode: Mode; color; stops: Stop[]; headwayMin; fare }
 interface RouteResult { routeId; dailyRiders; boardingsByStop: Record<stopId, number>;
@@ -137,6 +138,19 @@ And back (`fromLineResult`): `daily_boardings` becomes `dailyRiders`,
 `LineResult` fields (segment loads, peak load against capacity, vehicles
 required) already cross the IPC boundary and are ignored until the UI renders
 them.
+
+### Lines present at start (F44)
+
+sim-core treats `ScenarioInput.lines` as existing service: LineIds 0..n in
+input order, open on day 0, capital already paid, stops in the tax base.
+`load_scenario` clears them unless `network::wanted()` (the
+`TRANSPO_EXISTING_NETWORK` setting) says to keep them. `start_with_params`
+records the kept lines before `Sim::new` and maps client ids `e0..en` to
+LineIds `0..n`, so every later command treats them like client routes;
+`existing_routes` hands them to the client. `TauriSim.existingRoutes`
+converts them (`fromExisting`) and registers them for result mapping;
+`main.ts` colors them, groups them under a collapsed `<details id="existing">`
+in the panel and hides the Red Line demo when the network already has it.
 
 ### Street paths for bus lines (SIM-8)
 

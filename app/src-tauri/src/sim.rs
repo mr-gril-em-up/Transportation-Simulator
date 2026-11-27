@@ -41,6 +41,16 @@ struct Inner {
     sim: Option<Sim>,
     error: Option<String>,
     ids: HashMap<String, LineId>,
+    /// Lines present at start (today's network, `network.rs`) with their client ids.
+    existing: Vec<ExistingOut>,
+}
+
+/// A line present at start, for the client to show and edit like its own.
+#[derive(Serialize, Debug, Clone)]
+pub struct ExistingOut {
+    /// Client route id the shell assigned (`e0`, `e1`, ...).
+    route_id: String,
+    line: TransitLine,
 }
 
 /// The one `Sim` of the running game, shared by all commands (Tauri managed state).
@@ -72,12 +82,35 @@ impl SimState {
         let s = state.clone();
         std::thread::spawn(move || {
             let t0 = std::time::Instant::now();
-            let built = load().and_then(|input| Sim::new(input, params).map_err(|e| e.to_string()));
+            // Lines present at start become sim-core LineIds 0..n in input order.
+            let mut existing = Vec::new();
+            let built = load().and_then(|input| {
+                existing = input
+                    .lines
+                    .iter()
+                    .enumerate()
+                    .map(|(i, l)| ExistingOut {
+                        route_id: format!("e{i}"),
+                        line: l.clone(),
+                    })
+                    .collect();
+                Sim::new(input, params).map_err(|e| e.to_string())
+            });
             let (lock, cv) = &*s.0;
             let mut inner = lock.lock().unwrap();
             match built {
                 Ok(sim) => {
-                    eprintln!("[sim] ready in {} ms", t0.elapsed().as_millis());
+                    eprintln!(
+                        "[sim] ready in {} ms ({} lines at start)",
+                        t0.elapsed().as_millis(),
+                        existing.len()
+                    );
+                    inner.ids = existing
+                        .iter()
+                        .enumerate()
+                        .map(|(i, e)| (e.route_id.clone(), i as LineId))
+                        .collect();
+                    inner.existing = existing;
                     inner.sim = Some(sim);
                 }
                 Err(e) => {
@@ -387,10 +420,31 @@ fn load_scenario() -> Result<ScenarioInput, String> {
         Some(path) => {
             let json =
                 std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            ScenarioInput::from_json(&json).map_err(|e| e.to_string())
+            let mut input = ScenarioInput::from_json(&json).map_err(|e| e.to_string())?;
+            // Lines present at start (today's network, written by the pipeline) only when asked for.
+            if !crate::network::wanted() {
+                input.lines.clear();
+            }
+            Ok(input)
         }
         None => Ok(synth::generate(&synth::SynthConfig::default())),
     }
+}
+
+impl SimState {
+    /// Lines present at start, with their client ids (empty on a blank map).
+    pub fn existing(&self) -> Result<Vec<ExistingOut>, String> {
+        self.with(|inner| Ok(inner.existing.clone()))
+    }
+}
+
+/// Lines present at start (today's network), for the client to add to its routes.
+#[tauri::command]
+pub async fn existing_routes(
+    state: tauri::State<'_, SimState>,
+) -> Result<Vec<ExistingOut>, String> {
+    let s = state.inner().clone();
+    blocking(move || s.existing()).await
 }
 
 /// One line's results, tagged with the client's route id.
@@ -712,6 +766,27 @@ mod tests {
             l.ledger.distressed_months
         );
         assert!(state.issue_bond(1e6).unwrap_err().contains("bankrupt"));
+    }
+
+    #[test]
+    fn lines_present_at_start_get_client_ids_and_results() {
+        let state = SimState::start_with(|| {
+            let mut input = synth::generate(&synth::SynthConfig::small());
+            input.lines.push(line(
+                r#"{"name":"Existing","mode":"bus","headway_min":15,
+                "stops":[{"lon":-97.76,"lat":30.27},{"lon":-97.72,"lat":30.27}]}"#,
+            ));
+            Ok(input)
+        });
+        let ex = state.existing().unwrap();
+        assert_eq!(ex.len(), 1);
+        assert_eq!(ex[0].route_id, "e0");
+        let res = state.results().unwrap();
+        assert_eq!(res[0].route_id, "e0");
+        // Already paid for: building it charged nothing.
+        assert_eq!(state.ledger().unwrap().ledger.cash, 0.0);
+        // The client can edit and remove it like its own lines.
+        assert!(state.remove("e0").unwrap().is_empty());
     }
 
     #[test]

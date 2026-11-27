@@ -2,7 +2,7 @@
 // app/src-tauri/src/sim.rs. Converts the app's RouteSpec to sim-core's
 // TransitLine and LineResult back to RouteResult.
 import { invoke } from "@tauri-apps/api/core";
-import { isRegional, STATEMENT_MONTHS, type Budget, type Statement, type PendingRoute, type ClockState, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
+import { isRegional, defaultFare, STATEMENT_MONTHS, type Budget, type Statement, type PendingRoute, type ClockState, type DesireLine, type RoutePreview, type LngLat, type Mode, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 /** sim-core TransitLine (crates/sim-core/src/schema.rs). Omitted fields take mode defaults. */
 interface TransitLine {
@@ -11,7 +11,22 @@ interface TransitLine {
   stops: { lon: number; lat: number; name: string; park_ride: boolean }[];
   headway_min: number;
   offpeak_headway_min?: number;
-  fare: number;
+  fare: number | null; // null (sim-core default) on lines present at start
+}
+
+/** A line present at start (sim.rs `ExistingOut`) as a client route; `color` is the caller's. */
+export function fromExisting(e: { route_id: string; line: TransitLine }): RouteSpec {
+  const mode = e.line.mode as Mode;
+  return {
+    id: e.route_id,
+    name: e.line.name,
+    mode,
+    color: "",
+    stops: e.line.stops.map((s, i) => ({ id: `${e.route_id}-s${i}`, name: s.name || `Stop ${i + 1}`, lngLat: [s.lon, s.lat] })),
+    headwayMin: e.line.headway_min,
+    ...(e.line.offpeak_headway_min != null && { offpeakHeadwayMin: e.line.offpeak_headway_min }),
+    fare: e.line.fare ?? defaultFare(mode),
+  };
 }
 
 /** sim-core LineResult (fields used here) plus the client's route id. */
@@ -206,6 +221,12 @@ export class TauriSim implements SimClient {
 
   async previewRoute(route: RouteSpec): Promise<RoutePreview> {
     return fromPreview(await invoke<LinePreview>("preview_route", { line: toTransitLine(route) }));
+  }
+
+  async existingRoutes(): Promise<RouteSpec[]> {
+    const out = (await invoke<{ route_id: string; line: TransitLine }[]>("existing_routes")).map(fromExisting);
+    for (const r of out) this.routes.set(r.id, r); // so results map back to their stops
+    return out;
   }
 
   async pendingRoutes(): Promise<PendingRoute[]> {

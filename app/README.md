@@ -14,6 +14,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
 ![Editing a line: stops ringed in black can be dragged, added or deleted](docs/img/stop-editing.png)
 ![Budget after a bond: debt, payments and the distress count toward bankruptcy](docs/img/bonds.png)
+![Today's CapMetro network loaded at start, grouped in the panel](docs/img/existing-network.png)
 ![A bus line drawn along the streets, with borrowing capacity in the budget](docs/img/road-snapping.png)
 ![Line inspector: boardings by stop, segment loads both ways, peak load against capacity](docs/img/inspector.png)
 ![Monthly statements: two closed months of fares, costs, tax, debt and capital](docs/img/statements.png)
@@ -53,6 +54,20 @@ npm run dev         # browser only at http://localhost:1420, mock sim, no Rust n
 3. sim-core's synthetic Travis-sized region.
 
 The panel header names the source: `sim-core · Travis data` or `sim-core · synthetic region`.
+
+**Starting network** (F44, decision APP-4): a scenario may carry lines present at start
+(`ScenarioInput.lines`, today's transit network, which the data pipeline is adding to
+`scenario.json`). The shell keeps them only with `TRANSPO_EXISTING_NETWORK=1`
+(`npm run tauri dev` with that variable set); otherwise it clears them and the game starts on a
+blank map. Off by default for now: with placeholder bus headways the loaded network costs about
+$670M a year to run against about $233M of tax and fares, so it also heads to bankruptcy until
+sim-core fixes the cost side. The default starting state is with Collins. When on, the lines
+are open from day 1 and already paid for. They appear grouped under **Today's network** in
+the panel (collapsed: line count and total riders), the Red Line in red and buses in gray, and
+can be edited or deleted like your own. **Add Red Line demo** is hidden because the Red Line
+is already running. Measured with CapMetro's 70 routes from `transit.json` loaded this way:
+65,074 riders/day on the network (NTD weekday about 65-70k), the Red Line at 1,609 (APTA about
+1,500), borrowing capacity $1.49B, startup about 19 s in `tauri dev`.
 
 On startup, sim-core builds the scenario on a background thread. Measured in `tauri dev` (sim-core
 optimized even in dev builds, decision A16): about 11 s on the real Travis build (766 zones,
@@ -179,6 +194,7 @@ interface SimClient {
   previewRoute(route: RouteSpec): Promise<RoutePreview>; // cost + forecast, nothing charged
   budget(): Promise<Budget>;                             // cash, month, debt, distress, bankruptcy
   issueBond(principal: number): Promise<Budget>;         // borrow; rejects once bankrupt
+  existingRoutes(): Promise<RouteSpec[]>;                 // lines present at start (F44)
   results(): Promise<RouteResult[]>;                     // re-read after the daily re-run
   clock(): Promise<ClockState>;                          // { gameSeconds, timelapse, paused, day }
   setClock(c: { paused?; timelapse? }): Promise<ClockState>;
@@ -224,6 +240,7 @@ interface SimClient {
 | `preview_route` | `line: TransitLine` | sim-core `LinePreview` plus `opens_day`: `{ line: LineResult, capital_cost, federal_grant, capital_per_daily_boarding, opens_day }`. Runs under the Sim lock (sim-core adds and removes the line while it evaluates, 40 to 80 ms) |
 | `ledger` | none | sim-core `Ledger` (`cash`, `current`, `history`, `served_population`, `bonds`, `distressed_months`, `bankrupt_month`) plus `debt`, `debt_service_per_month`, `bankruptcy_months`, `bond_rate`, `bond_term_months` |
 | `issue_bond` | `principal: number` | Same as `ledger`, after borrowing. Errors on a non-positive amount or once bankrupt |
+| `existing_routes` | none | Lines present at start: `{ route_id: "e0" | "e1" | ..., line: TransitLine }[]`; empty on a blank map (the default) |
 | `clock` | none | `{ game_seconds, timelapse, paused, day }` (sim-core `Clock` plus whole days) |
 | `set_clock` | `paused?: boolean`, `timelapse?: number` | Same as `clock`; omitted fields unchanged, non-positive time-lapse ignored |
 | `skip_to_next_month` | none | Same as `clock`, after re-running the day and settling the month |

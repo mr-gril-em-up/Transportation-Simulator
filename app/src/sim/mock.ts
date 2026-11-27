@@ -175,6 +175,11 @@ export class MockSim implements SimClient {
   }
 
   /** The mock builds instantly: nothing is ever under construction. */
+  /** The mock always starts on a blank map. */
+  async existingRoutes(): Promise<RouteSpec[]> {
+    return [];
+  }
+
   async pendingRoutes(): Promise<PendingRoute[]> {
     return [];
   }
