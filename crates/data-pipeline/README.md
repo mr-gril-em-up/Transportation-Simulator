@@ -116,7 +116,7 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 - No GTFS schedules for the Red Line replica: F19.
 - Out-of-state commuters (LODES `od_aux`) not loaded.
 - JSON output will be large statewide; binary package is F33.
-- sim-core's Travis baseline is 6.8 s on the simplified graph, above the 2 s line-edit target; a road class cut would change results and needs a decision.
+- sim-core's Travis model load (baseline) is about 6 s on the simplified graph. Line edits (about 25 ms) and daily re-runs (under 2 s) already meet their targets; residential streets stay in for M1 (DATA-3).
 - Reference figures still missing: primary-source value of travel time, express-lane tolls, Texas road costs, 2024-USD normalization ([docs/REFERENCE_FIGURES.md](docs/REFERENCE_FIGURES.md)).
 
 ## Status
