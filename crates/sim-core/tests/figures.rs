@@ -50,6 +50,7 @@ fn sourced_defaults_match_figures_csv() {
     );
     check(&f, "bond_rate", p.bond_rate);
     check(&f, "bond_term_years", p.bond_term_years);
+    check(&f, "bond_coverage_min", p.bond_coverage_min);
 
     let bus = mode_defaults(Mode::Bus);
     let lrt = mode_defaults(Mode::LightRail);

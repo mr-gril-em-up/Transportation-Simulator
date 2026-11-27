@@ -559,11 +559,18 @@ impl Sim {
         &self.ledger
     }
 
-    /// Annual local tax the authority could raise if every resident in the
-    /// scenario were in its taxing area: the revenue pledged to its bonds.
+    /// Annual local tax the authority will raise once every line now open or
+    /// under construction is running: the tax area of all their stops
+    /// (SIM-9). This is the revenue pledged to its bonds, so building lines
+    /// raises what it may borrow.
     pub fn tax_capacity(&self) -> f64 {
-        let pop: f64 = self.input.zones.iter().map(|z| z.population).sum();
-        pop * self.params.taxable_sales_per_capita * self.params.local_sales_tax_rate
+        let mut stops: Vec<[f64; 2]> = self.net.platforms.iter().map(|s| [s.lon, s.lat]).collect();
+        for (l, _) in self.pending.iter().flatten() {
+            stops.extend(l.stops.iter().map(|s| [s.lon, s.lat]));
+        }
+        self.taxed_population(&stops)
+            * self.params.taxable_sales_per_capita
+            * self.params.local_sales_tax_rate
     }
 
     /// Most principal a new bond may borrow now under the additional-bonds
@@ -675,15 +682,28 @@ impl Sim {
         self.results.pending_lines = self.pending_lines();
     }
 
-    /// Residents within walking range of a stop (population x stop coverage
-    /// share per zone): the transit tax base. Weighting by coverage stops a
-    /// stop that clips a zone's edge from taxing the whole zone.
+    /// The transit tax base: residents of every zone whose centre lies within
+    /// `tax_area_km` of an open stop (SIM-9). A Texas MTA taxes whole member
+    /// cities, not just the blocks beside a stop; this buffer stands in for
+    /// city membership, which grows as service reaches an area.
     fn served_population(&self) -> f64 {
+        let stops: Vec<[f64; 2]> = self.net.platforms.iter().map(|s| [s.lon, s.lat]).collect();
+        self.taxed_population(&stops)
+    }
+
+    /// Residents of zones whose centre is within `tax_area_km` of any of `stops`.
+    fn taxed_population(&self, stops: &[[f64; 2]]) -> f64 {
+        let r = self.params.tax_area_km;
         self.input
             .zones
             .iter()
-            .zip(&self.net.coverage)
-            .map(|(z, c)| z.population * c)
+            .zip(&self.zpts)
+            .filter(|(_, zp)| {
+                stops
+                    .iter()
+                    .any(|s| dist_km(zp.lon, zp.lat, s[0], s[1]) <= r)
+            })
+            .map(|(z, _)| z.population)
             .sum()
     }
 

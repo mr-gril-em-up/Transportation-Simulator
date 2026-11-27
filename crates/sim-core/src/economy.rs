@@ -54,6 +54,9 @@ pub struct MonthStatement {
     pub debt_service: f64,
     /// Interest part of `debt_service`.
     pub interest: f64,
+    /// Interest added to bond balances instead of paid, for bonds still in
+    /// their construction period (capitalized interest, SIM-9). No cash moves.
+    pub capitalized_interest: f64,
     /// Change in cash: revenue + assistance + tax + grants + bond proceeds
     /// - operating cost - capital - debt service.
     pub net: f64,
@@ -84,9 +87,9 @@ pub struct Bond {
     pub balance: f64,
     /// Payments still to make.
     pub months_left: u32,
-    /// First month whose payment counts in the coverage test. Months before
-    /// it are the construction period the bond funds (capitalized interest,
-    /// SIM-7); the cash test applies throughout.
+    /// First month with a payment. Before it, during the construction period
+    /// of the lines being built at issue, interest is added to the balance
+    /// instead of paid (capitalized interest, SIM-7, SIM-9).
     pub coverage_from_month: u64,
 }
 
@@ -111,6 +114,15 @@ impl Bond {
             months_left: n,
             coverage_from_month: issued_month + 1,
         }
+    }
+
+    /// Construction-period month: add the month's interest to the balance and
+    /// re-level the payment over the payments still to come. Returns the interest.
+    fn capitalize(&mut self) -> f64 {
+        let interest = self.balance * self.annual_rate / 12.0;
+        self.balance += interest;
+        self.payment = Bond::new(self.balance, self.annual_rate, self.months_left, 0).payment;
+        interest
     }
 
     /// Make one payment. Returns (payment, interest part).
@@ -214,13 +226,13 @@ impl Ledger {
         m.local_tax =
             served_population * p.taxable_sales_per_capita * p.local_sales_tax_rate / 12.0;
         let operating = m.operating_surplus();
-        let mut covered_service = 0.0;
         for b in self.bonds.iter_mut().filter(|b| b.issued_month < m.month) {
-            let (payment, interest) = b.pay();
-            m.debt_service += payment;
-            m.interest += interest;
-            if m.month >= b.coverage_from_month {
-                covered_service += payment;
+            if m.month < b.coverage_from_month {
+                m.capitalized_interest += b.capitalize();
+            } else {
+                let (payment, interest) = b.pay();
+                m.debt_service += payment;
+                m.interest += interest;
             }
         }
         self.bonds.retain(|b| b.months_left > 0);
@@ -229,7 +241,7 @@ impl Ledger {
             - m.capital_spent
             - m.debt_service;
         self.served_population = served_population;
-        let coverage_fails = covered_service > operating;
+        let coverage_fails = m.debt_service > operating;
         if coverage_fails || self.cash < 0.0 {
             self.distressed_months += 1;
         } else {
@@ -335,23 +347,24 @@ mod tests {
     }
 
     #[test]
-    fn grace_months_skip_the_coverage_test_not_the_cash_test() {
+    fn construction_period_capitalizes_interest_then_pays() {
         let p = Params::default();
         let mut l = Ledger::new(0.0, 0);
-        // Issued in month 0 with 2 grace months: payments in months 1 and 2
-        // are outside the coverage test, month 3 is inside.
-        assert_eq!(l.issue_bond(1e6, 0.06, 12, 2).coverage_from_month, 3);
+        // Issued in month 0 with 2 grace months: months 1 and 2 capitalize,
+        // payments start in month 3.
+        let first = l.issue_bond(1e6, 0.06, 12, 2).payment;
+        assert_eq!(l.bonds[0].coverage_from_month, 3);
+        for _ in 0..3 {
+            l.settle(&[], 0.0, &p);
+        }
+        assert_eq!(l.history[1].debt_service, 0.0);
+        assert!((l.history[1].capitalized_interest - 5_000.0).abs() < 1e-6);
+        assert_eq!(l.cash, 1e6, "no cash moves during construction");
+        assert_eq!(l.distressed_months, 0);
+        let b = l.bonds[0].clone();
+        assert!(b.balance > 1e6 && b.payment > first && b.months_left == 12);
         l.settle(&[], 0.0, &p);
-        l.settle(&[], 0.0, &p);
-        l.settle(&[], 0.0, &p);
-        assert!(l.history[2].debt_service > 0.0);
-        assert_eq!(l.distressed_months, 0, "grace: coverage not tested");
-        l.settle(&[], 0.0, &p);
-        assert_eq!(l.distressed_months, 1, "after grace: coverage fails");
-        let mut l = Ledger::new(-1.0, 0);
-        l.issue_bond(1.0, 0.06, 12, 6);
-        l.cash = -1.0;
-        l.settle(&[], 0.0, &p);
-        assert_eq!(l.distressed_months, 1, "negative cash counts in grace");
+        assert!((l.history[3].debt_service - b.payment).abs() < 1e-6);
+        assert_eq!(l.distressed_months, 1, "paying with no surplus: distressed");
     }
 }

@@ -411,6 +411,12 @@ fn twelve_distressed_months_is_bankruptcy() {
 #[test]
 fn borrowing_is_capped_by_tax_capacity() {
     let mut s = sim();
+    assert_eq!(s.bond_capacity(), 0.0, "no lines, no tax area, no pledge");
+    // A line under construction already counts toward the pledged tax area.
+    let mut b = building_sim();
+    b.add_line(rail()).unwrap();
+    assert!(b.bond_capacity() > 0.0 && b.ledger().served_population == 0.0);
+    s.add_line(rail()).unwrap();
     let cap = s.bond_capacity();
     assert!(cap > 0.0 && s.tax_capacity() > 0.0);
     assert!(s.issue_bond(cap * 1.01).is_err(), "above capacity");
