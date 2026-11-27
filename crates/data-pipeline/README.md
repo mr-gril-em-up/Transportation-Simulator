@@ -75,6 +75,7 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 - **Block-group zones from Centers of Population** (D13): one small CSV gives population and a population-weighted centroid, with no geometry library.
 - **Routing simplification** (DATA-2): `scenario.json` drops road fragments, prunes dead ends without a zone and merges identical pass-through links. Paths between zones are unchanged; on Travis it cuts road nodes 44%. `roads.json` keeps full detail for drawing.
 - **ACS income and zero-car share at block-group level** (DATA-4): B19013 and B25044 from the ACS table-based summary files (no API key); suppressed estimates take the tract, then county, household-weighted mean. Land area from TIGER `ALAND`. Both inputs are optional.
+- **Commute mode shares** from ACS B08301, summed over the area, go in the manifest for mode-choice calibration (F14).
 - **Tract and county zone levels** (DATA-5): `--level tract|county` merges block groups by GEOID prefix after the block-group build. Counts add; centroid, income and zero-car share are population-weighted; flows inside one coarse zone become intrazonal. The statewide scenario at block-group level is far too large for a sub-20 s day, so coarser levels come first.
 - **Zone connectors** (D19) go to the nearest local-road node (never motorway or trunk) in the largest connected component, so access is not free and clipping fragments cannot strand a zone.
 - **Lanes per direction in `scenario.json`**, because sim-core capacity is per direction; `roads.json` keeps OSM's total for drawing.

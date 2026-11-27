@@ -79,14 +79,14 @@ Tags read: `highway`, `maxspeed`, `lanes`, `oneway`, `junction`, `area`, `name` 
 | Publisher | US Census Bureau |
 | Files | `https://www2.census.gov/programs-surveys/acs/summary_file/<year>/table-based-SF/data/5YRData/acsdt5y<year>-b19013.dat` and `...-b25044.dat` (pipe-delimited, every US geography; `fetch.sh` keeps Texas block groups) |
 | Vintage | 5-year estimates ending in the LODES year (2019–2023 by default), 2020 block groups |
-| Tables | B19013 median household income (`B19013_E001`); B25044 tenure by vehicles available (`B25044_E001` households, `_E003` owner no vehicle, `_E010` renter no vehicle) |
+| Tables | B19013 median household income (`B19013_E001`); B25044 tenure by vehicles available (`B25044_E001` households, `_E003` owner no vehicle, `_E010` renter no vehicle); B08301 means of transportation to work (`_E001` workers 16+, `_E003` drove alone, `_E004` carpool, `_E010` public transportation excluding taxicab, `_E016` taxicab, `_E017` motorcycle, `_E018` bicycle, `_E019` walked, `_E020` other, `_E021` worked from home). Texas county rows are kept too, so county totals can be checked |
 | Key | None. (The Census API was tried first and refused keyless requests with "Missing Key".) |
 | License | US federal government work, public domain |
 | Gives the game | `median_income`, `zero_car_share` per zone |
 
 Margins of error are large at block-group level, which is why suppressed values fall back to tract and county means rather than to a statewide default.
 
-**Citation:** U.S. Census Bureau, American Community Survey 5-Year Estimates, Tables B19013 and B25044, Texas block groups.
+**Citation:** U.S. Census Bureau, American Community Survey 5-Year Estimates, Tables B19013, B25044 and B08301, Texas block groups and counties.
 
 ## 5. TIGER/Line 2020 block groups
 

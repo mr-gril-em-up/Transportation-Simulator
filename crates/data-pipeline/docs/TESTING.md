@@ -18,6 +18,7 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `whole_state_area_keeps_both_counties` | `tests/sample.rs` | `--area 48` keeps both counties; flows between them become internal; census-only build (no PBF) still validates |
 | `county_level_merges_block_groups` | `tests/sample.rs` | `--level county` on the whole sample: 5 block groups become 2 counties, totals unchanged, 5-digit GEOIDs, manifest `zone_level` and `block_groups`, `scenario.json` validates |
 | `tracts_merge_counts_weights_and_flows` | `src/aggregate.rs` | Tract merge: sums, population-weighted centroid and income, area only when complete, unpopulated tract, flows summed with intrazonal kept; county merge |
+| `commute_shares_sum_listed_block_groups` | `src/acs.rs` | B08301 shares sum only the listed block groups, skip county rows, and add to 1 |
 | `acs_parses_and_flags_suppressed` | `src/acs.rs` | Summary-file table parsing (block-group rows only, state row skipped), suppressed sentinels, blanks and zero-household rows become `None` |
 | `zones_without_header_row` | `src/census.rs` | Centers of Population file without a header |
 | `simplify_contracts_chains_and_prunes_dead_ends` | `src/scenario.rs` | Dead-end pruning, fragment removal, contraction only across equal speed and lanes, one-way contraction only when traffic flows through, summed lengths |
@@ -102,3 +103,9 @@ Actions run [45946718823](https://github.com/mr-gril-em-up/Transportation-Simula
 | `area_zones` | 766 of 766 | Every zone gets ALAND |
 
 Still to do: a full build with roads once Geofabrik answers again, which republishes `data-48453-2023` with these fields.
+
+## Zone levels and commute shares (2026-11-27)
+
+- Actions run [45947685279](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45947685279), `--area 48 --level tract`, census only: 6,896 zones, the exact 2020 Texas tract count; population 29,145,505 and internal commuters 13,335,103, the same as the block-group build; 3,878,003 tract-to-tract flows (6,596,749 at block group); build 5.5 s without roads. 18,625 of 18,638 block groups have a TIGER land area.
+- Actions run [45948912088](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45948912088), Travis, census only: `commute_mode_shares` sums 766 block groups to 736,639 workers, exactly the published Travis County `B08301_E001`. Shares: drove alone 0.5973, carpool 0.0746, transit 0.0167, walk 0.0207, bike 0.0060, work from home 0.2718, other 0.0129.
+
