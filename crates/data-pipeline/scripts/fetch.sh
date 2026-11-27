@@ -2,7 +2,7 @@
 # Downloads the raw inputs for tsim-data into data/raw (about 800 MB, mostly OSM).
 # The same files cover all of Texas; --area picks Travis or the whole state at build time.
 #   YEAR=2023 ./scripts/fetch.sh            # all inputs
-#   SKIP_OSM=1 ./scripts/fetch.sh           # census only (zones + flows, no roads)
+#   SKIP_OSM=1 ./scripts/fetch.sh           # census only (zones, flows, ACS, area; no roads)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 YEAR="${YEAR:-2023}"
@@ -27,34 +27,22 @@ LODES=https://lehd.ces.census.gov/data/lodes/LODES8/tx
 get "tx_od_main_JT00_${YEAR}.csv.gz" "$LODES/od/tx_od_main_JT00_${YEAR}.csv.gz"
 get "tx_rac_S000_JT00_${YEAR}.csv.gz" "$LODES/rac/tx_rac_S000_JT00_${YEAR}.csv.gz" "$LODES/rac/tx_rac_S000_JT00_${YEAR}_1.csv.gz"
 get "tx_wac_S000_JT00_${YEAR}.csv.gz" "$LODES/wac/tx_wac_S000_JT00_${YEAR}.csv.gz"
-# ACS 5-year ending in YEAR, every Texas block group (Census API JSON).
-# Optional: without it zones keep default income and zero-car share.
-# CENSUS_API_KEY is optional (keyless use is limited to 500 calls a day).
-ACS_OUT="$RAW/acs5_bg48_${YEAR}.json"
-ACS_Q="https://api.census.gov/data/${YEAR}/acs/acs5?get=B19013_001E,B25044_001E,B25044_003E,B25044_010E&for=block%20group:*"
-ACS_KEY="${CENSUS_API_KEY:+&key=$CENSUS_API_KEY}"
-is_acs() { [[ -s "$1" ]] && head -c 2 "$1" | grep -q '\[\['; }
-if ! is_acs "$ACS_OUT"; then
-  rm -f "$ACS_OUT"
-  # One call for the whole state; the API may not accept a county wildcard.
-  curl -sfL --retry 3 --retry-delay 10 -o "$ACS_OUT" "$ACS_Q&in=state:48&in=county:*&in=tract:*$ACS_KEY" || true
-  if ! is_acs "$ACS_OUT"; then
-    echo "ACS statewide call did not return JSON (first bytes below); fetching county by county" >&2
-    head -c 300 "$ACS_OUT" >&2 2>/dev/null || true; echo >&2
-    tmp=$(mktemp -d)
-    for c in $(seq -f %03g 1 2 507); do  # Texas county FIPS codes are odd, 001-507
-      curl -sfL --retry 3 --retry-delay 10 -o "$tmp/$c.json" "$ACS_Q&in=state:48%20county:$c$ACS_KEY" || true
-      is_acs "$tmp/$c.json" || rm -f "$tmp/$c.json"
-    done
-    if ls "$tmp"/*.json >/dev/null 2>&1; then
-      jq -s 'reduce .[] as $f ([]; if length == 0 then $f else . + $f[1:] end)' "$tmp"/*.json > "$ACS_OUT"
-      echo "ACS: $(ls "$tmp"/*.json | wc -l) counties" >&2
-    else
-      rm -f "$ACS_OUT"; echo "warning: ACS download failed; building without it" >&2
-    fi
-    rm -rf "$tmp"
+# ACS 5-year ending in YEAR: table-based summary files (one pipe-delimited
+# file per table, every US geography; no API key needed). Only the header and
+# Texas block-group rows (GEO_ID 1500000US48...) are kept.
+# Optional: without them zones keep default income and zero-car share.
+ACS_SF="https://www2.census.gov/programs-surveys/acs/summary_file/${YEAR}/table-based-SF/data/5YRData"
+for t in b19013 b25044; do
+  out="$RAW/acs5_bg48_${YEAR}_${t}.dat"
+  if [[ -s "$out" ]]; then echo "have $out"; continue; fi
+  echo "get  $ACS_SF/acsdt5y${YEAR}-${t}.dat"
+  if curl -fsSL --retry 5 --retry-all-errors --retry-delay 15 "$ACS_SF/acsdt5y${YEAR}-${t}.dat" \
+       | awk -F'|' 'NR == 1 || $1 ~ /^1500000US48/' > "$out.part" && [[ $(wc -l < "$out.part") -gt 1 ]]; then
+    mv "$out.part" "$out"; echo "     $(($(wc -l < "$out") - 1)) Texas block groups"
+  else
+    rm -f "$out.part"; echo "warning: ACS table $t download failed; building without ACS" >&2
   fi
-fi
+done
 # TIGER/Line 2020 block groups: only the .dbf attribute table (ALAND) is kept.
 if [[ ! -s "$RAW/tl_2020_48_bg.dbf" ]]; then
   if get tl_2020_48_bg.zip https://www2.census.gov/geo/tiger/TIGER2020/BG/tl_2020_48_bg.zip; then

@@ -73,7 +73,7 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 - **Rust, not Python** (D14): builds `sim_core::ScenarioInput` directly, so a schema change breaks this compile instead of the game at load time.
 - **Block-group zones from Centers of Population** (D13): one small CSV gives population and a population-weighted centroid, with no geometry library.
 - **Routing simplification** (DATA-2): `scenario.json` drops road fragments, prunes dead ends without a zone and merges identical pass-through links. Paths between zones are unchanged; on Travis it cuts road nodes 44%. `roads.json` keeps full detail for drawing.
-- **ACS income and zero-car share at block-group level** (DATA-4): B19013 and B25044 from the Census API; suppressed estimates take the tract, then county, household-weighted mean. Land area from TIGER `ALAND`. Both inputs are optional.
+- **ACS income and zero-car share at block-group level** (DATA-4): B19013 and B25044 from the ACS table-based summary files (no API key); suppressed estimates take the tract, then county, household-weighted mean. Land area from TIGER `ALAND`. Both inputs are optional.
 - **Zone connectors** (D19) go to the nearest local-road node (never motorway or trunk) in the largest connected component, so access is not free and clipping fragments cannot strand a zone.
 - **Lanes per direction in `scenario.json`**, because sim-core capacity is per direction; `roads.json` keeps OSM's total for drawing.
 - **No starting transit** in `scenario.json` (design doc "Starting map"); existing routes stay in `transit.json` for calibration.
@@ -97,7 +97,7 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 |---|---|
 | `src/main.rs` | CLI argument parsing, calls `build` |
 | `src/lib.rs` | `build()`: orchestrates the steps, writes files and the manifest |
-| `src/acs.rs` | Reads ACS (Census API JSON) and TIGER `ALAND` (dBASE), fills zone income, zero-car share and area with tract/county fallback |
+| `src/acs.rs` | Reads ACS summary-file tables (pipe-delimited) and TIGER `ALAND` (dBASE), fills zone income, zero-car share and area with tract/county fallback |
 | `src/census.rs` | Reads Centers of Population (zones) and LODES RAC/WAC/OD, aggregates blocks to block groups |
 | `src/osm.rs` | Two-pass OSM PBF reader: road graph and transit routes, clipped to a bbox |
 | `src/scenario.rs` | Converts the layers to `sim_core::ScenarioInput`, picks each zone's road node |

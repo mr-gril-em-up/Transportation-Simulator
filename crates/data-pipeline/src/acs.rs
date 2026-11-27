@@ -1,22 +1,22 @@
 //! Zone attributes from the American Community Survey and TIGER/Line.
 //!
-//! - ACS 5-year detailed tables at block-group level, fetched from the Census
-//!   API as JSON: median household income (B19013) and households with no
-//!   vehicle (B25044, tenure by vehicles available).
+//! - ACS 5-year detailed tables at block-group level, from the Census
+//!   Bureau's table-based summary files (pipe-delimited, one file per table,
+//!   no API key needed): median household income (B19013) and households
+//!   with no vehicle (B25044, tenure by vehicles available). `fetch.sh` keeps
+//!   only Texas block-group rows.
 //! - TIGER/Line 2020 block-group `ALAND` (land area, m²), read from the
 //!   shapefile's `.dbf` attribute table. Polygons are not read yet.
 //!
-//! Both files are optional: without them zones keep sim-core's defaults.
+//! Both are optional: without them zones keep sim-core's defaults.
 
 use crate::model::Zone;
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 
-/// Census API variables requested by `scripts/fetch.sh`, in order.
-pub const ACS_VARS: [&str; 4] = ["B19013_001E", "B25044_001E", "B25044_003E", "B25044_010E"];
-
 /// ACS values for one block group. `None` where the Census suppresses the
-/// estimate (negative sentinel such as -666666666) or the base is zero.
+/// estimate (blank, or a negative sentinel such as -666666666) or the base
+/// is zero.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AcsRow {
     pub median_income: Option<f64>,
@@ -24,45 +24,71 @@ pub struct AcsRow {
     pub households: f64,
 }
 
-/// Parses the Census API JSON (an array of rows, the first being headers)
-/// into a map keyed by 12-digit block group GEOID.
-pub fn read_acs(json: &str) -> Result<HashMap<String, AcsRow>> {
-    let rows: Vec<Vec<Option<String>>> = serde_json::from_str(json).context("ACS JSON")?;
-    let Some((head, body)) = rows.split_first() else {
-        bail!("ACS file is empty");
-    };
-    let h = |name: &str| {
+/// Block group GEOID from a summary-file `GEO_ID` such as
+/// `1500000US484530011001`; `None` for other summary levels.
+fn bg_geoid(geo_id: &str) -> Option<&str> {
+    let g = geo_id.strip_prefix("1500000US")?;
+    (g.len() == 12).then_some(g)
+}
+
+/// Reads one pipe-delimited table: header row, then one row per geography.
+/// Returns the requested columns by block group GEOID.
+fn read_table(text: &str, cols: &[&str]) -> Result<HashMap<String, Vec<Option<f64>>>> {
+    let mut lines = text.lines();
+    let head: Vec<&str> = lines
+        .next()
+        .context("ACS table is empty")?
+        .split('|')
+        .collect();
+    let pos = |name: &str| {
         head.iter()
-            .position(|c| c.as_deref() == Some(name))
-            .with_context(|| format!("ACS file lacks column {name}"))
+            .position(|c| c.trim().eq_ignore_ascii_case(name))
+            .with_context(|| format!("ACS table lacks column {name}"))
     };
-    let (inc, hh, own0, rent0) = (
-        h(ACS_VARS[0])?,
-        h(ACS_VARS[1])?,
-        h(ACS_VARS[2])?,
-        h(ACS_VARS[3])?,
-    );
-    let (st, co, tr, bg) = (h("state")?, h("county")?, h("tract")?, h("block group")?);
-    let num = |r: &[Option<String>], i: usize| -> Option<f64> {
-        r[i].as_deref()?.parse::<f64>().ok().filter(|v| *v >= 0.0)
-    };
+    let geo = pos("GEO_ID")?;
+    let idx: Vec<usize> = cols.iter().map(|c| pos(c)).collect::<Result<_>>()?;
     let mut out = HashMap::new();
-    for r in body {
-        let s = |i: usize| r[i].as_deref().unwrap_or("");
-        let geoid = format!("{}{}{}{}", s(st), s(co), s(tr), s(bg));
-        let households = num(r, hh).unwrap_or(0.0);
-        let zero = match (num(r, own0), num(r, rent0)) {
+    for line in lines {
+        let f: Vec<&str> = line.split('|').collect();
+        let Some(g) = f.get(geo).and_then(|g| bg_geoid(g.trim())) else {
+            continue;
+        };
+        let vals = idx
+            .iter()
+            .map(|&i| f.get(i)?.trim().parse::<f64>().ok().filter(|v| *v >= 0.0))
+            .collect();
+        out.insert(g.to_string(), vals);
+    }
+    Ok(out)
+}
+
+/// Joins the B19013 and B25044 summary-file tables into one map keyed by
+/// 12-digit block group GEOID.
+pub fn read_acs(b19013: &str, b25044: &str) -> Result<HashMap<String, AcsRow>> {
+    let inc = read_table(b19013, &["B19013_E001"])?;
+    let veh = read_table(b25044, &["B25044_E001", "B25044_E003", "B25044_E010"])?;
+    let mut out = HashMap::new();
+    for (g, v) in &veh {
+        let households = v[0].unwrap_or(0.0);
+        let zero = match (v[1], v[2]) {
             (Some(a), Some(b)) if households > 0.0 => Some((a + b) / households),
             _ => None,
         };
         out.insert(
-            geoid,
+            g.clone(),
             AcsRow {
-                median_income: num(r, inc).filter(|v| *v > 0.0),
+                median_income: inc.get(g).and_then(|r| r[0]).filter(|v| *v > 0.0),
                 zero_car_share: zero,
                 households,
             },
         );
+    }
+    for (g, r) in &inc {
+        out.entry(g.clone()).or_insert(AcsRow {
+            median_income: r[0].filter(|v| *v > 0.0),
+            zero_car_share: None,
+            households: 0.0,
+        });
     }
     Ok(out)
 }
@@ -172,11 +198,17 @@ mod tests {
 
     #[test]
     fn acs_parses_and_flags_suppressed() {
-        let j = r#"[["B19013_001E","B25044_001E","B25044_003E","B25044_010E","state","county","tract","block group"],
-            ["71250","500","10","40","48","453","001101","1"],
-            ["-666666666","0","0","0","48","453","001101","2"],
-            [null,"200","5","15","48","453","001102","1"]]"#;
-        let m = read_acs(j).unwrap();
+        let inc = "GEO_ID|B19013_E001|B19013_M001\n\
+                   0400000US48|76292|300\n\
+                   1500000US484530011011|71250|9000\n\
+                   1500000US484530011012|-666666666|-222222222\n\
+                   1500000US484530011021||\n";
+        let veh = "GEO_ID|B25044_E001|B25044_E002|B25044_E003|B25044_E010\n\
+                   1500000US484530011011|500|300|10|40\n\
+                   1500000US484530011012|0|0|0|0\n\
+                   1500000US484530011021|200|100|5|15\n";
+        let m = read_acs(inc, veh).unwrap();
+        assert_eq!(m.len(), 3, "state row skipped");
         let a = m["484530011011"];
         assert_eq!(a.median_income, Some(71250.0));
         assert!((a.zero_car_share.unwrap() - 0.1).abs() < 1e-12);

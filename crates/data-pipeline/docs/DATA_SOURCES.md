@@ -77,10 +77,10 @@ Tags read: `highway`, `maxspeed`, `lanes`, `oneway`, `junction`, `area`, `name` 
 | | |
 |---|---|
 | Publisher | US Census Bureau |
-| API | `https://api.census.gov/data/<year>/acs/acs5?get=B19013_001E,B25044_001E,B25044_003E,B25044_010E&for=block%20group:*&in=state:48&in=county:*&in=tract:*` |
+| Files | `https://www2.census.gov/programs-surveys/acs/summary_file/<year>/table-based-SF/data/5YRData/acsdt5y<year>-b19013.dat` and `...-b25044.dat` (pipe-delimited, every US geography; `fetch.sh` keeps Texas block groups) |
 | Vintage | 5-year estimates ending in the LODES year (2019–2023 by default), 2020 block groups |
-| Tables | B19013 median household income; B25044 tenure by vehicles available (`_001E` households, `_003E` owner no vehicle, `_010E` renter no vehicle) |
-| Key | Optional `CENSUS_API_KEY`; keyless use is limited to 500 calls per day and the pipeline makes one |
+| Tables | B19013 median household income (`B19013_E001`); B25044 tenure by vehicles available (`B25044_E001` households, `_E003` owner no vehicle, `_E010` renter no vehicle) |
+| Key | None. (The Census API was tried first and refused keyless requests with "Missing Key".) |
 | License | US federal government work, public domain |
 | Gives the game | `median_income`, `zero_car_share` per zone |
 

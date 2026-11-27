@@ -159,15 +159,22 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
     };
 
     // ACS 5-year ending in the LODES year, and TIGER 2020 land area.
-    let acs_path = raw.join(format!("acs5_bg48_{y}.json"));
-    let acs = if acs_path.exists() {
+    let (inc_path, veh_path) = (
+        raw.join(format!("acs5_bg48_{y}_b19013.dat")),
+        raw.join(format!("acs5_bg48_{y}_b25044.dat")),
+    );
+    let acs = if inc_path.exists() && veh_path.exists() {
         m.sources
             .push("US Census Bureau, American Community Survey 5-year estimates (B19013, B25044)");
-        Some(acs::read_acs(&std::fs::read_to_string(&acs_path)?)?)
+        Some(acs::read_acs(
+            &std::fs::read_to_string(&inc_path)?,
+            &std::fs::read_to_string(&veh_path)?,
+        )?)
     } else {
         eprintln!(
-            "note: {} not found, zones keep default income and zero-car share",
-            acs_path.display()
+            "note: {} or {} not found, zones keep default income and zero-car share",
+            inc_path.display(),
+            veh_path.display()
         );
         None
     };
