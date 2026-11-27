@@ -7,6 +7,7 @@ pub mod clock;
 pub mod economy;
 mod geo;
 mod graph;
+mod intercity;
 pub mod model;
 mod pairs;
 pub mod params;
@@ -18,8 +19,8 @@ mod transit;
 pub use clock::Clock;
 pub use economy::{Bond, Ledger, MonthStatement};
 pub use model::{
-    DesireLine, LineId, LinePreview, LineResult, LinkFlow, ModeSplit, PendingLine, Results,
-    RoadState, Sim, ZoneResult,
+    DesireLine, IntercityPair, LineId, LinePreview, LineResult, LinkFlow, ModeSplit, PendingLine,
+    Results, RoadState, Sim, ZoneResult,
 };
 pub use params::Params;
 pub use schema::*;

@@ -80,6 +80,10 @@ pub struct Params {
     /// counted in `Results::beyond_cutoff_trips` (intercity travel is F37).
     #[serde(default)]
     pub strategic_max_min: Option<f64>,
+    /// Intercity travel past the strategic cutoff (F37, SIM-24). Used only
+    /// when `strategic_max_min` is set.
+    #[serde(default)]
+    pub intercity: IntercityParams,
 
     /// Share of workers commuting on a given day (absence + work from home).
     pub commute_presence: f64,
@@ -157,6 +161,45 @@ pub struct Params {
     pub bankruptcy_months: u32,
 }
 
+/// Intercity demand and loading (F37, SIM-24); see `intercity.rs`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IntercityParams {
+    /// Model intercity travel at all (only with a strategic cutoff).
+    pub enabled: bool,
+    /// Side of the square cells zones are grouped into, km.
+    pub cell_km: f64,
+    /// Gravity scale: daily one-way person trips = scale x pop_o x pop_d /
+    /// minutes^decay. Calibrated so Dallas-Fort Worth <-> Houston carries the
+    /// FRA FEIS 2017 market, 15.97M person trips a year (`examples/intercity.rs`).
+    pub scale: f64,
+    /// Gravity decay exponent on free-flow car minutes. Assumed (a common
+    /// long-distance value); one market cannot fit it.
+    pub decay: f64,
+    /// Share of intercity person trips by car: FRA FEIS 2017, Dallas-Houston
+    /// 94.0% auto (air 5.6%, bus 0.4%). Replaced by mode choice in F37 step 2.
+    pub car_share: f64,
+    /// Persons per intercity car. Assumed, not sourced.
+    pub car_occupancy: f64,
+    /// Share of daily intercity car trips in the modeled peak hour. Assumed:
+    /// rural design-hour factors are ~0.08-0.10 of AADT.
+    pub peak_hour_share: f64,
+}
+
+impl Default for IntercityParams {
+    fn default() -> Self {
+        IntercityParams {
+            enabled: true,
+            cell_km: 30.0,
+            scale: 2.323e-5,
+            decay: 2.0,
+            car_share: 0.94,
+            car_occupancy: 1.7,
+            peak_hour_share: 0.08,
+        }
+    }
+}
+
 impl Default for Params {
     fn default() -> Self {
         Params {
@@ -193,6 +236,7 @@ impl Default for Params {
             pnr_max_drive_min: 25.0,
             pnr_park_min: 3.0,
             strategic_max_min: None,
+            intercity: IntercityParams::default(),
             commute_presence: 0.8,
             trips_per_person: 2.28,
             gravity_decay_per_min: 0.08,
