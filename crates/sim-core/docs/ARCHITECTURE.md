@@ -94,7 +94,11 @@ tick_budgeted (SIM-18)  (each call about `budget`)
      origins, summing their AON loads -> Frank-Wolfe step -> final round: pass_range slices
      -> commit car (and transit) skims -> finish -> settle months
   line edits between calls run as usual on the previous day's car times; if one
-  lands during the final round, transit is re-skimmed at commit
+  lands during the final round, transit is re-skimmed at commit. One landing
+  during an assign round mixes old- and new-network slices into that round's
+  load; later days pull it back, as they do any day's error
+  the budget is a floor per slice, not a hard cap: the final commit and
+  finish are one step (0.5-0.6 s statewide)
 
 finish
   mode choice (origins with no transit reuse their totals, SIM-17) -> transit loading
