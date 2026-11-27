@@ -663,14 +663,17 @@ fn preview_puts_the_previous_results_back_exactly() {
     // SIM-17: preview moves the transit state aside and back instead of
     // re-evaluating it, so results must match bit for bit.
     let mut s = cutoff_sim(None);
-    let before = serde_json::to_string(s.results()).unwrap();
+    let mut before = s.results().clone();
     s.preview_line(straight_line(Mode::Bus, (-7.0, 3.0), (7.0, 3.0), 0.8, 10.0))
         .unwrap();
     let mut after = s.results().clone();
-    after.eval_ms = serde_json::from_str::<sim_core::Results>(&before)
-        .unwrap()
-        .eval_ms;
-    assert_eq!(serde_json::to_string(&after).unwrap(), before);
+    // Wall-clock time, not a result.
+    before.eval_ms = 0.0;
+    after.eval_ms = 0.0;
+    assert_eq!(
+        serde_json::to_string(&after).unwrap(),
+        serde_json::to_string(&before).unwrap()
+    );
 }
 
 #[test]
