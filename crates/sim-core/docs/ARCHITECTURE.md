@@ -242,9 +242,19 @@ Frank-Wolfe line search, at 60 min (`examples/statewide.rs <scenario> 60
 | 6 | 53 s | 24 km/h | 29 km/h | 35 km/h | |
 | 8 | 69 s | 33 km/h | 35 km/h | 38 km/h | |
 
-A game day stays 13.4 to 14.5 s. No kept pair loses its car option at these
-speeds (car-unreachable pairs 0 on every day measured, so the 4x tree guard
-does not bind). Statewide games should start with 8 cold rounds, behind a
+A game day stays 13.4 to 14.5 s.
+
+**The congested tree guard (SIM-16).** Peak trees stop at 4x the cutoff
+(240 min at 60). SIM-15 first reported that this never binds, but that
+check (`car_unreachable_pairs`) reads the free-flow skim. In the jammed
+first days 1,700 to 5,700 kept pairs ran past the guard and lost the car, and
+with no walk, bike or transit at those distances their trips showed as
+unserved: 76k to 130k a day. A pair past the guard now keeps the car at
+the guard time, with free-flow distance and toll; those trips are not loaded
+on the roads (a few thousand of 34M kept pairs). Unserved trips are now 0,
+and a game day is unchanged. Removing the guard also gives 0, but the deep
+searches take a game day to 25 s. `car_past_guard_pairs()` counts them, and
+`examples/statewide.rs` prints it daily. Statewide games should start with 8 cold rounds, behind a
 loading state or a cached equilibrium; the default stays 4 so Travis is
 unchanged. **Open:** about 39 km/h after a week is still low for a peak
 hour. Two known causes, for F38 with TxDOT counts: roads at 55 to 80 km/h get
@@ -257,7 +267,7 @@ on delay at very high volume/capacity.
 | Test | Covers |
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
-| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
+| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share, bond rate and term) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
 | unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit, grant gate and settlement arithmetic |

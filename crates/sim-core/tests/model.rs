@@ -637,3 +637,23 @@ fn every_kept_pair_under_a_cutoff_has_a_car_time() {
     assert_eq!(dense.car_unreachable_pairs(), 0);
     assert_eq!(s.car_unreachable_pairs(), 0);
 }
+
+#[test]
+fn jammed_pairs_past_the_tree_guard_keep_the_car() {
+    // SIM-15: a 6-minute cutoff guards congested trees at 24 minutes. Fifty
+    // commuters for every real one push some kept pairs past it; they keep
+    // the car at the guard time instead of becoming unserved trips.
+    let mut input = generate(&SynthConfig::small());
+    input.commutes.iter_mut().for_each(|c| c.workers *= 50.0);
+    let p = Params {
+        strategic_max_min: Some(6.0),
+        // Car is the only option (no transit in this region), so a pair
+        // that lost it would show as unserved.
+        max_walk_km: 0.0,
+        max_bike_km: 0.0,
+        ..Params::default()
+    };
+    let s = Sim::new(input, p).unwrap();
+    assert!(s.car_past_guard_pairs() > 0, "no pair reached the guard");
+    assert_eq!(s.results().unserved_trips, 0.0);
+}
