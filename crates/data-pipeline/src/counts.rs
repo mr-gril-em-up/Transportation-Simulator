@@ -19,7 +19,23 @@
 //!   matching one-way edge heading the other way gives `from2`/`to2`, so the
 //!   two-way AADT can be compared with the sum of both carriageways.
 //! - Stations with no match within range are dropped.
+//!
+//! Station type comes from the TxDOT id suffix ([`Facility`]):
+//! - `..NBSR`, `..SBSR`, `..EBSR`, `..WBSR`: a one-direction count on a
+//!   frontage (service) road. It never snaps to freeway main lanes or ramps
+//!   (`motorway`, `motorway_link`, `trunk_link`); it takes a matching
+//!   non-freeway edge, or one named `... Frontage ...`/`... Service ...`,
+//!   heading the suffix direction. No match: dropped.
+//! - `..NBDR`, `..SBDR`, `..EBDR`, `..WBDR`: a one-direction count on a
+//!   direct connector ramp. Only `*_link` edges heading that way qualify.
+//! - Anything else: a main-lane count, snapped as above.
+//!
+//! Each count carries `external`: its TxDOT `CNTY_NM` maps (via
+//! `reference/tx_counties.csv`) to a county outside `--area`. A county build
+//! keeps roads a margin past the county line, so those stations snap but sit
+//! where there are no zones.
 
+use crate::census::Area;
 use crate::model::Roads;
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -39,6 +55,53 @@ pub struct Station {
     pub lon: f64,
     pub lat: f64,
     pub active: bool,
+    /// 5-digit county GEOID from `CNTY_NM`, if the name is known.
+    pub county: Option<String>,
+}
+
+/// What a station counts, from its id suffix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Facility {
+    /// Main lanes, both directions.
+    Main,
+    /// Frontage (service) road, one direction (`..NBSR`).
+    Frontage,
+    /// Direct connector ramp, one direction (`..NBDR`).
+    Ramp,
+}
+
+/// Facility and compass direction (`'N'`, `'S'`, `'E'`, `'W'`) of a station id.
+pub fn facility(id: &str) -> (Facility, Option<char>) {
+    let b = id.as_bytes();
+    let n = b.len();
+    if n >= 4 && b[n - 3] == b'B' && matches!(b[n - 4], b'N' | b'S' | b'E' | b'W') {
+        let dir = Some(b[n - 4] as char);
+        match &id[n - 2..] {
+            "SR" => return (Facility::Frontage, dir),
+            "DR" => return (Facility::Ramp, dir),
+            _ => {}
+        }
+    }
+    (Facility::Main, None)
+}
+
+const COUNTIES: &str = include_str!("../reference/tx_counties.csv");
+
+/// Normalized county name: letters only, upper case (`De Witt` = `DEWITT`).
+fn county_key(s: &str) -> String {
+    let s = s.trim().to_uppercase();
+    let s = s.strip_suffix(" COUNTY").unwrap_or(&s);
+    s.chars().filter(|c| c.is_ascii_alphabetic()).collect()
+}
+
+/// Texas county name (normalized) to 5-digit GEOID.
+pub fn counties() -> HashMap<String, String> {
+    csv::Reader::from_reader(COUNTIES.as_bytes())
+        .records()
+        .filter_map(|r| r.ok())
+        .filter_map(|r| Some((county_key(r.get(1)?), r.get(0)?.to_string())))
+        .collect()
 }
 
 /// A station snapped to the scenario road graph, as written to `counts.json`.
@@ -66,6 +129,13 @@ pub struct Count {
     pub link2: Option<u32>,
     /// TxDOT `ACTIVE`: the station is still in the count program.
     pub active: bool,
+    /// Main lanes (two-way AADT), frontage road or ramp (one direction).
+    pub facility: Facility,
+    /// Direction of a frontage or ramp count: `N`, `S`, `E` or `W`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<char>,
+    /// The station's county is outside the build area (no zones there).
+    pub external: bool,
     /// Distance from the station to `from`-`to`, meters.
     pub dist_m: f64,
 }
@@ -88,6 +158,8 @@ pub fn read_stations(path: &Path) -> Result<Vec<Station>> {
         col("LATITUDE")?,
     );
     let act = h.iter().position(|c| c == "ACTIVE");
+    let cnty = h.iter().position(|c| c == "CNTY_NM");
+    let names = counties();
     let mut out = Vec::new();
     for rec in r.records() {
         let rec = rec?;
@@ -109,6 +181,9 @@ pub fn read_stations(path: &Path) -> Result<Vec<Station>> {
             lon: lo,
             lat: la,
             active: act.and_then(|i| rec.get(i)).is_none_or(|v| v.trim() != "0"),
+            county: cnty
+                .and_then(|i| rec.get(i))
+                .and_then(|v| names.get(&county_key(v)).cloned()),
         });
     }
     Ok(out)
@@ -228,12 +303,29 @@ fn cell(lon: f64, lat: f64) -> (i32, i32) {
     ((lon / CELL).floor() as i32, (lat / CELL).floor() as i32)
 }
 
+/// Freeway main lanes and ramps: never a frontage-road count.
+fn freeway(class: &str) -> bool {
+    matches!(class, "motorway" | "motorway_link" | "trunk_link")
+}
+
+/// Unit compass vector (east, north) for a direction letter.
+fn compass(d: char) -> [f64; 2] {
+    match d {
+        'N' => [0.0, 1.0],
+        'S' => [0.0, -1.0],
+        'E' => [1.0, 0.0],
+        _ => [-1.0, 0.0],
+    }
+}
+
 /// Snaps stations to scenario links. `edge_link[i]` is the scenario link of
-/// `roads.edges[i]` (from `scenario::to_scenario_mapped`).
+/// `roads.edges[i]` (from `scenario::to_scenario_mapped`); `area` decides
+/// `external`.
 pub fn snap(
     stations: &[Station],
     roads: &Roads,
     edge_link: &[Option<crate::scenario::LinkRef>],
+    area: &Area,
 ) -> Vec<Count> {
     // Segment index: (edge, a, b) by grid cell.
     let mut segs: Vec<(usize, [f64; 2], [f64; 2])> = Vec::new();
@@ -260,6 +352,7 @@ pub fn snap(
     for s in stations {
         let p = [s.lon, s.lat];
         let (cx, cy) = cell(s.lon, s.lat);
+        let (fac, dirc) = facility(&s.id);
         // Best distance per matching edge, with its direction.
         let mut best: HashMap<usize, (f64, [f64; 2])> = HashMap::new();
         for x in cx - 1..=cx + 1 {
@@ -271,7 +364,25 @@ pub fn snap(
                         continue;
                     }
                     let e = &roads.edges[ei];
-                    if !matches(&s.on_road, e.r#ref.as_deref(), e.name.as_deref()) {
+                    let named = matches(&s.on_road, e.r#ref.as_deref(), e.name.as_deref());
+                    let ok = match fac {
+                        Facility::Main => named,
+                        Facility::Frontage => {
+                            !freeway(&e.class)
+                                && (named
+                                    || e.name.as_deref().is_some_and(|n| {
+                                        let n = n.to_lowercase();
+                                        n.contains("frontage") || n.contains("service")
+                                    }))
+                        }
+                        Facility::Ramp => e.class.ends_with("_link"),
+                    };
+                    // One-direction counts: a one-way edge must head that way.
+                    let heading = dirc.is_none_or(|d| {
+                        let c = compass(d);
+                        !e.oneway || dir[0] * c[0] + dir[1] * c[1] > 0.0
+                    });
+                    if !ok || !heading {
                         continue;
                     }
                     let v = best.entry(ei).or_insert((d, dir));
@@ -288,7 +399,7 @@ pub fn snap(
             continue;
         };
         let (from, to, link) = edge_link[e0].unwrap();
-        let second = if roads.edges[e0].oneway {
+        let second = if fac == Facility::Main && roads.edges[e0].oneway {
             cands
                 .iter()
                 .skip(1)
@@ -315,6 +426,9 @@ pub fn snap(
             to2: second.map(|x| x.1),
             link2: second.map(|x| x.2),
             active: s.active,
+            facility: fac,
+            direction: dirc,
+            external: s.county.as_deref().is_some_and(|c| !area.contains(c)),
             dist_m: (d0 * 10.0).round() / 10.0,
         });
     }
@@ -382,6 +496,7 @@ mod tests {
             lon,
             lat: 30.305,
             active: true,
+            county: None,
         };
         let c = snap(
             &[
@@ -391,11 +506,88 @@ mod tests {
             ],
             &roads,
             &link,
+            &Area {
+                prefixes: vec!["48453".into()],
+            },
         );
         assert_eq!(c.len(), 1, "too far and unmatched stations dropped");
         assert_eq!((c[0].from, c[0].to), (0, 1));
         assert_eq!((c[0].from2, c[0].to2), (Some(3), Some(2)));
         assert_eq!((c[0].link, c[0].link2), (0, Some(1)));
         assert!(c[0].dist_m < 10.0);
+        assert_eq!(c[0].facility, Facility::Main);
+        assert!(!c[0].external);
+    }
+
+    #[test]
+    fn facility_from_id_suffix() {
+        assert_eq!(facility("106D1"), (Facility::Main, None));
+        assert_eq!(facility("227H136SBSR"), (Facility::Frontage, Some('S')));
+        assert_eq!(facility("227H136ANBSR"), (Facility::Frontage, Some('N')));
+        assert_eq!(facility("102X9EBDR"), (Facility::Ramp, Some('E')));
+        assert_eq!(facility("SR"), (Facility::Main, None));
+    }
+
+    #[test]
+    fn county_names_map_to_geoids() {
+        let c = counties();
+        assert_eq!(c.len(), 254);
+        assert_eq!(c[&county_key("TRAVIS")], "48453");
+        assert_eq!(c[&county_key("De Witt")], "48123");
+        assert_eq!(c[&county_key("Harris County")], "48201");
+    }
+
+    #[test]
+    fn frontage_skips_main_lanes_and_county_sets_external() {
+        // Freeway northbound 0->1, frontage road northbound 2->3 30 m east,
+        // frontage southbound 5->4 30 m west (no ref, named Frontage Road).
+        let mut fr_s = edge(5, 4, true, "x");
+        fr_s.r#ref = None;
+        fr_s.name = Some("Southbound Frontage Road".into());
+        fr_s.class = "secondary".into();
+        let mut fr_n = edge(2, 3, true, "Loop 1");
+        fr_n.class = "secondary".into();
+        let roads = Roads {
+            nodes: vec![
+                [-97.7000, 30.30],
+                [-97.7000, 30.31],
+                [-97.6997, 30.30],
+                [-97.6997, 30.31],
+                [-97.7003, 30.30],
+                [-97.7003, 30.31],
+            ],
+            edges: vec![edge(0, 1, true, "Loop 1"), fr_n, fr_s],
+        };
+        let link = vec![Some((0, 1, 0)), Some((2, 3, 1)), Some((5, 4, 2))];
+        let st = |id: &str, county: &str| Station {
+            id: id.into(),
+            year: 2025,
+            aadt: 3_000,
+            on_road: "SL0001".into(),
+            lon: -97.7000,
+            lat: 30.305,
+            active: true,
+            county: Some(county.into()),
+        };
+        let area = Area {
+            prefixes: vec!["48453".into()],
+        };
+        let c = snap(
+            &[
+                st("main", "48453"),
+                st("x1NBSR", "48453"),
+                st("x2SBSR", "48491"),
+                st("x3NBDR", "48453"),
+            ],
+            &roads,
+            &link,
+            &area,
+        );
+        assert_eq!(c.len(), 3, "ramp count with no ramp edge dropped");
+        assert_eq!((c[0].link, c[0].facility), (0, Facility::Main));
+        assert_eq!((c[1].link, c[1].facility), (1, Facility::Frontage));
+        assert_eq!(c[1].link2, None, "one-direction counts take one link");
+        assert_eq!((c[2].link, c[2].direction), (2, Some('S')));
+        assert!(!c[1].external && c[2].external);
     }
 }

@@ -85,6 +85,12 @@ pub struct Manifest {
     pub count_stations: Option<usize>,
     /// Stations snapped to scenario links and written to `counts.json`.
     pub counts_snapped: Option<usize>,
+    /// Snapped frontage-road counts (`facility: "frontage"`).
+    pub counts_frontage: Option<usize>,
+    /// Snapped direct-connector ramp counts (`facility: "ramp"`).
+    pub counts_ramp: Option<usize>,
+    /// Snapped counts whose county is outside `--area` (`external: true`).
+    pub counts_external: Option<usize>,
     /// GTFS feeds read, with their route counts (DATA-9).
     pub gtfs_feeds: Vec<String>,
     /// `all` or `highway` (`--roads`).
@@ -182,6 +188,9 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         gtfs_feeds: Vec::new(),
         count_stations: None,
         counts_snapped: None,
+        counts_frontage: None,
+        counts_ramp: None,
+        counts_external: None,
         existing_lines: 0,
         road_classes: if cfg.highway_only { "highway" } else { "all" },
         zone_level: cfg.level.name(),
@@ -322,9 +331,17 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
     let aadt = raw.join("txdot_aadt.csv");
     if let (Some(r), true) = (roads.as_ref(), aadt.exists()) {
         let stations = counts::read_stations(&aadt)?;
-        let c = counts::snap(&stations, r, &edge_link);
+        let unknown = stations.iter().filter(|s| s.county.is_none()).count();
+        if unknown > 0 {
+            eprintln!("warning: {unknown} count stations have no known county, never external");
+        }
+        let c = counts::snap(&stations, r, &edge_link, &cfg.area);
         m.count_stations = Some(stations.len());
         m.counts_snapped = Some(c.len());
+        let n = |f: counts::Facility| c.iter().filter(|x| x.facility == f).count();
+        m.counts_frontage = Some(n(counts::Facility::Frontage));
+        m.counts_ramp = Some(n(counts::Facility::Ramp));
+        m.counts_external = Some(c.iter().filter(|x| x.external).count());
         m.sources.push(
             "TxDOT AADT Annuals (Public View), TxDOT Transportation Planning and Programming",
         );

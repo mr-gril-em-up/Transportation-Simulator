@@ -108,7 +108,12 @@ TxDOT traffic count stations snapped to scenario links (DATA-10), written when `
 ```json
 [{"station_id": "227_7101", "year": 2023, "aadt": 187000, "on_road": "IH0035",
   "lon": -97.7321, "lat": 30.2803, "from": 1200, "to": 1201, "link": 40211,
-  "from2": 1350, "to2": 1349, "link2": 40388, "active": true, "dist_m": 12.4}]
+  "from2": 1350, "to2": 1349, "link2": 40388, "active": true,
+  "facility": "main", "external": false, "dist_m": 12.4},
+ {"station_id": "227H136SBSR", "year": 2025, "aadt": 3148, "on_road": "SL0001",
+  "lon": -97.79, "lat": 30.33, "from": 880, "to": 881, "link": 51002,
+  "active": true, "facility": "frontage", "direction": "S", "external": false,
+  "dist_m": 8.0}]
 ```
 
 | Field | Meaning |
@@ -121,13 +126,16 @@ TxDOT traffic count stations snapped to scenario links (DATA-10), written when `
 | `link`, `link2` | Index of `from`-`to` (and of `from2`-`to2`) in `scenario.json` `road_links`; tells parallel links between the same two nodes apart |
 | `active` | TxDOT `ACTIVE`: the station is still counted (inactive stations keep their last AADT) |
 | `from2`, `to2` | Opposite carriageway when `from`-`to` is one-way and one was found; compare `aadt` with the sum of both links. Omitted otherwise |
+| `facility` | From the id suffix: `main` (main lanes, two-way AADT), `frontage` (`..NBSR` etc., one direction of a frontage road) or `ramp` (`..NBDR` etc., one direction of a direct connector). Frontage and ramp counts never get `from2`/`to2` |
+| `direction` | `N`, `S`, `E` or `W` for `frontage` and `ramp`; omitted for `main` |
+| `external` | The station's county (TxDOT `CNTY_NM`) is outside `--area`. County builds keep roads a margin past the line, where there are no zones; skip these when comparing against assigned volumes |
 | `dist_m` | Station to `from`-`to` distance, meters (at most 100) |
 
 TxDOT's layer has no K factor, D factor or truck share, so none are written. Releases also carry it as a separate asset, `counts-<area>-<year><suffix>.json`.
 
 ## `manifest.json`
 
-Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, plus ` | headway P/M min` when GTFS gave peak/midday headways, sorted, so known lines can be checked from the manifest alone). `acs_income_zones`, `acs_zero_car_zones` and `area_zones` count block groups with their own ACS value or TIGER area (`null` if the file was absent). `commute_mode_shares` (present when B08301 was downloaded) sums the area's block groups into shares of all workers 16+: `drove_alone`, `carpool`, `transit`, `walk`, `bike`, `wfh` and `taxi_motorcycle_other`, which add to 1, plus `workers` and `block_groups`. sim-core's F14 calibration reads it. `existing_lines` counts the lines in `existing_lines.json`. `gtfs_routes_matched` counts OSM routes that got CapMetro GTFS headways. `gtfs_feeds` lists each GTFS feed read with its route count. `count_stations` and `counts_snapped` count TxDOT stations read and written to `counts.json` (`null` without the download). `road_classes` is `all` or `highway` (`--roads`). `zone_level` is `block_group`, `tract` or `county`; `block_groups` is the number of block groups merged into `zones`. `scenario_road_nodes` and `scenario_road_links` count the simplified graph in `scenario.json`; `road_nodes` and `road_edges` count `roads.json`.
+Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, plus ` | headway P/M min` when GTFS gave peak/midday headways, sorted, so known lines can be checked from the manifest alone). `acs_income_zones`, `acs_zero_car_zones` and `area_zones` count block groups with their own ACS value or TIGER area (`null` if the file was absent). `commute_mode_shares` (present when B08301 was downloaded) sums the area's block groups into shares of all workers 16+: `drove_alone`, `carpool`, `transit`, `walk`, `bike`, `wfh` and `taxi_motorcycle_other`, which add to 1, plus `workers` and `block_groups`. sim-core's F14 calibration reads it. `existing_lines` counts the lines in `existing_lines.json`. `gtfs_routes_matched` counts OSM routes that got CapMetro GTFS headways. `gtfs_feeds` lists each GTFS feed read with its route count. `count_stations` and `counts_snapped` count TxDOT stations read and written to `counts.json`; `counts_frontage`, `counts_ramp` and `counts_external` count the written entries with that `facility` or `external: true` (all `null` without the download). `road_classes` is `all` or `highway` (`--roads`). `zone_level` is `block_group`, `tract` or `county`; `block_groups` is the number of block groups merged into `zones`. `scenario_road_nodes` and `scenario_road_links` count the simplified graph in `scenario.json`; `road_nodes` and `road_edges` count `roads.json`.
 
 ## Distribution
 
