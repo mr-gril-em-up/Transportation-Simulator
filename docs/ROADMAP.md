@@ -175,13 +175,13 @@ Goal: the readable statewide map, a way in for new players, and a shippable buil
 | F42 | Morph between schematic and true geography across the Region-to-City zoom band | app | F41 | No line jumps or disappears while zooming | Prototype (#2) |
 | F43 | Save and load: aggregate state plus seeds, never agents | core, app | F36 | Load restores identical results and the same agents on screen | Planned |
 | F44 | Starting map: real roads present, existing transit removed by default, toggle to keep it (from the pipeline's transit output) | core, app | F02, F43 | New game offers both starts | Planned |
-| F45 | Onboarding scenario with a goal (e.g. cut I-35 peak travel time) | app, core | F27, F41 | A new player completes it without help | Planned |
+| F45 | Onboarding: a guided first session (read demand, draw a line, see ridership and budget respond). No win condition, per D15 | app, core | F27, F41 | A new player completes it without help | Planned |
 | F46 | Packaging: desktop installers, OSM/ODbL attribution screen, data-licence review done | app | F33 | Installer runs on a clean machine; ODbL question answered before any sale | Planned |
 | F47 | MVP playtest | all | F41–F46 | **60 minutes of play on the full Texas map** | Planned |
 
-## In the MVP list but not yet scheduled
+## The MVP is a sandbox
 
-The design doc recommends **region unlocks** (start in one metro, unlock adjacent corridors) and **scenario goals with win conditions**, but its MVP list does not include them. This roadmap only schedules the onboarding scenario (F45). Decision needed from Collins before M4: in or out of the MVP?
+Decided by Collins on 2026-11-27 (D15): the Texas MVP ships as a sandbox. The whole state is open from the start, with **no region unlocks** and **no scenario win conditions**. Both are post-MVP (see below). The fail state that stays in the MVP is bankruptcy (F26).
 
 ## After the MVP (unscheduled)
 
@@ -190,7 +190,7 @@ From the design doc's mode table and expansion sections. Not on the Gantt; sched
 | Phase | Features |
 |---|---|
 | 1.0 modes | Bike, e-bike, scooters; ferry and water taxi; urban gondola; automated people mover and monorail; intercity bus and regional air; maglev (500 km/h); autonomous shuttles and robotaxi fleets |
-| 1.0 systems | Elections every 4 game years and loss of mandate (approval below 30%) |
+| 1.0 systems | Elections every 4 game years and loss of mandate (approval below 30%); region unlocks (one metro, then adjacent corridors, gated on approval and revenue); scenario goals with win conditions (e.g. cut I-35 peak travel time 20% by 2035). Unlocks and scenarios are post-MVP per D15 |
 | Post-launch | eVTOL air taxis (labelled as projected numbers); freight (needs a goods-demand model) |
 | City builder | Passive growth from accessibility logsums; zoning; neighborhood building on real parcels |
 | Next state | Open question: which state, free update or paid DLC |

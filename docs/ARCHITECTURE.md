@@ -110,6 +110,5 @@ docs/                   this hub: roadmap, architecture, decisions, docs standar
 
 ## Open engineering questions
 
-- **Licence.** All crates inherit the workspace `license = "UNLICENSED"`. Decide before any release.
 - **Package format.** JSON is interim. A binary format and tile streaming land with M3 (F33).
 - **OSM ODbL.** The derived road database ships with the game; it needs attribution and share-alike review before any sale (F46).
