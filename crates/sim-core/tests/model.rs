@@ -169,10 +169,44 @@ fn calibration_hits_targets() {
         bike: 0.04,
     };
     s.calibrate_mode_shares(target, 15);
-    let got = s.results().mode_share;
+    let got = s.commute_mode_shares();
     for (g, t) in got.to_array().iter().zip(target.to_array()) {
         assert!((g - t).abs() < 0.01, "{got:?}");
     }
+}
+
+#[test]
+fn calibration_fits_transit_as_one_share_or_by_access_mode() {
+    let mut s = sim();
+    s.add_line(rail()).unwrap();
+    let mut target = ModeSplit {
+        drive: 0.75,
+        carpool: 0.10,
+        transit_walk: 0.015,
+        transit_drive: 0.0,
+        walk: 0.06,
+        bike: 0.04,
+    };
+    // Combined: total transit hits 1.5% (one synthetic line limits how many
+    // commuters can ride at all), the access split is left to the model.
+    s.calibrate_mode_shares(target, 20);
+    let got = s.commute_mode_shares().shares();
+    let want = target.shares();
+    assert!((got.transit() - want.transit()).abs() < 0.002, "{got:?}");
+    // Split: 0.5% park-and-ride, 1% walk access.
+    target.transit_walk = 0.010;
+    target.transit_drive = 0.005;
+    let want = target.shares();
+    s.calibrate_mode_shares(target, 20);
+    let got = s.commute_mode_shares();
+    assert!(
+        (got.transit_walk - want.transit_walk).abs() < 0.002,
+        "{got:?}"
+    );
+    assert!(
+        (got.transit_drive - want.transit_drive).abs() < 0.002,
+        "{got:?}"
+    );
 }
 
 #[test]

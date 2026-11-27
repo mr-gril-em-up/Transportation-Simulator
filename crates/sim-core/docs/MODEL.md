@@ -212,11 +212,41 @@ are counted as `unserved_trips`.
 
 Work trips use congested (peak) car times; other trips use free-flow times.
 
-**Constants.** `asc` defaults give a car-dominated split close to Texas norms.
-`calibrate_mode_shares` adjusts them with the standard iterative update
+**Constants (F14, SIM-10).** `calibrate_mode_shares` fits them with the
+standard iterative update
 `asc_m += ln(target_m / model_m) - ln(target_drive / model_drive)` (drive is the
-reference) until the model reproduces target shares. On real data the targets
-are ACS commute shares by county, and per-metro constants (the doc's plan).
+reference) until **commute** trips reproduce the targets; non-work trips use
+the same constants. Transit is fitted as one share (walk- and drive-access
+constants move together) unless the target splits it by access mode.
+
+The defaults `asc [0, -2.44, -0.42, -4.18, -0.41, -3.89]` are fitted on real
+Travis by `examples/calibrate.rs`:
+
+- Data: release `data-48453-2023` with ACS block-group income and zero-car
+  share (DATA-4), and today's CapMetro network from `transit.json` (74 route
+  refs; the Red Line at its real 32/51-minute headways, buses at a placeholder
+  20/30 minutes until GTFS headways land).
+- Targets: ACS 2019-2023 B08301 Travis commute shares (figures.csv
+  `acs_travis_commute_*`: drove alone 59.7%, carpool 7.5%, transit 1.67%, walk
+  2.07%, bike 0.60%, work from home 27.2%, other 1.3%). Work from home and
+  taxi/motorcycle/other are not modeled trips, so the five travel modes are
+  renormalized by their 71.5% total: drive 83.5%, carpool 10.4%, transit 2.3%,
+  walk 2.9%, bike 0.8%. The fit reproduces them to 0.1 point (F14 target: 2).
+- Park-and-ride share of transit commuters: 3%. **Tuned, not sourced**: ACS
+  has no access mode and no CapMetro on-board survey split was found. It
+  decides the Red Line: with walk and drive access fitted together, modeled
+  park-and-ride put 6k-16k riders a day on it against ~1.5k real; at 8% of
+  transit it carries 4,265, at 3% 1,917, at 1% 1,024. 3% is the value that puts
+  the Red Line inside the F19 band, so **F19 is no longer an independent
+  check**.
+- Independent check: modeled bus boardings, 65.5k a day, against CapMetro's
+  ~69-70k weekday bus boardings (NTD 2023: 75,447 weekday all modes, bus ~92%
+  of annual trips), 6% low, with placeholder bus headways.
+
+Caveat: the constants absorb everything the model misses (no Williamson County
+zones at the Red Line's north end, placeholder bus frequencies, no transit
+crowding), so refit after any of those change. Re-run:
+`cargo run --release -p sim-core --example calibrate -- scenario.json transit.json`.
 
 Why one logit, not nested: a nested logit (transit nest) gives more realistic
 substitution between transit sub-modes, but needs nesting parameters we cannot

@@ -45,7 +45,8 @@ fn main() {
     );
     println!("peak avg speed {:.1} km/h", r.peak_avg_speed_kph);
 
-    // Roughly ACS Travis County commute shares, applied to all trips for the demo.
+    // Rough commute shares, to time a calibration on the synthetic region
+    // (`examples/calibrate.rs` does the real Travis fit).
     let t = Instant::now();
     sim.calibrate_mode_shares(
         ModeSplit {
