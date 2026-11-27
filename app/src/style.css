@@ -23,3 +23,6 @@ button.on { background: #1b1d22; color: #fff; border-color: #1b1d22; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
 #zoom-badge { bottom: 12px; left: 12px; display: flex; gap: 6px; align-items: center; }
 .econ { color: #5b616b; font-size: 12px; }
+
+#budget { font-size: 12px; margin: -4px 0 8px; color: #444; }
+#budget .neg { color: #b00; }

@@ -54,6 +54,17 @@ other mode).
    stop i. Daily riders = the sum. Every route is simulated independently: no
    competition between lines, no congestion, no transfers between drawn lines.
 
+## Capital cost and budget
+
+`mockCapital(route, riders)` mirrors sim-core's capital formula with its
+sourced rows for bus ($0.3M/km, $716k per bus), light rail ($840M/mile,
+$5M per car) and commuter rail ($20M/km, $5M per car); other modes use the bus
+or commuter rail row. Fleet = round trip at the mock's speed divided by the
+headway, plus one. The grant is 50% when capital per daily rider is at most
+$600k, else 0. `MockSim` keeps a ledger with the same rules as sim-core:
+charge capital less grant on build, charge only the increase on an edit,
+refund nothing. There is no operating settlement in the mock.
+
 ## Calibration point
 
 The Red Line demo (approximate real station positions, 30-minute headway)

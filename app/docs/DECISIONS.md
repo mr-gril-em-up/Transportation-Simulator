@@ -136,3 +136,13 @@ each touched line is re-simulated. The tolerance is there because snapped
 coordinates come from rendered, tile-quantized geometry, so they are not
 bit-identical. Splitting an interchange means deleting the stop on one line
 and adding a new one.
+
+### A22. Cost preview in the drawing hint, budget in the ridership panel
+The preview appears where the player is already looking while placing stops,
+and updates per stop, so the cost of one more station is visible before it is
+placed. It goes through the serial sim queue rather than a separate channel
+because sim-core's `preview_line` temporarily mutates the Sim; a generation
+counter keeps a burst of clicks from queueing stale previews. Stop edits are
+charged on release without a preview: a drag already shows ridership after
+release, and the budget line shows the cost change. If players get surprised
+by edit costs, add a preview on drag (F16 follow-up).

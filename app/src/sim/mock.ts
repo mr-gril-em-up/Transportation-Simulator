@@ -2,7 +2,7 @@
 // Travis County zones. Deterministic, responds to stop placement, headway and
 // fare, and runs in a few ms. Numbers are plausible, not calibrated.
 import { km } from "../geo";
-import { isRegional, type DesireLine, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
+import { isRegional, type Budget, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 interface Zone {
   lngLat: LngLat;
@@ -107,6 +107,29 @@ export function simulateRoute(route: RouteSpec, zones: Zone[]): RouteResult {
   return { routeId: route.id, dailyRiders: Math.round(total), boardingsByStop: boardings };
 }
 
+// Capital per km of guideway and per vehicle, copied from sim-core's sourced
+// rows (crates/sim-core/src/params.rs): bus, Austin light rail ($840M/mi),
+// commuter rail. Other modes use their kind's row.
+const CAPITAL: Partial<Record<RouteSpec["mode"], [number, number]>> = {
+  bus: [0.3e6, 716_400],
+  light_rail: [840e6 / 1.609344, 5e6],
+  commuter_rail: [20e6, 5e6],
+};
+const FEDERAL_SHARE = 0.5;
+const FEDERAL_MAX_PER_RIDER = 600_000; // capital per daily boarding, the grant gate
+
+/** Capital cost and grant for a route: guideway km plus the fleet a round trip at its headway needs. */
+export function mockCapital(route: RouteSpec, dailyRiders: number): { capitalCost: number; federalGrant: number } {
+  const kind: Kind = isRegional(route.mode) ? "regional" : "local";
+  const [perKm, perVehicle] = CAPITAL[route.mode] ?? CAPITAL[kind === "local" ? "bus" : "commuter_rail"]!;
+  let len = 0;
+  for (let i = 1; i < route.stops.length; i++) len += km(route.stops[i - 1].lngLat, route.stops[i].lngLat);
+  const vehicles = Math.ceil((2 * (len / SPEED_KMH[kind]) * 60) / route.headwayMin) + 1;
+  const capitalCost = perKm * len + vehicles * perVehicle;
+  const passes = dailyRiders > 0 && capitalCost / dailyRiders <= FEDERAL_MAX_PER_RIDER;
+  return { capitalCost, federalGrant: passes ? capitalCost * FEDERAL_SHARE : 0 };
+}
+
 /** Browser-only SimClient backed by `simulateRoute` (see docs/MOCK-SIM.md). */
 export class MockSim implements SimClient {
   readonly label = "mock model (browser)";
@@ -114,14 +137,35 @@ export class MockSim implements SimClient {
   async ready(): Promise<void> {}
   private zones = buildZones();
   private routes = new Map<string, RouteSpec>();
+  // Same rules as sim-core: an edit pays only capital beyond what the line already paid.
+  private paid = new Map<string, number>();
+  private ledger: Budget = { cash: 0, capitalSpentThisMonth: 0, grantsThisMonth: 0 };
 
   async upsertRoute(route: RouteSpec): Promise<RouteResult[]> {
     this.routes.set(route.id, route);
+    const res = simulateRoute(route, this.zones);
+    const { capitalCost } = mockCapital(route, res.dailyRiders);
+    const spend = Math.max(0, capitalCost - (this.paid.get(route.id) ?? 0));
+    this.paid.set(route.id, Math.max(capitalCost, this.paid.get(route.id) ?? 0));
+    const grant = spend > 0 && capitalCost / Math.max(res.dailyRiders, 1e-9) <= FEDERAL_MAX_PER_RIDER ? spend * FEDERAL_SHARE : 0;
+    this.ledger.capitalSpentThisMonth += spend;
+    this.ledger.grantsThisMonth += grant;
+    this.ledger.cash += grant - spend;
     return this.run();
+  }
+
+  async previewRoute(route: RouteSpec): Promise<RoutePreview> {
+    const { dailyRiders } = simulateRoute(route, this.zones);
+    return { dailyRiders, ...mockCapital(route, dailyRiders) };
+  }
+
+  async budget(): Promise<Budget> {
+    return { ...this.ledger };
   }
 
   async removeRoute(id: string): Promise<RouteResult[]> {
     this.routes.delete(id);
+    this.paid.delete(id);
     return this.run();
   }
 

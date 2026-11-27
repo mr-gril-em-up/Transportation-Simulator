@@ -6,7 +6,9 @@ import { LineDrawer } from "./draw";
 import { StopEditor } from "./edit";
 import { createMap, GEO_FULL, SCHEMATIC_FULL, setData, zoomBand } from "./map";
 import { layoutSchematic, morph } from "./schematic";
-import { isRegional, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
+import { km } from "./geo";
+import { money } from "./format";
+import { isRegional, type Budget, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
 import { createSim } from "./sim";
 import { serialQueue } from "./sim/queue";
 
@@ -37,6 +39,7 @@ async function applyNow(call: () => Promise<RouteResult[]>): Promise<void> {
   $("sim-ms").textContent = `${sim.label} · running…`;
   try {
     results = new Map((await call()).map((r) => [r.routeId, r]));
+    renderBudget(await sim.budget());
     $("sim-ms").textContent = `${sim.label} · ${Math.round(performance.now() - t0)} ms`;
   } catch (e) {
     $("sim-ms").textContent = `${sim.label} error: ${e}`;
@@ -46,10 +49,20 @@ async function applyNow(call: () => Promise<RouteResult[]>): Promise<void> {
   renderPanel();
 }
 
-function addRoute(mode: Mode, pts: LngLat[], stopNames?: string[], name?: string): void {
-  const id = `r${nextId++}`;
+let lastCash: number | null = null;
+function renderBudget(b: Budget): void {
+  // The change since the last call shows what the edit just cost (or the grant it won).
+  const delta = lastCash === null ? 0 : b.cash - lastCash;
+  lastCash = b.cash;
+  $("budget").innerHTML =
+    `Cash <b class="${b.cash < 0 ? "neg" : ""}">${money(b.cash)}</b>` +
+    (Math.abs(delta) >= 1 ? ` (${delta > 0 ? "+" : ""}${money(delta)} last change)` : "") +
+    `<br>This month: ${money(b.capitalSpentThisMonth)} built, ${money(b.grantsThisMonth)} federal grants`;
+}
+
+function makeRoute(id: string, mode: Mode, pts: LngLat[], stopNames?: string[], name?: string): RouteSpec {
   const n = routes.filter((r) => isRegional(r.mode) === isRegional(mode)).length + 1;
-  const route: RouteSpec = {
+  return {
     id,
     name: name ?? (isRegional(mode) ? `Rail ${n}` : `Bus ${n}`),
     mode,
@@ -58,6 +71,10 @@ function addRoute(mode: Mode, pts: LngLat[], stopNames?: string[], name?: string
     headwayMin: isRegional(mode) ? 30 : 15,
     fare: 1.25,
   };
+}
+
+function addRoute(mode: Mode, pts: LngLat[], stopNames?: string[], name?: string): void {
+  const route = makeRoute(`r${nextId++}`, mode, pts, stopNames, name);
   routes.push(route);
   void apply(() => sim.upsertRoute(route));
 }
@@ -158,7 +175,10 @@ function renderPanel(): void {
 // Startup: sim-core can take seconds (15 s on the real Travis road graph) to build.
 $("sim-ms").textContent = `${sim.label} · loading…`;
 sim.ready().then(
-  () => ($("sim-ms").textContent = `${sim.label} · ready`),
+  async () => {
+    $("sim-ms").textContent = `${sim.label} · ready`;
+    renderBudget(await sim.budget());
+  },
   (e) => ($("sim-ms").textContent = `${sim.label} failed to start: ${e}`),
 );
 
@@ -193,11 +213,44 @@ $("btn-desire").onclick = () => {
 map.on("zoom", render);
 
 // ---- UI wiring --------------------------------------------------------------
+const DRAW_HINT = "Click to place stops. Enter or double-click to finish, Esc to cancel.";
 const drawer = new LineDrawer(
   map,
   (mode, pts) => addRoute(mode, pts),
-  (drawing) => ($("draw-hint").hidden = !drawing),
+  (drawing) => {
+    $("draw-hint").hidden = !drawing;
+    $("draw-hint").textContent = DRAW_HINT;
+  },
+  previewDraft,
 );
+
+// ---- Build cost preview while drawing (F16) ------------------------------------
+// Each placed stop asks the sim what the line would cost and carry. Previews go
+// through the same queue as edits; a newer stop makes older pending ones skip.
+let draftGen = 0;
+function previewDraft(mode: Mode, pts: LngLat[]): void {
+  const gen = ++draftGen;
+  if (pts.length < 2) return;
+  const draft = makeRoute("draft", mode, pts);
+  let len = 0;
+  for (let i = 1; i < pts.length; i++) len += km(pts[i - 1], pts[i]);
+  const head = `${pts.length} stops · ${len.toFixed(1)} km`;
+  $("draw-hint").textContent = `${head} · estimating cost…`;
+  void queued(async () => (gen === draftGen ? sim.previewRoute(draft) : null))
+    .then((p) => {
+      if (!p || gen !== draftGen) return;
+      const grant =
+        p.federalGrant > 0 ? `${money(p.federalGrant)} federal grant` : "no federal grant (over $600k per daily rider)";
+      $("draw-hint").innerHTML =
+        `${head} · <b>${money(p.capitalCost)}</b> to build, ${grant} · ` +
+        `<b>${p.dailyRiders.toLocaleString()}</b> riders/day` +
+        (p.operatingCostPerDay !== undefined ? ` · ${money(p.operatingCostPerDay)}/day to run` : "") +
+        `<br>Enter or double-click to build, Esc to cancel.`;
+    })
+    .catch((e) => {
+      if (gen === draftGen) $("draw-hint").textContent = `Cost preview failed: ${e}`;
+    });
+}
 $("btn-draw-bus").onclick = () => (editor.stop(), drawer.start("bus"));
 $("btn-draw-rail").onclick = () => (editor.stop(), drawer.start("light_rail"));
 
@@ -217,7 +270,7 @@ function updateEditHint(): void {
   $("draw-hint").hidden = !route;
   $("draw-hint").textContent = route
     ? `Editing ${route.name}: drag a stop to move it, click the map to add one, right-click a stop to delete it. Esc to finish.`
-    : "Click to place stops. Enter or double-click to finish, Esc to cancel.";
+    : DRAW_HINT;
 }
 $("btn-demo").onclick = () =>
   addRoute("commuter_rail", RED_LINE.map((s) => s.lngLat), RED_LINE.map((s) => s.name), "Red Line (demo)");

@@ -13,6 +13,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Browser client (mock sim): Red Line demo and a drawn bus line](docs/img/city-view.png)
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
 ![Editing a line: stops ringed in black can be dragged, added or deleted](docs/img/stop-editing.png)
+![Drawing a rail line: the hint box previews capital cost, grant and riders before you build](docs/img/cost-preview.png)
 ![Desire lines from sim-core with the Red Line; pairs along the line turn green as transit share rises](docs/img/desire-lines.png)
 
 ## Run
@@ -48,7 +49,9 @@ the build. The terminal prints
 
 - **Draw bus line / Draw rail line**: click the map to drop stops. **Enter** or double-click
   finishes, **Esc** cancels. Clicking an existing stop snaps to it, so lines can share an
-  interchange.
+  interchange. From the second stop on, the hint box shows a **build cost preview**: length,
+  capital cost, the federal grant it would win (or why not), forecast riders per day and daily
+  operating cost. Nothing is charged until you finish the line.
 - **Edit stops** (per line, in the ridership panel): zooms to the line and draws it in true
   geography. Drag a stop to move it, click the map to add a stop (it goes where it lengthens the
   line least), and right-click a stop to delete it (a line keeps at least two). Dragging an
@@ -62,6 +65,10 @@ the build. The terminal prints
   (10%+ transit share). It refreshes after every line edit, so you can watch transit share move.
 - **Add Red Line demo**: an approximate CapMetro Red Line (9 stations, commuter rail, 30-min
   headway).
+- **Budget** (top of the ridership panel): cash on hand, the change from the last edit, and this
+  month's capital spend and federal grants. Building charges capital less any grant; extending a
+  line charges only the added cost; shrinking or deleting refunds nothing (sim-core rules, F26).
+  Cash starts at $0 and can go negative until bonds exist.
 - **Ridership panel** (top right): weekday boardings per line. With sim-core it also shows
   operating cost per day and farebox recovery. The header shows which backend answered and the
   round-trip time of the last call (M1 target: under 2 s). Changing the headway dropdown re-runs
@@ -107,8 +114,14 @@ interface SimClient {
   desireLines(n: number): Promise<DesireLine[]>;         // top n zone pairs by daily trips
   upsertRoute(route: RouteSpec): Promise<RouteResult[]>; // add or replace; results for EVERY route
   removeRoute(id: string): Promise<RouteResult[]>;
+  previewRoute(route: RouteSpec): Promise<RoutePreview>; // cost + forecast, nothing charged
+  budget(): Promise<Budget>;                             // cash and this month's capital/grants
 }
 ```
+
+- `RoutePreview`: `dailyRiders`, `capitalCost` (USD), `federalGrant` (USD, 0 when capital per
+  daily rider exceeds $600k), optional `operatingCostPerDay`.
+- `Budget`: `cash`, `capitalSpentThisMonth`, `grantsThisMonth` (all USD).
 
 - `RouteSpec`: `id` (client string, `r1`, `r2`, ...), `name`, `mode`, `color`, `stops[]`
   (`id`, `name`, `lngLat` as WGS84 `[lon, lat]` in degrees), `headwayMin` (minutes), `fare`
@@ -130,6 +143,8 @@ interface SimClient {
 | `upsert_route` | `routeId: string`, `line: TransitLine` | `RouteResultOut[]` for every client route |
 | `remove_route` | `routeId: string` | `RouteResultOut[]` |
 | `desire_lines` | `n: number` | Top `n` zone pairs by daily trips: `{ from: [lon,lat], to: [lon,lat], trips, transit_trips }[]`, largest first |
+| `preview_route` | `line: TransitLine` | sim-core `LinePreview`: `{ line: LineResult, capital_cost, federal_grant, capital_per_daily_boarding }`. Runs under the Sim lock (sim-core adds and removes the line while it evaluates, 40 to 80 ms) |
+| `ledger` | none | sim-core `Ledger`: `{ cash, current: MonthStatement, history: MonthStatement[], served_population }` |
 | `sim_status` | none | `{ ready, error, source }`; `source` is the scenario path or `"synthetic"` |
 
 `RouteResultOut` is sim-core's `LineResult` with `route_id` (the client id) flattened into it.
@@ -177,7 +192,8 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 |---|---|
 | Lines are straight from stop to stop, not snapped to roads | Road graph from the pipeline plus a router (F16 follow-up) |
 | Desire lines are straight zone-to-zone chords capped at 300 pairs; no filtering by purpose or mode | F06 follow-up if playtests want it |
-| No capital cost preview while drawing or editing; operating cost shows after commit | F23 (sim-core capital cost model), then F16 |
+| Cost preview only while drawing; a stop edit is charged on release with no preview first (the budget shows what it cost) | F16 follow-up if it matters in play |
+| No monthly statement view, skip-to-next-month or settlement in the HUD | F21 (sim-driven clock), then the budget panel (M2) |
 | Mode picker is two buttons (bus, light rail); fare fixed at $1.25 | F16 |
 | `park_ride` is all-or-nothing per line | Per-stop properties in the stop editor (F16) |
 | Clock is client-side; `Sim::tick` is not called, so car congestion only updates at sim build | F21 |
@@ -192,7 +208,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 |---|---|
 | F05 Tauri shell and map | Done: shell, map and sim-core linked |
 | F15 Tauri command interface | Done (app side): `upsert_route`, `remove_route`, `sim_status`. Clock advance not wired |
-| F16 Line drawing | Partial: draw, edit stops (move, insert, delete), rename, headway, delete line. Missing: capital cost preview (needs sim-core's cost model, F23) and mode/fare pickers |
+| F16 Line drawing | Partial: draw with capital cost, grant and ridership preview; edit stops (move, insert, delete), rename, headway, delete line. Missing: mode and fare pickers |
 | F17 Ridership readout | Done for line totals and per-stop boardings, plus cost and farebox from sim-core |
 | F21 Clock and time-lapse | Prototype: client clock at 1/2/10/60x, no skip-to-month |
 | F41 / F42 Schematic and morph | Prototype: heuristic layout, no pins |
@@ -207,6 +223,7 @@ app/
 │   ├── main.ts           App wiring: state, rendering, UI events, clock loop
 │   ├── map.ts            MapLibre setup, basemap + offline fallback, all layers, zoom bands
 │   ├── draw.ts           Click-to-place line drawing tool
+│   ├── format.ts         money(): $820k / $34.5M / $1.20B for the HUD
 │   ├── geo.ts            km(): distance helper shared by the editor, schematic and mock
 │   ├── edit.ts           Stop editor: drag, insert (least added length), delete; bestInsertIndex()
 │   ├── schematic.ts      Tube-map layout + geo/schematic morph
