@@ -242,6 +242,7 @@ pub fn straight_line(
         mode,
         stops,
         headway_min,
+        offpeak_headway_min: None,
         fare: None,
         fare_per_km: None,
         speed_kph: None,

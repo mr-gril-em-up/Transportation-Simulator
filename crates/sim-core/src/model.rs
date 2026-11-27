@@ -198,6 +198,10 @@ struct RowInputs<'a> {
     peak_toll: &'a [f32],
     tw: &'a [TOd],
     td: &'a [TOd],
+    /// Off-peak transit components (non-work trips); same as `tw`/`td` when
+    /// no line runs a different off-peak headway.
+    tw_off: &'a [TOd],
+    td_off: &'a [TOd],
 }
 
 /// Everything one origin produces in a fused pass.
@@ -207,6 +211,8 @@ struct OriginOut {
     tl: Vec<f32>,
     w: Vec<TOd>,
     d: Vec<TOd>,
+    w_off: Vec<TOd>,
+    d_off: Vec<TOd>,
     row: Row,
 }
 
@@ -250,6 +256,9 @@ pub struct Sim {
     net: TransitNet,
     tsk_walk: Vec<TOd>,
     tsk_drive: Vec<TOd>,
+    /// Off-peak transit skims; empty when no line has its own off-peak headway.
+    tsk_walk_off: Vec<TOd>,
+    tsk_drive_off: Vec<TOd>,
     /// Daily transit trips i->j (walk + drive access), for desire lines and zone stats.
     transit_od: Vec<f64>,
     zone_trips: Vec<f64>,
@@ -382,6 +391,8 @@ impl Sim {
             net: TransitNet::build(&[], &[], &Params::default()),
             tsk_walk: vec![],
             tsk_drive: vec![],
+            tsk_walk_off: vec![],
+            tsk_drive_off: vec![],
             transit_od: vec![0.0; nz * nz],
             zone_trips: vec![0.0; nz],
             results: Results::default(),
@@ -861,18 +872,39 @@ impl Sim {
         let dt_other = Self::flatten(&rows, |r| &r.dt_other);
         // Daily transit trips: AM commute i->j, PM return j->i, plus other trips.
         // Park-and-ride returns are loaded on the AM path (see MODEL.md).
+        // Work trips ride peak paths; other trips ride off-peak paths, which
+        // differ only when some line has its own off-peak headway.
+        let off = !self.net.is_empty() && self.net.offpeak_differs();
         let mut d_walk = vec![0.0; z * z];
         let mut d_drive = vec![0.0; z * z];
+        let (mut o_walk, mut o_drive) = if off {
+            (vec![0.0; z * z], vec![0.0; z * z])
+        } else {
+            (vec![], vec![])
+        };
         for i in 0..z {
             for j in 0..z {
                 let k = i * z + j;
-                d_walk[k] = wt_work[k] + wt_work[j * z + i] + wt_other[k];
-                d_drive[k] = 2.0 * dt_work[k] + dt_other[k];
+                d_walk[k] = wt_work[k] + wt_work[j * z + i];
+                d_drive[k] = 2.0 * dt_work[k];
+                if off {
+                    o_walk[k] = wt_other[k];
+                    o_drive[k] = dt_other[k];
+                } else {
+                    d_walk[k] += wt_other[k];
+                    d_drive[k] += dt_other[k];
+                }
             }
         }
-        let loads = self.load_transit(&d_walk, &d_drive);
+        let mut loads = self.load_transit(&d_walk, &d_drive, false);
+        if off {
+            loads = loads.merge(self.load_transit(&o_walk, &o_drive, true));
+        }
         for k in 0..z * z {
             self.transit_od[k] = d_walk[k] + d_drive[k];
+            if off {
+                self.transit_od[k] += o_walk[k] + o_drive[k];
+            }
         }
 
         let mut work = [0.0; N_CHOICES];
@@ -938,8 +970,13 @@ impl Sim {
                     .fold(0.0, f64::max);
                 // Round trip with 10% layover, rounded up to whole vehicles.
                 let cycle = 2.0 * l.run_min() * 1.1;
-                let vehicles = (cycle / l.headway).ceil().max(1.0);
-                let rev_hours = vehicles * l.span_hours;
+                let peak_vehicles = (cycle / l.headway).ceil().max(1.0);
+                let off_vehicles = (cycle / l.offpeak_headway).ceil().max(1.0);
+                // The fleet covers whichever period runs more often, so an
+                // off-peak headway shorter than the peak one is paid for too.
+                let vehicles = peak_vehicles.max(off_vehicles);
+                let peak_h = self.params.peak_service_hours.clamp(0.0, l.span_hours);
+                let rev_hours = peak_vehicles * peak_h + off_vehicles * (l.span_hours - peak_h);
                 let op_cost = rev_hours * l.defaults.cost_per_revenue_hour();
                 let revenue = loads.boardings[li] * l.fare + loads.pkm[li] * l.fare_per_km;
                 LineResult {
@@ -1060,41 +1097,43 @@ impl Sim {
 
     fn transit_skims(&mut self) {
         let z = self.nz;
+        self.tsk_walk_off.clear();
+        self.tsk_drive_off.clear();
         if self.net.is_empty() {
             self.tsk_walk = vec![TOd::NONE; z * z];
             self.tsk_drive = vec![TOd::NONE; z * z];
             return;
         }
         let (net, p, car) = (&self.net, &self.params, &self.car_peak);
-        let rows: Vec<(Vec<TOd>, Vec<TOd>)> = (0..z)
+        let off = net.offpeak_differs();
+        let rows: Vec<[Vec<TOd>; 4]> = (0..z)
             .into_par_iter()
             .map_init(
                 || Searcher::new(net, p, z),
                 |s, i| {
                     let (cm, ck) = (&car.time[i * z..(i + 1) * z], &car.km[i * z..(i + 1) * z]);
-                    let mut w = vec![TOd::NONE; z];
-                    let mut d = vec![TOd::NONE; z];
-                    if !net.walk_access[i].is_empty() {
-                        s.run(i, Access::Walk, cm, ck);
-                        (0..z).for_each(|j| w[j] = s.od(j));
-                    }
-                    if !net.pnr.is_empty() {
-                        s.run(i, Access::Drive, cm, ck);
-                        (0..z).for_each(|j| d[j] = s.od(j));
-                    }
-                    (w, d)
+                    let (w, d) = transit_row(s, i, cm, ck, false);
+                    let (wo, dofp) = if off {
+                        transit_row(s, i, cm, ck, true)
+                    } else {
+                        (vec![], vec![])
+                    };
+                    [w, d, wo, dofp]
                 },
             )
             .collect();
         self.tsk_walk.clear();
         self.tsk_drive.clear();
-        for (w, d) in rows {
+        for [w, d, wo, dofp] in rows {
             self.tsk_walk.extend(w);
             self.tsk_drive.extend(d);
+            self.tsk_walk_off.extend(wo);
+            self.tsk_drive_off.extend(dofp);
         }
     }
 
-    fn load_transit(&self, d_walk: &[f64], d_drive: &[f64]) -> LineLoads {
+    /// Load daily transit demand on peak (`offpeak = false`) or off-peak paths.
+    fn load_transit(&self, d_walk: &[f64], d_drive: &[f64], offpeak: bool) -> LineLoads {
         let z = self.nz;
         let net = &self.net;
         if net.is_empty() {
@@ -1104,7 +1143,11 @@ impl Sim {
         (0..z)
             .into_par_iter()
             .fold(
-                || (Searcher::new(net, p, z), LineLoads::new(net)),
+                || {
+                    let mut s = Searcher::new(net, p, z);
+                    s.offpeak = offpeak;
+                    (s, LineLoads::new(net))
+                },
                 |(mut s, mut acc), i| {
                     let (cm, ck) = (&car.time[i * z..(i + 1) * z], &car.km[i * z..(i + 1) * z]);
                     for (access, d) in [(Access::Walk, d_walk), (Access::Drive, d_drive)] {
@@ -1134,7 +1177,9 @@ impl Sim {
                     peak_km: &self.car_peak.km[r.clone()],
                     peak_toll: &self.car_peak.toll[r.clone()],
                     tw: &self.tsk_walk[r.clone()],
-                    td: &self.tsk_drive[r],
+                    td: &self.tsk_drive[r.clone()],
+                    tw_off: off_row(&self.tsk_walk_off, &self.tsk_walk, r.clone()),
+                    td_off: off_row(&self.tsk_drive_off, &self.tsk_drive, r),
                 };
                 self.choose_row(i, &inp)
             })
@@ -1153,6 +1198,7 @@ impl Sim {
         let times = &self.link_time;
         let (net, p) = (&self.net, &self.params);
         let has_transit = !net.is_empty();
+        let off = has_transit && net.offpeak_differs();
         type Acc<'a> = (
             Tree,
             Vec<f64>,
@@ -1180,24 +1226,24 @@ impl Sim {
                     tree.run(g, times, self.zone_node[i]);
                     tree.km_and_toll(g, &mut km, &mut toll);
                     let (t, k, tl) = self.car_row(i, &tree, &km, &toll);
-                    let mut w = vec![TOd::NONE; z];
-                    let mut d = vec![TOd::NONE; z];
-                    if has_transit {
-                        if !net.walk_access[i].is_empty() {
-                            srch.run(i, Access::Walk, &t, &k);
-                            (0..z).for_each(|j| w[j] = srch.od(j));
-                        }
-                        if !net.pnr.is_empty() {
-                            srch.run(i, Access::Drive, &t, &k);
-                            (0..z).for_each(|j| d[j] = srch.od(j));
-                        }
-                    }
+                    let (w, d) = if has_transit {
+                        transit_row(&mut srch, i, &t, &k, false)
+                    } else {
+                        (vec![TOd::NONE; z], vec![TOd::NONE; z])
+                    };
+                    let (w_off, d_off) = if off {
+                        transit_row(&mut srch, i, &t, &k, true)
+                    } else {
+                        (vec![], vec![])
+                    };
                     let inp = RowInputs {
                         peak_t: &t,
                         peak_km: &k,
                         peak_toll: &tl,
                         tw: &w,
                         td: &d,
+                        tw_off: if off { &w_off } else { &w },
+                        td_off: if off { &d_off } else { &d },
                     };
                     let row = self.choose_row(i, &inp);
                     if assign {
@@ -1215,6 +1261,8 @@ impl Sim {
                             tl,
                             w,
                             d,
+                            w_off,
+                            d_off,
                             row,
                         },
                     ));
@@ -1239,12 +1287,16 @@ impl Sim {
         self.car_peak.toll.clear();
         self.tsk_walk.clear();
         self.tsk_drive.clear();
+        self.tsk_walk_off.clear();
+        self.tsk_drive_off.clear();
         for (_, o) in outs {
             self.car_peak.time.extend(o.t);
             self.car_peak.km.extend(o.k);
             self.car_peak.toll.extend(o.tl);
             self.tsk_walk.extend(o.w);
             self.tsk_drive.extend(o.d);
+            self.tsk_walk_off.extend(o.w_off);
+            self.tsk_drive_off.extend(o.d_off);
             rows.push(o.row);
         }
         (rows, vol)
@@ -1322,11 +1374,11 @@ impl Sim {
                 + (o.fare + o.drive_cost) as f64 / vot
                 + sd
         };
-        let tw = &inp.tw[j];
+        let tw = if work { &inp.tw[j] } else { &inp.tw_off[j] };
         if tw.ok() {
             c[TRANSIT_WALK] = Some(transit(tw));
         }
-        let td = &inp.td[j];
+        let td = if work { &inp.td[j] } else { &inp.td_off[j] };
         if td.ok() {
             c[TRANSIT_DRIVE] = Some(transit(td));
         }
@@ -1440,10 +1492,44 @@ pub fn logit(
     Some(p)
 }
 
+/// Transit skim rows (walk access, drive access) from origin `i`, on peak or
+/// off-peak headways.
+fn transit_row(
+    s: &mut Searcher,
+    i: usize,
+    car_min: &[f32],
+    car_km: &[f32],
+    offpeak: bool,
+) -> (Vec<TOd>, Vec<TOd>) {
+    let z = s.best.len();
+    s.offpeak = offpeak;
+    let mut w = vec![TOd::NONE; z];
+    let mut d = vec![TOd::NONE; z];
+    if !s.net.walk_access[i].is_empty() {
+        s.run(i, Access::Walk, car_min, car_km);
+        (0..z).for_each(|j| w[j] = s.od(j));
+    }
+    if !s.net.pnr.is_empty() {
+        s.run(i, Access::Drive, car_min, car_km);
+        (0..z).for_each(|j| d[j] = s.od(j));
+    }
+    (w, d)
+}
+
+/// Row `r` of the off-peak skim, or of the peak skim when there is no separate one.
+fn off_row<'a>(off: &'a [TOd], peak: &'a [TOd], r: std::ops::Range<usize>) -> &'a [TOd] {
+    if off.is_empty() {
+        &peak[r]
+    } else {
+        &off[r]
+    }
+}
+
 /// Copy the service settings (not the alignment) of `from` onto `to`.
 fn copy_service(from: &TransitLine, to: &mut TransitLine) {
     to.name = from.name.clone();
     to.headway_min = from.headway_min;
+    to.offpeak_headway_min = from.offpeak_headway_min;
     to.fare = from.fare;
     to.fare_per_km = from.fare_per_km;
     to.speed_kph = from.speed_kph;

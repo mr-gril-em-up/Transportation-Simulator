@@ -125,6 +125,13 @@ Expected wait `= h/2` for headways up to 12 minutes and `6 + (h - 12)/4` beyond:
 riders time their arrival for infrequent service, so a 60-minute headway costs
 an 18-minute wait, not 30.
 
+Peak and off-peak headways (SIM-3): `headway_min` is the peak headway and
+`offpeak_headway_min` (default the same) the midday and evening one. Work trips
+are skimmed, chosen and loaded on peak headways; non-work trips on off-peak
+headways. When no line has a different off-peak headway the two searches are
+the same and run once. Simplification: each purpose sees one headway all day
+(commuters the peak, everyone else the off-peak), not a time-of-day profile.
+
 Fares: a boarding pays the line's flat fare minus the highest fare already paid
 on the trip (free transfers within a fare level, pay the difference to upgrade
 from bus to rail or HSR), plus `fare_per_km` x distance ridden for distance-based
@@ -255,7 +262,11 @@ Simplifications and why:
 ## 9. Line economics
 
 - Vehicles = ceil(round trip x 1.1 layover / headway).
-- Revenue hours per day = vehicles x span (`span_hours`, default by mode).
+- Revenue hours per day = peak vehicles x `peak_service_hours [6]` + off-peak
+  vehicles x (span - 6), where vehicles = ceil(round trip x 1.1 / headway) for
+  each headway and span is `span_hours` (default by mode). The fleet
+  (`vehicles_required`, which capital pays for) is the larger of the two, so a
+  shorter off-peak headway is not free.
 - Operating cost = revenue hours x cost per car hour x cars per vehicle
   (`ModeDefaults::cost_per_revenue_hour()`). NTD counts rail revenue hours per
   car, so `cost_per_car_hour` is the published figure: bus $182, light rail
