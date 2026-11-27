@@ -191,7 +191,12 @@ and a CI bench against the 20 s target. The API does not change.
 
 **(A) is built (SIM-13).** `Params::strategic_max_min` (None by default, so
 Travis runs dense and unchanged) keeps pairs within that free-flow car time.
-Free-flow trees stop at the cutoff, congested trees at 3x it. Commutes
+The pair set comes from free-flow trees bounded at the cutoff; after that
+every tree runs until its origin's own kept destinations are settled
+(`Tree::set_targets`), so a kept pair is drivable both ways even when road
+times are asymmetric (a 10x-cutoff bound is only a guard). Trees reset only
+the nodes the last run touched, so a bounded search costs what it explores,
+not the size of the statewide graph. Commutes
 beyond it are counted in `Results::beyond_cutoff_trips` and still reduce
 their home zone's non-work trip budget, so trips are conserved. Measured with
 `CUTOFF=30 examples/scale.rs`:
@@ -200,7 +205,7 @@ their home zone's non-work trip budget, so trips are conserved. Measured with
 |---|---|---|
 | 676 | 0.5 s, 0.18 GB | 0.4 s, 0.10 GB |
 | 3,136 | 12.3 s, 3.25 GB | 3.5 s, 0.52 GB |
-| 6,889 | ~60 s, ~15 GB (extrapolated) | 9.1 s, 1.05 GB |
+| 6,889 | ~60 s, ~15 GB (extrapolated) | 7.2 s, 1.14 GB |
 
 The synthetic region is 166 km across at 6,889 zones and 28k road nodes;
 the real statewide graph is larger, so the 20 s check waits for (C).
