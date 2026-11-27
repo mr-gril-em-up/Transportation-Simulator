@@ -80,14 +80,14 @@ The app's side: [`app/src-tauri/src/sim.rs`](../app/src-tauri/src/sim.rs) holds 
 
 ### Pipeline output files
 
-The pipeline writes `scenario.json` as `sim_core::ScenarioInput` directly (it depends on sim-core and calls `validate()` before writing), plus detail files sim-core does not need, keyed by the same ids: `zones.json` (GEOID, worker and commute counts), `roads.json` (OSM class, name, drawing shape, **total** lanes), `transit.json` (existing OSM routes, for calibration and the keep-existing-transit toggle) and `manifest.json` (summary, top 20 flows). Full spec: [data-pipeline OUTPUT_FORMAT.md](../crates/data-pipeline/docs/OUTPUT_FORMAT.md).
+The pipeline writes `scenario.json` as `sim_core::ScenarioInput` directly (it depends on sim-core and calls `validate()` before writing), plus detail files sim-core does not need, keyed by the same ids: `zones.json` (GEOID, worker and commute counts), `roads.json` (OSM class, name, drawing shape, **total** lanes), `transit.json` (existing OSM routes, with GTFS weekday headways where matched, DATA-6), `existing_lines.json` (today's CapMetro network as sim-core `TransitLine`s, for calibration and the keep-existing-transit toggle; copied into `scenario.json` `lines` only with `--existing-lines`, DATA-7) and `manifest.json` (summary, top 20 flows). Full spec: [data-pipeline OUTPUT_FORMAT.md](../crates/data-pipeline/docs/OUTPUT_FORMAT.md).
 
 Traps for consumers:
 
 - `road_links[].lanes` in `scenario.json` is **per direction** (two-way OSM total halved, minimum 1). `roads.json` `edges[].lanes` is the **total**. Do not mix them.
 - Zone and road-node ids equal array positions in the detail files, but are not stable across areas or OSM snapshots. Use GEOID or OSM id for anything that must survive a rebuild.
 - `zero_car_share`, `median_income`, `parking_cost`, `area_km2` are written as sim-core defaults until ACS and TIGER inputs are added (roadmap F31).
-- OSM transit `mode` values (`train`, `subway`, ...) are not sim-core `Mode` values; mapping (for example `train` to `commuter_rail` for the Red Line) is the consumer's job (F19, F44).
+- OSM transit `mode` values (`train`, `subway`, ...) are not sim-core `Mode` values; mapping (for example `train` to `commuter_rail` for the Red Line) is the consumer's job (F19, F44). `existing_lines.json` has already done it for CapMetro.
 
 ## Repository layout
 
