@@ -921,8 +921,8 @@ impl Sim {
     /// `daily_iterations` rounds suffice. `tick` calls it at day boundaries.
     pub fn equilibrate_warm(&mut self) {
         let t0 = Instant::now();
-        // The previous solution counts as `feedback_iterations` rounds of MSA,
-        // so each new round moves volumes by a correspondingly small step.
+        // The previous solution counts as `feedback_iterations` rounds of
+        // history: that sets the floor under each day's line-searched step.
         let prior = self.params.feedback_iterations;
         // Yesterday's lot use sets today's park-and-ride prices (SIM-11).
         if self.update_pnr_penalties() {
@@ -934,16 +934,63 @@ impl Sim {
     }
 
     /// `rounds` of: one fused pass (skims, mode choice, all-or-nothing load on
-    /// the same trees), MSA averaging with step 1/(prior + n), BPR times.
+    /// the same trees), a step toward that load, BPR times. The first round
+    /// from empty roads takes the load whole; every later step is the
+    /// Frank-Wolfe line search ([`Sim::fw_step`], SIM-15), floored at a tenth
+    /// of the MSA step 1/(prior + n) so a round that finds nothing better
+    /// still moves.
     fn feedback(&mut self, rounds: usize, prior: usize) {
         for n in 1..=rounds {
             let (_, aon) = self.pass(true);
-            let step = 1.0 / (prior + n) as f64;
+            let msa = 1.0 / (prior + n) as f64;
+            let step = if msa >= 1.0 {
+                1.0
+            } else {
+                self.fw_step(&aon).max(0.1 * msa)
+            };
             for (v, a) in self.link_vol.iter_mut().zip(&aon) {
                 *v += step * (a - *v);
             }
             self.update_link_times();
         }
+    }
+
+    /// Frank-Wolfe step: the `λ` in [0, 1] that minimizes the Beckmann
+    /// objective along `link_vol -> aon`, by bisection on its derivative
+    /// `Σ (a - v) t(v + λ (a - v))`. MSA's fixed 1/n steps leave a quarter
+    /// of the free-flow load on the fastest roads after four rounds, which on
+    /// the highway-only statewide graph meant freeways at 3x capacity and
+    /// 3 km/h peak speeds; the line search spreads it in the same rounds.
+    fn fw_step(&self, aon: &[f64]) -> f64 {
+        let (a, b) = (self.params.bpr_alpha, self.params.bpr_beta);
+        let g = &self.graph;
+        let slope = |l: f64| -> f64 {
+            (0..g.edges.len())
+                .into_par_iter()
+                .with_min_len(4096)
+                .map(|e| {
+                    let d = aon[e] - self.link_vol[e];
+                    if d == 0.0 {
+                        0.0
+                    } else {
+                        d * g.bpr_time(e, self.link_vol[e] + l * d, a, b)
+                    }
+                })
+                .sum()
+        };
+        if slope(1.0) <= 0.0 {
+            return 1.0;
+        }
+        let (mut lo, mut hi) = (0.0, 1.0);
+        for _ in 0..20 {
+            let mid = 0.5 * (lo + hi);
+            if slope(mid) > 0.0 {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        0.5 * (lo + hi)
     }
 
     /// Re-fit the alternative-specific constants so **commute** (home-work)

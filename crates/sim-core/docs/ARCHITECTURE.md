@@ -60,11 +60,11 @@ Sim::new
   -> free-flow car skim -> gravity (other trips) -> transit net -> equilibrate
 
 equilibrate  (cold, from free flow; Sim::new and after params changes)
-  repeat feedback_iterations [4]:  pass(assign) -> MSA average (step 1/n) -> BPR times
+  repeat feedback_iterations [4]:  pass(assign) -> step (1 first, then Frank-Wolfe line search) -> BPR times
   pass -> finish
 
 equilibrate_warm  (once per game day via tick; keeps yesterday's link volumes)
-  repeat daily_iterations [1]:     pass(assign) -> MSA average (step 1/(4+n)) -> BPR times
+  repeat daily_iterations [1]:     pass(assign) -> Frank-Wolfe step (floor 0.1/(4+n)) -> BPR times
   pass -> finish
 
 pass  (one parallel loop over origins, ONE shortest-path tree each)
@@ -143,8 +143,8 @@ agents.
   skim, transit search, mode choice and loading in one go, instead of a skim
   pass and a separate assignment pass. This halved the trees per equilibrium.
 - **Warm daily start.** `equilibrate_warm` keeps the previous day's link
-  volumes and treats them as `feedback_iterations` rounds of MSA history, so one
-  round plus a final pass holds the equilibrium (a test checks speeds, vehicle-km
+  volumes, so one line-searched round (SIM-15) plus a final pass holds the
+  equilibrium (a test checks speeds, vehicle-km
   and drive share stay within 1–3% of a cold run).
 - Dijkstra stops once every zone's road node is settled. The heap key packs the
   cost (as f32 bits) and node into one `u64`, the settled flag guards against
@@ -224,18 +224,40 @@ links, 3.88M LODES flows; 4 cores):
 | 90 min | 74 s | 24.8 s | 2.9 GB | 4.4M |
 
 60 minutes meets the 20 s target (F34). Each feedback pass is one tree per
-tract, so cost grows with the area a cutoff covers. **Open:** the
-congested speeds are not credible yet (peak average 7 km/h at 60 min): the
-highway-only graph carries every trip, including short ones that use local
-streets in reality. That is the next statewide fix, then F38 calibrates to
-TxDOT counts.
+tract, so cost grows with the area a cutoff covers.
+
+**Congestion and cold-start rounds (SIM-15).** The first measurement gave a
+peak average of 3 to 7 km/h. The cause was not the demand (peak-hour
+vehicle-km per resident is 5.4 statewide vs 3.7 on Travis, about 1.4x a
+real Texas figure) but the assignment: four rounds of MSA left a quarter of
+the free-flow load on the freeways, 33,000 veh/h on a 6-lane US 75 segment,
+and 92% of vehicle-hours sat on links above twice capacity. With the
+Frank-Wolfe line search, at 60 min (`examples/statewide.rs <scenario> 60
+<rounds> <days>`):
+
+| Cold rounds (`feedback_iterations`) | Cold start | Peak speed cold | Day 1 | Day 3 | Day 8 |
+|---|---|---|---|---|---|
+| 4 (MSA, before) | 45 s | 3 km/h | 7 km/h | | |
+| 4 | 42 s | 12 km/h | 18 km/h | 29 km/h | 39 km/h |
+| 6 | 53 s | 24 km/h | 29 km/h | 35 km/h | |
+| 8 | 69 s | 33 km/h | 35 km/h | 38 km/h | |
+
+A game day stays 13.4 to 14.5 s. No kept pair loses its car option at these
+speeds (car-unreachable pairs 0 on every day measured, so the 4x tree guard
+does not bind). Statewide games should start with 8 cold rounds, behind a
+loading state or a cached equilibrium; the default stays 4 so Travis is
+unchanged. **Open:** about 39 km/h after a week is still low for a peak
+hour. Two known causes, for F38 with TxDOT counts: roads at 55 to 80 km/h get
+900 veh/h per lane (`lane_capacity_vph`, set for signalized arterials), which
+also applies to rural two-lane highways that carry ~1,700; and BPR puts no cap
+on delay at very high volume/capacity.
 
 ## Testing
 
 | Test | Covers |
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
-| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
+| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share, bond rate and term) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
 | unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit, grant gate and settlement arithmetic |

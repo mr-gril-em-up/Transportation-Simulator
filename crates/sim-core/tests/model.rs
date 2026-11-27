@@ -158,6 +158,31 @@ fn congestion_feedback_slows_peak_traffic() {
 }
 
 #[test]
+fn line_searched_assignment_unjams_in_few_rounds() {
+    // SIM-15: eight commuters for every real one jam the synthetic roads.
+    // MSA's second round keeps half the free-flow load on the fastest
+    // roads: 3.9 km/h after 2 rounds against 46 km/h settled. The line
+    // search reaches 22 km/h in the same 2 rounds.
+    let mut input = generate(&SynthConfig::small());
+    input.commutes.iter_mut().for_each(|c| c.workers *= 8.0);
+    let speed = |rounds| {
+        let p = Params {
+            feedback_iterations: rounds,
+            ..Default::default()
+        };
+        Sim::new(input.clone(), p)
+            .unwrap()
+            .results()
+            .peak_avg_speed_kph
+    };
+    let (two, settled) = (speed(2), speed(24));
+    assert!(
+        two > 0.3 * settled,
+        "2 rounds {two:.1} km/h vs 24 rounds {settled:.1} km/h"
+    );
+}
+
+#[test]
 fn calibration_hits_targets() {
     let mut s = sim();
     let target = ModeSplit {
