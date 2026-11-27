@@ -346,7 +346,7 @@ Why one peak hour: congestion
 is what drives mode choice for commuters, and the peak hour is where it lives.
 Midday and evening congestion come with the regional tier's time slices.
 
-## 7a. Intercity travel (F37 step 1, SIM-24)
+## 7a. Intercity travel (F37, SIM-24 and SIM-25)
 
 With a strategic cutoff (statewide), zone pairs farther apart than the cutoff
 are not in the tract tier. Intercity travel gives them demand at a coarser
@@ -363,20 +363,54 @@ grain:
   day both ways; `examples/intercity.rs`, metros as disks around the three
   downtowns). Statewide that gives 524k intercity trips a day, 6.6 a
   resident a year, mean 276 km.
-- **Mode.** Step 1 gives every intercity trip the FEIS base-year car share,
-  `car_share [0.94]` (air 5.6%, bus 0.4%, no rail), at `car_occupancy [1.7]`
-  persons per car (assumed).
-- **Roads.** Each origin cell's cars are loaded all-or-nothing on its
+- **Mode (SIM-25).** A logit over car, air and rail on generalized minutes,
+  `time + dollars / VOT`, `vot_per_hour [22.90]` (FEIS personal travel;
+  business is $37.79), `beta_per_min [-0.01]` (assumed: long-distance models
+  run -0.005 to -0.02).
+  - **Car:** free-flow minutes plus `km x car_cost_per_km + tolls`, split over
+    `car_occupancy [1.7]` persons (assumed).
+  - **Air:** between the Texas commercial airports in `intercity::AIRPORTS`,
+    a hub (DFW, DAL, IAH, HOU) at one end or both, at least `min_air_km
+    [200]` apart. Drive to each airport within `max_access_km [60]` at
+    `access_kph [40]` on straight-line km, `air_terminal_min [120]` at the two
+    airports, `air_taxi_min [20]`, cruise at `air_kph [600]`, fare
+    `air_fare_base [100] + air_fare_per_km [0.10]` (assumed). Dallas-Houston
+    comes to about 270 min door to door, inside the FEIS 267-291.
+  - **Rail:** the best single line with a stop within `max_access_km` of both
+    cells (no transfers): drive to the nearest stop each end, `station_min
+    [20]`, half the off-peak headway capped at `max_wait_min [15]`, the line's
+    running time and fare. Any mode counts, so an intercity coach line works
+    too.
+  - **Constants:** `asc_air [-15.6]` min is fitted so Dallas-Fort Worth <->
+    Houston flies the FEIS 2017 air share, 5.6% (`examples/intercity.rs`).
+    `asc_rail` equals it (no rail preference), so the Texas Central forecast
+    is a check, not a target.
+  - **Check:** a Dallas-Brazos Valley-Houston HSR line (default HSR fare and
+    speed, 30/60 min headways) takes 29.2% of the Dallas-Houston market
+    (FEIS 2029 forecast: 29%) and 6.5M riders a year (FEIS: 6.5M in 2029, on
+    a larger 2029 market). Air falls from 5.6% to 3.9%. Rail is about 200
+    min door to door (FEIS 177-203). The share leans on the assumed beta.
+  - Rail riders join their line's boardings, stop boardings, passenger-km and
+    segment loads in `Results::lines`, and `Results::intercity_rail_trips` /
+    `intercity_air_trips` total them. Choice reruns with every results
+    update (milliseconds), so a new line wins riders the same day.
+- **Roads.** Each origin cell's cars (trips x the base car share, car
+  against air with no rail) are loaded all-or-nothing on its
   free-flow tree, and `peak_hour_share [0.08]` of them (assumed; rural
   design-hour factors are 8-10% of AADT) is fixed background volume on those
   edges: BPR times, the line search, `link_flows` and vehicle-km all see
   regional plus intercity volume. Intercity cars do not reroute around
   congestion. Built once at start (1.9 s statewide).
 
-Not yet: mode choice between car, air and rail (step 2: an HSR or rail line
-wins intercity riders, checked against the FEIS Texas Central forecast of
-6.5M riders in 2029), growth, and air. LODES commutes past the cutoff
-(`beyond_cutoff_trips`) stay counted only; they overlap with this demand.
+Limits: the road background is fixed at start, so riders a rail line wins do
+not leave the roads; rail paths use one line (no transfers to regional
+transit); no growth. Cells, demand and air options are built in `Sim::new`, so
+`Params::intercity` fields other than the choice terms (`vot_per_hour`,
+`beta_per_min`, constants, rail access terms) take effect at the next start.
+Cell pairs are cut on cell-to-cell car time while the tract tier cuts on
+tract-to-tract time, so pairs near the cutoff can be in both or neither. LODES
+commutes past the cutoff (`beyond_cutoff_trips`) stay counted only; they
+overlap with this demand.
 
 ## 8. Transit loading
 

@@ -6,7 +6,7 @@ use crate::clock::Clock;
 use crate::economy::{self, Ledger};
 use crate::geo::dist_km;
 use crate::graph::{RoadGraph, Tree, NONE};
-use crate::intercity::Intercity;
+use crate::intercity::{Choice, Intercity};
 use crate::pairs::Pairs;
 use crate::params::*;
 use crate::roads::Router;
@@ -145,6 +145,13 @@ pub struct Results {
     /// cars are in the road volumes.
     #[serde(default)]
     pub intercity_trips: f64,
+    /// Of `intercity_trips`, those by rail on the player's lines (F37 step
+    /// 2, SIM-25). They are in the lines' boardings and loads.
+    #[serde(default)]
+    pub intercity_rail_trips: f64,
+    /// Of `intercity_trips`, those by air between Texas airports (SIM-25).
+    #[serde(default)]
+    pub intercity_air_trips: f64,
     /// One entry per active line, in id order.
     pub lines: Vec<LineResult>,
     /// Peak-hour vehicle-km on the road network.
@@ -210,6 +217,16 @@ pub struct IntercityPair {
     pub car_km: f64,
     /// Daily person trips in this direction, all modes.
     pub trips: f64,
+    /// Car generalized minutes: time plus running cost and tolls per person
+    /// over the value of time (SIM-25).
+    pub car_gc: f64,
+    /// Best air generalized minutes without the constant; `None`: no flight.
+    pub air_gc: Option<f64>,
+    /// Best one-line rail generalized minutes on the current network,
+    /// without the constant; `None`: no line serves both cells.
+    pub rail_gc: Option<f64>,
+    /// Car, air and rail shares under the current network.
+    pub shares: [f64; 3],
 }
 
 /// Transit skims per origin, aligned to `Pairs::row`. An empty row means no
@@ -404,6 +421,8 @@ pub struct Sim {
     /// Peak-hour intercity cars per edge: fixed background volume under the
     /// assigned regional volume (empty without intercity travel).
     bg_vol: Vec<f64>,
+    /// Intercity mode choice on the network of the last results (SIM-25).
+    ic_choice: Option<Choice>,
     /// Daily home->work trips (AM direction), presence applied, per pair.
     hbw: Vec<f64>,
     /// Daily non-work trips, origin->destination.
@@ -622,6 +641,7 @@ impl Sim {
                     &link_time,
                     &params.intercity,
                     cut,
+                    params.car_cost_per_km,
                 ))
             }
             _ => None,
@@ -646,6 +666,7 @@ impl Sim {
             beyond_cutoff,
             intercity,
             bg_vol,
+            ic_choice: None,
             hbw,
             hbo: Vec::new(),
             link_vol: vec![0.0; n_edges],
@@ -1501,10 +1522,17 @@ impl Sim {
         let Some(ic) = &self.intercity else {
             return Vec::new();
         };
+        let rail = match &self.ic_choice {
+            Some(c) => c.rail.clone(),
+            None => ic.rail_options(&self.net, &self.params.intercity),
+        };
         ic.pairs
             .iter()
-            .map(|q| {
+            .zip(rail)
+            .map(|(q, r)| {
                 let (o, d) = (&ic.cells[q.o as usize], &ic.cells[q.d as usize]);
+                let air = (q.air_gc as f64).is_finite().then_some(q.air_gc as f64);
+                let rail_gc = r.map(|r| r.gc);
                 IntercityPair {
                     from: [o.lon, o.lat],
                     to: [d.lon, d.lat],
@@ -1513,6 +1541,14 @@ impl Sim {
                     car_min: q.car_min as f64,
                     car_km: q.car_km as f64,
                     trips: q.trips,
+                    car_gc: q.car_gc as f64,
+                    air_gc: air,
+                    rail_gc,
+                    shares: self.params.intercity.shares(
+                        q.car_gc as f64,
+                        air.unwrap_or(f64::INFINITY),
+                        rail_gc.unwrap_or(f64::INFINITY),
+                    ),
                 }
             })
             .collect()
@@ -1880,7 +1916,18 @@ impl Sim {
         } else {
             0.0
         };
-        let lines = self.line_results(&loads, transit_peak_factor);
+        // Intercity riders join the line results but not `self.loads`, which
+        // scoped edits carry over and which stays regional (SIM-21).
+        self.ic_choice = self
+            .intercity
+            .as_ref()
+            .map(|ic| ic.choose(&self.net, &self.params.intercity));
+        let lines = match &self.ic_choice {
+            Some(c) => {
+                self.line_results(&loads.clone().merge(c.loads.clone()), transit_peak_factor)
+            }
+            None => self.line_results(&loads, transit_peak_factor),
+        };
         self.loads = loads;
 
         let (mut vkm, mut vhr) = (0.0, 0.0);
@@ -1897,6 +1944,8 @@ impl Sim {
             unserved_trips: unserved,
             beyond_cutoff_trips: self.beyond_cutoff.iter().sum(),
             intercity_trips: self.intercity.as_ref().map_or(0.0, |ic| ic.person_trips()),
+            intercity_rail_trips: self.ic_choice.as_ref().map_or(0.0, |c| c.rail_trips),
+            intercity_air_trips: self.ic_choice.as_ref().map_or(0.0, |c| c.air_trips),
             lines,
             peak_vehicle_km: vkm,
             peak_avg_speed_kph: if vhr > 0.0 { vkm / vhr } else { 0.0 },

@@ -630,6 +630,56 @@ fn intercity_trips_past_the_cutoff_load_their_cars_on_the_roads() {
 }
 
 #[test]
+fn an_intercity_line_wins_riders_from_the_car() {
+    // SIM-25: a line serving two far-apart cells carries intercity riders
+    // on top of its regional riders. No Texas airport pair is in range of
+    // the synthetic region, so nobody flies.
+    let run = |enabled: bool| {
+        let mut p = Params {
+            instant_build: true,
+            strategic_max_min: Some(8.0),
+            ..Params::default()
+        };
+        p.intercity.enabled = enabled;
+        p.intercity.cell_km = 3.0;
+        p.intercity.scale = 1e-3;
+        p.intercity.max_access_km = 3.0;
+        let mut s = Sim::new(generate(&SynthConfig::small()), p).unwrap();
+        s.add_line(straight_line(
+            Mode::CommuterRail,
+            (-7.0, -7.0),
+            (7.0, 7.0),
+            3.5,
+            15.0,
+        ))
+        .unwrap();
+        s
+    };
+    let (on, off) = (run(true), run(false));
+    let r = on.results();
+    assert!(r.intercity_rail_trips > 0.0);
+    assert_eq!(r.intercity_air_trips, 0.0);
+    assert!(r.intercity_rail_trips < r.intercity_trips);
+    let pairs = on.intercity_pairs();
+    assert!(pairs.iter().all(|q| q.air_gc.is_none()));
+    let rail: f64 = pairs.iter().map(|q| q.trips * q.shares[2]).sum();
+    assert!((rail - r.intercity_rail_trips).abs() < 1e-9 * rail);
+    for q in &pairs {
+        assert!((q.shares.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert_eq!(q.shares[2] > 0.0, q.rail_gc.is_some());
+    }
+    // The line's boardings are its regional riders plus the intercity ones.
+    let extra = r.lines.last().unwrap().daily_boardings
+        - off.results().lines.last().unwrap().daily_boardings;
+    assert!(
+        (extra - r.intercity_rail_trips).abs() < 1e-6 * r.intercity_rail_trips,
+        "{extra} vs {}",
+        r.intercity_rail_trips
+    );
+    assert_eq!(off.results().intercity_rail_trips, 0.0);
+}
+
+#[test]
 fn short_strategic_cutoff_drops_far_pairs_but_conserves_trips() {
     let dense = cutoff_sim(None);
     let s = cutoff_sim(Some(8.0));
