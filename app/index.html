@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transpo-Sim</title>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div id="hud">
+      <div id="clock" class="panel">
+        <span id="clock-time">Day 1 06:00</span>
+        <button id="btn-pause" title="Pause / play (Space)">⏸</button>
+        <button id="btn-lapse" title="Time-lapse (T). Zoom never changes speed.">Time-lapse 1x</button>
+      </div>
+      <div id="tools" class="panel">
+        <button id="btn-draw-bus">Draw bus line</button>
+        <button id="btn-draw-rail">Draw rail line</button>
+        <button id="btn-demo">Add Red Line demo</button>
+        <div id="draw-hint" hidden>Click to place stops. Enter or double-click to finish, Esc to cancel.</div>
+      </div>
+      <div id="routes" class="panel">
+        <h3>Ridership <small id="sim-ms"></small></h3>
+        <div id="route-list"><em>No lines yet. Draw one.</em></div>
+      </div>
+      <div id="zoom-badge" class="panel"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
