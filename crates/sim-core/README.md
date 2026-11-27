@@ -303,7 +303,8 @@ choices a reader is most likely to question:
   ([figures.csv](../data-pipeline/reference/figures.csv)) has a figure, the
   default copies it and [tests/figures.rs](tests/figures.rs) fails if the two
   drift: trip rate 2.28/person/day, bus/light rail/commuter rail cost per car
-  hour, CapMetro fares, and the 2x walk and wait weights (D25, D29).
+  hour, CapMetro fares, the 2x walk and wait weights, capital and vehicle
+  prices, the funding keys, and the bond rate and term (D25, D29).
 - **Dense Z x Z matrices.** Right for ~700 block groups; statewide (F34) needs
   sparse storage, noted in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#threading-and-performance).
 
