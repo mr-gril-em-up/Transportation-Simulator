@@ -11,16 +11,32 @@ fn reference_figures_are_well_formed() {
         let r = rec.unwrap();
         let key = &r["key"];
         assert!(keys.insert(key.clone()), "duplicate key {key}");
-        let v: f64 = r["value"].parse().unwrap_or_else(|_| panic!("{key}: value not a number"));
+        let v: f64 = r["value"]
+            .parse()
+            .unwrap_or_else(|_| panic!("{key}: value not a number"));
         for bound in ["low", "high"] {
             if !r[bound].is_empty() {
-                let b: f64 = r[bound].parse().unwrap_or_else(|_| panic!("{key}: {bound} not a number"));
-                assert!(if bound == "low" { b <= v } else { b >= v }, "{key}: {bound} on wrong side of value");
+                let b: f64 = r[bound]
+                    .parse()
+                    .unwrap_or_else(|_| panic!("{key}: {bound} not a number"));
+                assert!(
+                    if bound == "low" { b <= v } else { b >= v },
+                    "{key}: {bound} on wrong side of value"
+                );
             }
         }
-        assert!(r["url"].starts_with("https://"), "{key}: needs a source URL");
-        assert!(!r["unit"].is_empty() && !r["source"].is_empty(), "{key}: needs unit and source");
-        assert!(["verified", "derived", "unverified"].contains(&r["status"].as_str()), "{key}: bad status");
+        assert!(
+            r["url"].starts_with("https://"),
+            "{key}: needs a source URL"
+        );
+        assert!(
+            !r["unit"].is_empty() && !r["source"].is_empty(),
+            "{key}: needs unit and source"
+        );
+        assert!(
+            ["verified", "derived", "unverified"].contains(&r["status"].as_str()),
+            "{key}: bad status"
+        );
         n += 1;
     }
     assert!(n >= 20);

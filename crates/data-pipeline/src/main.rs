@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 const USAGE: &str = "usage: tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--margin 0.05]
 
-Builds zones.json, flows.json, roads.json, transit.json and manifest.json.
+Builds scenario.json (sim-core input), zones.json, roads.json, transit.json and manifest.json.
 --area takes GEOID prefixes: 48453 = Travis County, 48 = all of Texas.";
 
 fn main() -> Result<()> {

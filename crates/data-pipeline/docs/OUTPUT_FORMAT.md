@@ -32,7 +32,7 @@ Coordinates are WGS84 longitude, latitude in degrees. Lengths in meters, speeds 
 |---|---|---|
 | `zones[].population` | Centers of Population `POPULATION` | 2020 census |
 | `zones[].jobs` | LODES WAC `C000` summed to block group | |
-| `zones[].road_node` | Nearest node on a non-motorway, non-trunk road | See ARCHITECTURE.md step 6 |
+| `zones[].road_node` | Nearest node on a non-motorway, non-trunk road in the largest connected component | See ARCHITECTURE.md step 6 |
 | `zones[].zero_car_share`, `median_income`, `parking_cost`, `area_km2` | Not yet sourced | Written as sim-core's defaults (0.06, 70000, 0, null) until ACS and TIGER are added |
 | `road_links[].lanes` | OSM `lanes`, else class default | Converted to **per direction**: one-way keeps the total, two-way halves it (minimum 1) |
 | `road_links[].capacity_vph`, `toll` | Not set | sim-core derives capacity from speed and lanes |

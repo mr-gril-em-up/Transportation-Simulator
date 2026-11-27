@@ -25,7 +25,7 @@ Every number or rule in the code that is not read straight from a source. Each e
 | Lanes per direction in the scenario = total / 2 for two-way roads (min 1) | `scenario.rs` | sim-core's `lanes` is per direction | n/a. Odd totals (3 = two lanes plus a center turn lane) round down on purpose |
 | Clip box = zone bbox + 0.05° | `lib.rs`, `--margin` | Keeps the roads just past the county line that boundary zones use | Clip by county polygon if the bbox pulls in too much of neighboring counties |
 | Edges that cross the clip box are dropped, not cut | `osm.rs` `build_roads` | No dangling half-edges; the margin makes the loss irrelevant | n/a |
-| Zone connector = nearest node on a non-motorway, non-trunk road, straight line | `scenario.rs` | One connector per zone is what sim-core's schema takes; freeway nodes would make access free | Multiple connectors per zone if sim-core adds them |
+| Zone connector = nearest node on a non-motorway, non-trunk road in the largest connected component, straight line | `scenario.rs` | One connector per zone is what sim-core's schema takes; freeway nodes would make access free; fragments cut off by clipping would leave a zone with no paths | Multiple connectors per zone if sim-core adds them |
 
 ## Transit
 
