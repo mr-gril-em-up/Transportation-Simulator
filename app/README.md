@@ -92,8 +92,9 @@ then waits for the build. The terminal prints
   above the operating surplus (fares + operating assistance + local tax - operating cost), is
   distressed; the panel counts them ("3 of 12 months in a row in distress"). Twelve in a row is
   bankruptcy: a red banner says the game is over, the bond button disappears, and the sim keeps
-  running so you can see why. Note that a line under construction carries no riders and taxes
-  no one, so bond payments taken out to build it count as distress until it opens.
+  running so you can see why. While any line is under construction, sim-core skips the
+  payments-vs-surplus test (a line being built has no riders to pay for it yet), so only a month
+  ending with cash below zero counts. Borrow enough to stay above zero while you build.
 - **Construction** (F24): a new line is paid for when you draw it but opens only after its
   mode's build time divided by 12 (light rail about 6 months, so about 183 game days; the Red
   Line demo, commuter rail, about 122). Until then the panel says "Under construction, opens Day
