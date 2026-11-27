@@ -96,7 +96,9 @@ TRANSPO_SCENARIO=$PWD/../crates/data-pipeline/data/out/48-2023-tract-highway/sce
   blank map) beside the scenario. The next start reads it and calls `Sim::new_warm`, so the first
   equilibrium is one warm day: 230 s cold, 72 s warm with 455 lines (measured below). It is never
   overwritten during play, so every warm start begins from the same roads. A state from another
-  road graph is ignored (sim-core checks a fingerprint) and the start is cold. Delete the file, or
+  road graph (sim-core's fingerprint) or from another build of the data (size and time of
+  `scenario.json` and `existing_lines.json`, so a republish on the same roads counts) is ignored
+  and the start is cold. Delete the file, or
   set `TRANSPO_WARM_START=0`, to start cold; a cold start saves a fresh one. The card says
   "Settling traffic from the last start's roads" when warm. The Travis build saves and reads one
   too.

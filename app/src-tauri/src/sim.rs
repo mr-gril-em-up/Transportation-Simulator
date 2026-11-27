@@ -85,21 +85,65 @@ fn warm_path() -> Option<PathBuf> {
         .map(|p| p.with_file_name(format!("road_state-{start}.json")))
 }
 
-/// A saved road state, or none if missing or unreadable (then the start is cold).
+/// A saved road state with the stamp of the build it came from.
+#[derive(serde::Deserialize, Serialize)]
+struct SavedRoads {
+    /// `build_stamp` of the files beside it when it was saved.
+    build: String,
+    roads: RoadState,
+}
+
+/// Size and modification time of `scenario.json` and `existing_lines.json`
+/// in the road state's directory. A republished build changes them, so a
+/// state saved under the old demand is not reused on the same roads (the
+/// road fingerprint alone would let it through; review note on #84).
+fn build_stamp(dir: &Path) -> String {
+    ["scenario.json", "existing_lines.json"]
+        .iter()
+        .map(|f| match std::fs::metadata(dir.join(f)) {
+            Ok(m) => {
+                let t = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_secs());
+                format!("{f}:{}:{t}", m.len())
+            }
+            Err(_) => format!("{f}:none"),
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// The saved road state, or none if missing, unreadable or from another
+/// build of the data (then the start is cold and saves a fresh one).
 fn read_road_state(p: &Path) -> Option<RoadState> {
     let json = std::fs::read_to_string(p).ok()?;
-    match serde_json::from_str(&json) {
-        Ok(r) => Some(r),
+    let saved: SavedRoads = match serde_json::from_str(&json) {
+        Ok(s) => s,
         Err(e) => {
             eprintln!("[sim] ignoring {}: {e}", p.display());
-            None
+            return None;
         }
+    };
+    let now = build_stamp(p.parent()?);
+    if saved.build != now {
+        eprintln!(
+            "[sim] ignoring {}: saved for another build of the data",
+            p.display()
+        );
+        return None;
     }
+    Some(saved.roads)
 }
 
 /// Save the starting road state; a failure only costs the next start its speed-up.
-fn write_road_state(p: &Path, r: &RoadState) {
-    let res = serde_json::to_string(r)
+fn write_road_state(p: &Path, roads: RoadState) {
+    let saved = SavedRoads {
+        build: p.parent().map(build_stamp).unwrap_or_default(),
+        roads,
+    };
+    let res = serde_json::to_string(&saved)
         .map_err(|e| e.to_string())
         .and_then(|j| std::fs::write(p, j).map_err(|e| e.to_string()));
     if let Err(e) = res {
@@ -233,7 +277,7 @@ impl SimState {
                 }
                 .map_err(|e| e.to_string())?;
                 if let Some(p) = warm.as_deref().filter(|_| !sim.started_warm()) {
-                    write_road_state(p, &sim.road_state());
+                    write_road_state(p, sim.road_state());
                 }
                 Ok(sim)
             });
@@ -1008,10 +1052,15 @@ mod tests {
         let before = cold.ledger().unwrap(); // waits for the build
         assert!(!cold.status().load.warm);
         assert!(path.exists(), "cold start saves the starting road state");
-        let warm = SimState::start_with_params(small, params, Some(path.clone()));
+        let warm = SimState::start_with_params(small, params.clone(), Some(path.clone()));
         warm.ledger().unwrap();
         assert!(warm.status().load.warm, "second start reads it");
         assert_eq!(warm.ledger().unwrap().ledger.cash, before.ledger.cash);
+        // A republished build (here a new scenario.json beside it) is not warm-started from it.
+        std::fs::write(dir.join("scenario.json"), "{}").unwrap();
+        let rebuilt = SimState::start_with_params(small, params.clone(), Some(path.clone()));
+        rebuilt.ledger().unwrap();
+        assert!(!rebuilt.status().load.warm);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

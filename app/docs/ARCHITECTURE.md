@@ -158,8 +158,9 @@ centroid, 6,896 checks) on every zoom and `moveend`.
 
 `SimState::start` passes `warm_path()`: `road_state-<network|blank>.json`
 beside the scenario, or none (synthetic region, `TRANSPO_WARM_START=0`). The
-startup thread reads it (`read_road_state`; unreadable is the same as
-missing) and builds with `Sim::new_warm`, else `Sim::new`. If the Sim did
+startup thread reads it (`read_road_state`; unreadable, or saved under
+another `build_stamp`, the size and mtime of `scenario.json` and
+`existing_lines.json`, is the same as missing) and builds with `Sim::new_warm`, else `Sim::new`. If the Sim did
 not start warm (no file, or sim-core rejected a fingerprint from another
 road graph), it writes `sim.road_state()` there (`write_road_state`; a
 failure is logged and costs only the next start's speed). Nothing else

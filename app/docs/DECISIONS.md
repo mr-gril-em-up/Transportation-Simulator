@@ -281,5 +281,8 @@ data build begins from the same roads, so results repeat across launches
 (after the first), and one game's congestion never leaks into the next.
 Saving at game close was the alternative; it would make a new game depend
 on how the last one ended. The file sits beside the scenario because it
-belongs to that build; a new download replaces the directory's contents
-but not this file, and the fingerprint check catches a changed road graph.
+belongs to that build. It also records the size and modification time of
+`scenario.json` and `existing_lines.json` beside it: a republished build on
+the same roads (new GTFS lines, a new calibration) changes them, and sim-core's
+road fingerprint alone would let the old state through. On a mismatch the
+start is cold and saves a fresh state (review note on #84).
