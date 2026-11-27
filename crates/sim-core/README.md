@@ -171,8 +171,8 @@ Fields marked optional may be omitted.
 
 `TransitLine`: `{ "name"?, "mode", "stops": [{ "lon", "lat", "name"?, "park_ride"? }],
 "headway_min", "offpeak_headway_min"?, "fare"?, "fare_per_km"?, "speed_kph"?, "span_hours"? }`.
-`headway_min` is the peak headway (work trips, fleet size); `offpeak_headway_min`
-(default: the same) is what non-work trips see and sets off-peak revenue hours. Omitted
+`headway_min` is the peak headway (work trips); `offpeak_headway_min`
+(default: the same) is what non-work trips see and sets off-peak revenue hours; the fleet covers the more frequent of the two. Omitted
 values take per-mode defaults ([src/params.rs](src/params.rs) `mode_defaults`).
 Modes: `bus, trolleybus, brt, tram, light_rail, commuter_rail, metro,
 high_speed_rail, monorail, people_mover, gondola, maglev, ferry`. Hyperloop is

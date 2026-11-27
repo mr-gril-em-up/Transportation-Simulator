@@ -360,4 +360,13 @@ fn offpeak_headway_thins_non_work_riders_and_cost() {
     assert!(r.daily_boardings < all_day.daily_boardings);
     assert!(r.revenue_hours_per_day < all_day.revenue_hours_per_day);
     assert_eq!(r.vehicles_required, all_day.vehicles_required);
+    // Off-peak more frequent than peak: the fleet (and so capital) covers it.
+    let mut busy_midday = rail();
+    busy_midday.headway_min = 30.0;
+    busy_midday.offpeak_headway_min = Some(4.0);
+    let paid = s.ledger().current.capital_spent;
+    s.update_line(id, busy_midday).unwrap();
+    let r = &s.results().lines[0];
+    assert!(r.vehicles_required > all_day.vehicles_required);
+    assert!(s.ledger().current.capital_spent > paid);
 }

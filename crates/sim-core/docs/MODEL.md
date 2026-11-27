@@ -265,7 +265,8 @@ Simplifications and why:
 - Revenue hours per day = peak vehicles x `peak_service_hours [6]` + off-peak
   vehicles x (span - 6), where vehicles = ceil(round trip x 1.1 / headway) for
   each headway and span is `span_hours` (default by mode). The fleet
-  (`vehicles_required`) is sized for the peak.
+  (`vehicles_required`, which capital pays for) is the larger of the two, so a
+  shorter off-peak headway is not free.
 - Operating cost = revenue hours x cost per car hour x cars per vehicle
   (`ModeDefaults::cost_per_revenue_hour()`). NTD counts rail revenue hours per
   car, so `cost_per_car_hour` is the published figure: bus $182, light rail

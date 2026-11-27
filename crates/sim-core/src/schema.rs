@@ -146,7 +146,7 @@ pub struct TransitLine {
     /// Stops in order. At least two.
     pub stops: Vec<Stop>,
     /// Minutes between vehicles in each direction in the peak periods. Work
-    /// trips see this headway, and it sets the fleet size.
+    /// trips see this headway. The fleet covers the more frequent of the two headways.
     pub headway_min: f64,
     /// Minutes between vehicles outside the peaks (midday, evening). Non-work
     /// trips see this headway. Default: same as `headway_min`.

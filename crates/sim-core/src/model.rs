@@ -970,10 +970,13 @@ impl Sim {
                     .fold(0.0, f64::max);
                 // Round trip with 10% layover, rounded up to whole vehicles.
                 let cycle = 2.0 * l.run_min() * 1.1;
-                let vehicles = (cycle / l.headway).ceil().max(1.0);
+                let peak_vehicles = (cycle / l.headway).ceil().max(1.0);
                 let off_vehicles = (cycle / l.offpeak_headway).ceil().max(1.0);
+                // The fleet covers whichever period runs more often, so an
+                // off-peak headway shorter than the peak one is paid for too.
+                let vehicles = peak_vehicles.max(off_vehicles);
                 let peak_h = self.params.peak_service_hours.clamp(0.0, l.span_hours);
-                let rev_hours = vehicles * peak_h + off_vehicles * (l.span_hours - peak_h);
+                let rev_hours = peak_vehicles * peak_h + off_vehicles * (l.span_hours - peak_h);
                 let op_cost = rev_hours * l.defaults.cost_per_revenue_hour();
                 let revenue = loads.boardings[li] * l.fare + loads.pkm[li] * l.fare_per_km;
                 LineResult {
