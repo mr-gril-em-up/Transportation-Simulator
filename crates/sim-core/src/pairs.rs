@@ -8,7 +8,9 @@
 use std::ops::Range;
 
 /// Compressed-row set of kept origin-destination pairs. Symmetric: if `(i, j)`
-/// is kept so is `(j, i)`, and `rev[k]` is the reverse pair's index.
+/// is kept so is `(j, i)`, and `rev[k]` is the reverse pair's index. With a
+/// cutoff a pair is kept only if both directions are within it, so every kept
+/// pair is drivable both ways.
 #[derive(Debug, Clone, Default)]
 pub struct Pairs {
     start: Vec<usize>,
@@ -24,28 +26,30 @@ impl Pairs {
         Pairs::from_rows((0..z).map(|_| (0..z as u32).collect()).collect())
     }
 
-    /// From per-origin destination lists. Each list is sorted and deduplicated,
-    /// the intrazonal pair is added, and the set is made symmetric.
+    /// From per-origin destination lists: pair `(i, j)` is kept when `j` is
+    /// in row `i` **and** `i` is in row `j` (each zone reaches the other), so
+    /// the set is symmetric. The intrazonal pair is always kept.
     pub fn from_rows(mut rows: Vec<Vec<u32>>) -> Pairs {
         let z = rows.len();
         for (i, r) in rows.iter_mut().enumerate() {
             r.push(i as u32);
+            r.sort_unstable();
+            r.dedup();
         }
-        // Symmetrize: add (j, i) for every (i, j).
-        let extra: Vec<(usize, u32)> = rows
-            .iter()
-            .enumerate()
-            .flat_map(|(i, r)| r.iter().map(move |&j| (j as usize, i as u32)))
+        let has = |rows: &Vec<Vec<u32>>, j: usize, i: u32| rows[j].binary_search(&i).is_ok();
+        let kept: Vec<Vec<u32>> = (0..z)
+            .map(|i| {
+                rows[i]
+                    .iter()
+                    .copied()
+                    .filter(|&j| has(&rows, j as usize, i as u32))
+                    .collect()
+            })
             .collect();
-        for (j, i) in extra {
-            rows[j].push(i);
-        }
         let mut start = Vec::with_capacity(z + 1);
         let mut dest = Vec::new();
         start.push(0);
-        for r in &mut rows {
-            r.sort_unstable();
-            r.dedup();
+        for r in &kept {
             dest.extend_from_slice(r);
             start.push(dest.len());
         }
@@ -92,7 +96,8 @@ mod tests {
 
     #[test]
     fn rows_are_symmetric_with_reverse_index() {
-        let p = Pairs::from_rows(vec![vec![2], vec![], vec![]]);
+        // 0 and 2 reach each other; 1 reaches 0 but 0 does not reach 1.
+        let p = Pairs::from_rows(vec![vec![2], vec![0], vec![0]]);
         assert_eq!(p.dests(0), &[0, 2]);
         assert_eq!(p.dests(1), &[1]);
         assert_eq!(p.dests(2), &[0, 2]);

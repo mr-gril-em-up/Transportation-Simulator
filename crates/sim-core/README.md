@@ -242,7 +242,9 @@ Scaling with zone count (`cargo run --release -p sim-core --example scale --
 zones 11.0 s / 3.1 GB per cold day. Dense zone-pair storage extrapolates to
 ~60 s and ~15 GB at Texas's 6,900 tracts. With `Params::strategic_max_min`
 (SIM-13) only pairs within that free-flow car time are kept: `CUTOFF=30` runs
-3,136 zones in 2.7 s / 0.52 GB and 6,889 zones in 7.2 s / 1.14 GB. Plan and
+3,136 zones in 2.7 s / 0.52 GB and 6,889 zones in 6.2 s / 1.12 GB. On the real
+statewide build (6,896 tracts, 214k road nodes) a game day takes 13.8 s at a
+60-minute cutoff (`examples/statewide.rs`), under the F34 target of 20 s. Plan and
 numbers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
 
 Line edits are fast because they leave car travel times alone and only redo
