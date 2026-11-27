@@ -32,8 +32,8 @@ If two PRs in the same stream still pick the same number, the one that merges se
 ## Data pipeline (DATA)
 
 | # | Date | Decision | Why | Status | Source |
-| DATA-1 | 2026-11-27 | Pipeline builds are distributed as GitHub Release assets (`data-<area>-<year>`), published by the manual data-pipeline workflow; never committed to git | Consumers (app, sim-core, reviewers) get real data with one command and no raw downloads; keeps tens of MB of generated JSON out of history; re-runs replace assets in place | As built | [pipeline README](../crates/data-pipeline/README.md#use-a-published-build-no-raw-downloads) |
 |---|---|---|---|---|---|
+| DATA-1 | 2026-11-27 | Pipeline builds are distributed as GitHub Release assets (`data-<area>-<year>`), published by the manual data-pipeline workflow; never committed to git | Consumers (app, sim-core, reviewers) get real data with one command and no raw downloads; keeps tens of MB of generated JSON out of history; re-runs replace assets in place | As built | [pipeline README](../crates/data-pipeline/README.md#use-a-published-build-no-raw-downloads) |
 
 ## App (APP)
 
