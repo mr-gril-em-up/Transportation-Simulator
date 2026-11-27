@@ -53,6 +53,7 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 | [docs/OUTPUT_FORMAT.md](docs/OUTPUT_FORMAT.md) | Every output file and field, units, id rules, how it maps to sim-core's schema |
 | [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md) | Every default and simplification in the code, with the reason and the fix path |
 | [docs/TESTING.md](docs/TESTING.md) | What the tests cover, the synthetic fixture, and how to check a real build |
+| [docs/REFERENCE_FIGURES.md](docs/REFERENCE_FIGURES.md) | Sourced costs, fares, operating costs, ridership and zone counts that replace the design doc's placeholders ([`reference/figures.csv`](reference/figures.csv)) |
 
 ## Code map
 
@@ -66,6 +67,8 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 | `src/model.rs` | Serde types for the detail files (`zones.json`, `roads.json`, `transit.json`) |
 | `scripts/fetch.sh` | Downloads the raw inputs |
 | `tests/sample.rs` | End-to-end build on a synthetic Travis sample |
+| `tests/reference.rs` | Checks `reference/figures.csv` is well formed and cited |
+| `reference/figures.csv` | Sourced reference figures with citations |
 | `tests/support/pbf.rs` | Tiny OSM PBF writer so the OSM fixture is code, not a binary file |
 | `../../.github/workflows/data-pipeline.yml` | PR tests + manual real-data build |
 
