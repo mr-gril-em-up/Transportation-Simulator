@@ -413,8 +413,10 @@ impl<'a> Searcher<'a> {
         l
     }
 
-    /// Run a search from zone `origin`. Fills `labels` and `best`.
-    pub fn run(&mut self, origin: usize, access: Access, car_min: &[f32], car_km: &[f32]) {
+    /// Run a search from zone `origin`. Fills `labels` and `best`. Returns
+    /// false when no platform is within access (every destination is then
+    /// unreachable, and callers can skip reading them).
+    pub fn run(&mut self, origin: usize, access: Access, car_min: &[f32], car_km: &[f32]) -> bool {
         let net = self.net;
         self.labels.fill(Label::UNSET);
         self.best.fill((f64::INFINITY, NONE, 0.0));
@@ -458,6 +460,9 @@ impl<'a> Searcher<'a> {
                     seed(self, plat, l);
                 }
             }
+        }
+        if self.heap.is_empty() {
+            return false;
         }
         while let Some(Item(gc, v)) = self.heap.pop() {
             if gc > self.labels[v as usize].gc {
@@ -504,6 +509,7 @@ impl<'a> Searcher<'a> {
             }
         }
         self.best[origin].0 = f64::INFINITY; // no intrazonal transit
+        true
     }
 
     /// Path components to zone `dest` from the last `run`.

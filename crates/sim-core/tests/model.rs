@@ -657,3 +657,45 @@ fn jammed_pairs_past_the_tree_guard_keep_the_car() {
     assert!(s.car_past_guard_pairs() > 0, "no pair reached the guard");
     assert_eq!(s.results().unserved_trips, 0.0);
 }
+
+#[test]
+fn preview_puts_the_previous_results_back_exactly() {
+    // SIM-17: preview moves the transit state aside and back instead of
+    // re-evaluating it, so results must match bit for bit.
+    let mut s = cutoff_sim(None);
+    let before = serde_json::to_string(s.results()).unwrap();
+    s.preview_line(straight_line(Mode::Bus, (-7.0, 3.0), (7.0, 3.0), 0.8, 10.0))
+        .unwrap();
+    let mut after = s.results().clone();
+    after.eval_ms = serde_json::from_str::<sim_core::Results>(&before)
+        .unwrap()
+        .eval_ms;
+    assert_eq!(serde_json::to_string(&after).unwrap(), before);
+}
+
+#[test]
+fn edits_after_a_params_change_re_choose_origins_without_transit() {
+    // SIM-17: origins with no transit reuse their mode totals across line
+    // edits, keyed on params. A params change must drop them, so the
+    // day's work-trip shares still match a full re-choice.
+    // One short bus line in a corner with no drive access: most origins
+    // have no transit and are reused.
+    let p = Params {
+        instant_build: true,
+        pnr_max_drive_min: 0.0,
+        ..Params::default()
+    };
+    let mut s = Sim::new(generate(&SynthConfig::small()), p).unwrap();
+    let bus = |y| straight_line(Mode::Bus, (-7.0, y), (-4.0, y), 0.8, 10.0);
+    s.add_line(bus(-7.0)).unwrap();
+    s.params.asc[sim_core::params::WALK] += 1.0;
+    s.add_line(bus(-6.0)).unwrap();
+    let got = s.results().work_trips.shares().to_array();
+    let full = s.commute_mode_shares().to_array();
+    for m in 0..got.len() {
+        assert!(
+            (got[m] - full[m]).abs() < 1e-9,
+            "choice {m}: {got:?} vs {full:?}"
+        );
+    }
+}

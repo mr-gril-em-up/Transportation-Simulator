@@ -47,7 +47,8 @@ minutes (both directions, intrazonal always) are kept. Per-origin rows
 | `car_free` | per-pair skim | `new` | never |
 | `car_peak`, `link_time`, `link_vol` | skim / per edge | `equilibrate` | each game day (`equilibrate_warm`) |
 | `net` (TransitNet) | platforms, edges, coverage | `new` | every line edit |
-| `tsk_walk`, `tsk_drive` | per-pair transit components | every line edit and `equilibrate` | |
+| `tsk_walk`, `tsk_drive` (+ `_off`) | per origin, a row-aligned vector of transit components, **empty when no destination has transit** (`TSkim`, SIM-17) | every line edit and `equilibrate` | |
+| `idle_rows`, `idle_key` | per origin: mode totals of an origin with no transit, keyed on the params | each `finish` | dropped when car times move (`pass`) or params change |
 | `results`, `transit_od`, `zone_trips` | | every state change | |
 | `ledger`, `capital_paid` | books; capital paid per line slot | `new` | capital on `add_line`/`update_line`; settlement at month boundaries |
 | `lines`, `pending` | per line slot: version in service; version under construction and its opening day | `new` | line edits; `tick` moves finished `pending` into `lines` |
@@ -79,14 +80,16 @@ add_line / update_line (instant_build or service change) / remove_line  (20-40 m
   add/update then: charge capital above what the line already paid, less federal grant
 
 preview_line  (40-80 ms)
-  push empty slot -> evaluate the line in it, read result and capital, restore -> pop slot
+  push empty slot -> evaluate the line in it, read result and capital -> put the
+  previous transit state back (moved, not recomputed, SIM-17) -> pop slot
 
 tick / skip_to_next_month
   clock -> at a day boundary: open finished pending lines -> equilibrate_warm
   -> ledger.settle once per month boundary crossed
 
 finish
-  mode choice -> transit loading -> line economics -> Results
+  mode choice (origins with no transit reuse their totals, SIM-17) -> transit loading
+  -> line economics -> Results
 ```
 
 Why line edits skip the road side: a new line changes car volumes by a few
@@ -262,12 +265,37 @@ hour. Two known causes, for F38 with TxDOT counts: roads at 55 to 80 km/h get
 also applies to rural two-lane highways that carry ~1,700; and BPR puts no cap
 on delay at very high volume/capacity.
 
+**Line edits (SIM-17).** With today's 61 CapMetro lines loaded
+(`LINES=existing_lines.json examples/statewide.rs`), a statewide
+`preview_line` took 2.5 s and `add_line` 2.5 s here (the app measured about
+4.5 s on its machine), against F18's 2 s. Two causes:
+
+- A preview, or an add of a line still under construction, evaluated the
+  network twice, once with the line and once to put it back. The previous
+  transit state is now moved aside and moved back (`TransitState`), not
+  recomputed.
+- Transit skims were stored for every kept pair (44 bytes each, both access
+  modes), though ~85% of tracts have no transit. Each origin now stores an
+  empty row when nothing is reachable (`TSkim`), the search returns early when
+  no platform is within access, and an origin with no transit reuses its mode
+  totals from the last full choice while car times and params are unchanged
+  (`idle_rows`).
+
+| | Preview | Add | Peak memory |
+|---|---|---|---|
+| Before | 2.5 s | 2.5 s | 2.2 GB |
+| After | **0.78 s** | **0.79 s** | **1.4 GB** |
+
+Travis results are unchanged (calibration, Red Line 1,352/day, buses
+77,349/day; `bench` preview 0.036 s, add 0.039 s). A game day is unchanged
+(14 s).
+
 ## Testing
 
 | Test | Covers |
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
-| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
+| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share, bond rate and term) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
 | unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit, grant gate and settlement arithmetic |

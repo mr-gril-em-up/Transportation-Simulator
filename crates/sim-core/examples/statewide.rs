@@ -4,6 +4,9 @@
 //! `cold_rounds` sets `feedback_iterations`, default 4; `days` warm days, default 1).
 //! Prints load time, the cold equilibrium (`Sim::new`), one warm game day
 //! (`equilibrate_warm`, what `tick` runs daily, the 20 s target) and memory.
+//! With `LINES=<existing_lines.json>` it starts from those lines and times a
+//! line edit (`preview_line` and `add_line` of a copy of the first line; the
+//! F18 target is 2 s).
 use sim_core::{Params, ScenarioInput, Sim};
 use std::time::Instant;
 
@@ -41,6 +44,12 @@ fn main() {
         ..Params::default()
     };
     let t = Instant::now();
+    let mut input = input;
+    let lines: Vec<sim_core::TransitLine> = std::env::var("LINES")
+        .ok()
+        .map(|f| serde_json::from_str(&std::fs::read_to_string(f).expect("LINES")).unwrap())
+        .unwrap_or_default();
+    input.lines = lines.clone();
     let mut sim = Sim::new(input, params).unwrap();
     let cold = t.elapsed().as_secs_f64();
     println!(
@@ -58,6 +67,21 @@ fn main() {
             sim.car_unreachable_pairs(),
             sim.car_past_guard_pairs(),
             sim.results().unserved_trips
+        );
+    }
+    if let Some(l) = lines.first() {
+        let mut l = l.clone();
+        l.name = format!("{} copy", l.name);
+        let t = Instant::now();
+        let pv = sim.preview_line(l.clone()).unwrap();
+        let preview = t.elapsed().as_secs_f64();
+        let t = Instant::now();
+        sim.add_line(l).unwrap();
+        println!(
+            "{} lines: preview {preview:.2} s ({:.0} boardings/day), add {:.2} s",
+            lines.len(),
+            pv.line.daily_boardings,
+            t.elapsed().as_secs_f64()
         );
     }
     let r = sim.results();

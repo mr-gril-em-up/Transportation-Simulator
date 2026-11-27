@@ -247,7 +247,8 @@ statewide build (6,896 tracts, 214k road nodes) a game day takes 13.8 s at a
 60-minute cutoff (`examples/statewide.rs`), under the F34 target of 20 s.
 Road assignment steps by a Frank-Wolfe line search (SIM-15): with 8 cold
 rounds (69 s) the statewide peak average is 33 km/h at start and 38 km/h by
-day 3 (plain MSA gave 3 km/h). Plan and numbers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
+day 3 (plain MSA gave 3 km/h). A statewide line edit (preview or add, today's
+61 CapMetro lines loaded) takes 0.78 s, at 1.4 GB peak (SIM-17). Plan and numbers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
 
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See
