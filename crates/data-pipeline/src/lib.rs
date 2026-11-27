@@ -47,6 +47,10 @@ pub struct Manifest {
     pub road_edges: Option<usize>,
     pub road_km: Option<f64>,
     pub transit_routes: Option<usize>,
+    /// Non-bus routes as "mode | ref | name | operator | stops", one per OSM
+    /// relation (usually one per direction). Lets a build be checked for known
+    /// lines, e.g. CapMetro's Red Line, from the manifest alone.
+    pub rail_routes: Option<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -135,6 +139,7 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         road_edges: None,
         road_km: None,
         transit_routes: None,
+        rail_routes: None,
     };
 
     let pbf = raw.join("texas-latest.osm.pbf");
@@ -158,6 +163,7 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         m.road_km =
             Some((r.edges.iter().map(|e| e.length_m as f64).sum::<f64>() / 100.0).round() / 10.0);
         m.transit_routes = Some(transit.routes.len());
+        m.rail_routes = Some(rail_summary(&transit));
         write_json(&cfg.out, "roads.json", &r)?;
         write_json(&cfg.out, "transit.json", &transit)?;
         roads = Some(r);
@@ -177,4 +183,25 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
     let w = BufWriter::new(File::create(cfg.out.join("manifest.json"))?);
     serde_json::to_writer_pretty(w, &m)?;
     Ok(m)
+}
+
+fn rail_summary(t: &Transit) -> Vec<String> {
+    let dash = |o: &Option<String>| o.clone().unwrap_or_else(|| "-".into());
+    let mut v: Vec<String> = t
+        .routes
+        .iter()
+        .filter(|r| !matches!(r.mode.as_str(), "bus" | "trolleybus"))
+        .map(|r| {
+            format!(
+                "{} | {} | {} | {} | {} stops",
+                r.mode,
+                dash(&r.r#ref),
+                dash(&r.name),
+                dash(&r.operator),
+                r.stops.len()
+            )
+        })
+        .collect();
+    v.sort();
+    v
 }

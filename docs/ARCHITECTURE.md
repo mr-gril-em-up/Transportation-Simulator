@@ -44,7 +44,7 @@ flowchart LR
 
 ## Data flow
 
-1. **Build time.** `tsim-data` reads raw files from `crates/data-pipeline/data/raw` (fetched by `scripts/fetch.sh`, gitignored) and writes the package to `--out`. Travis County (`48453`) for M0/M1; all of Texas (`--area 48`) from M3.
+1. **Build time.** `tsim-data` reads raw files from `crates/data-pipeline/data/raw` (fetched by `scripts/fetch.sh`, gitignored) and writes the package to `--out`. Travis County (`48453`) for M0/M1; all of Texas (`--area 48`) from M3. The manual **data-pipeline** workflow publishes each build as GitHub Release `data-<area>-<year>`; `crates/data-pipeline/scripts/download-build.sh` fetches it and prints the `TRANSPO_SCENARIO` path the app loads.
 2. **Load.** `sim-core` deserializes the package into `ScenarioInput` and runs `validate()`.
 3. **Run.** `sim-core` computes skims, demand, mode split and assignment. A player edit (add or change a line) triggers incremental re-evaluation, target under 2 s per metro.
 4. **Display.** The app requests results through the message interface and renders layers: desire lines, link volumes, line ridership, agents near the camera, and the tube schematic at State and Region zoom.

@@ -25,11 +25,14 @@ jobs:
       - run: cargo test --locked
       - run: cargo clippy --all-targets --locked -- -D warnings
 
-  # Manual run: downloads real Census + OSM data and builds the area.
-  # Output is attached to the run as an artifact (not committed).
+  # Manual run: downloads real Census + OSM data, builds the area, and
+  # publishes the output as GitHub Release "data-<area>-<year>" (replacing
+  # assets on re-run) so consumers fetch it with scripts/download-build.sh.
   build-data:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       AREA: ${{ inputs.area }}
       YEAR: ${{ inputs.year }}
@@ -41,3 +44,14 @@ jobs:
         with:
           name: tsim-data-${{ inputs.area }}-${{ inputs.year }}
           path: crates/data-pipeline/data/out/area
+      - name: Publish release data-${{ inputs.area }}-${{ inputs.year }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="data-$AREA-$YEAR"
+          tar -czf "tsim-data-$AREA-$YEAR.tar.gz" -C data/out/area .
+          cp data/out/area/manifest.json "manifest-$AREA-$YEAR.json"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "$GITHUB_SHA" \
+            --title "Pipeline build: area $AREA, LODES $YEAR" \
+            --notes "Built by the data-pipeline workflow. Contents: scenario.json (sim-core input), zones.json, roads.json, transit.json, manifest.json. Data: US Census Bureau (public domain); OpenStreetMap contributors (ODbL)."
+          gh release upload "$TAG" "tsim-data-$AREA-$YEAR.tar.gz" "manifest-$AREA-$YEAR.json" --clobber
