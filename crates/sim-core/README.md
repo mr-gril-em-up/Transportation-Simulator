@@ -175,8 +175,11 @@ Fields marked optional may be omitted.
 }
 ```
 
-`TransitLine`: `{ "name"?, "mode", "stops": [{ "lon", "lat", "name"?, "park_ride"? }],
+`TransitLine`: `{ "name"?, "mode", "stops": [{ "lon", "lat", "name"?, "park_ride"?, "park_ride_spaces"? }],
 "headway_min", "offpeak_headway_min"?, "fare"?, "fare_per_km"?, "speed_kph"?, "span_hours"? }`.
+`park_ride_spaces` (optional; omitted = unlimited) caps cars parked a day at a
+`park_ride` stop: a full lot gets a shadow-price access penalty until the cars
+fit (SIM-11), and `LineResult.park_ride_cars_by_stop` reports use per stop.
 `headway_min` is the peak headway (work trips); `offpeak_headway_min`
 (default: the same) is what non-work trips see and sets off-peak revenue hours; the fleet covers the more frequent of the two. Omitted
 values take per-mode defaults ([src/params.rs](src/params.rs) `mode_defaults`).
@@ -251,20 +254,25 @@ cargo run --release -p sim-core --example calibrate -- \
 | | Commute drive / carpool / transit / walk / bike | Buses/day | Red Line/day |
 |---|---|---|---|
 | Old defaults | 76.0 / 18.5 / 1.2 / 2.0 / 2.3 | 28,292 | 6,373 |
-| Fitted (now the defaults) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,518 | 1,917 |
+| Fitted, SIM-10 (all 10 stations park-and-ride) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,518 | 1,917 |
+| Fitted, SIM-11 (now the defaults; 3 real lots with spaces) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,953 | 1,471 |
 | Target / count | ACS 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | ~69-70k (NTD weekday) | 1,500 (APTA weekday) |
 
 Shares are % of commuters who travel (ACS less work from home and other).
-The park-and-ride share of transit commuters (3%) is tuned, not sourced, and
-sets the Red Line figure; see [MODEL.md section 6](docs/MODEL.md#6-mode-choice).
+Park-and-ride runs only at the Red Line's three real lots (Leander 619,
+Lakeline 935, Howard 301 spaces); they hold 277 / 37 / 3 cars, so the space
+limit does not bind today. The drive-access constant (4.16 below walk access,
+inherited from SIM-10's tuned 3% split) is still unsourced and sets the Red
+Line figure; see [MODEL.md section 6](docs/MODEL.md#6-mode-choice).
 It takes about 22 s (7 s load, 11 s fit).
 
 ### Calibration probe: CapMetro Red Line (F19)
 
-**Update (SIM-10):** with the fitted constants the Red Line is probed inside
-today's network by `examples/calibrate.rs` (1,917/day, 28% high, inside the
-30% band, but the park-and-ride share was tuned to it, so it is not an
-independent check). Run alone, as below, it now carries 861/day, because
+**Update (SIM-10, SIM-11):** with the fitted constants the Red Line is probed
+inside today's network by `examples/calibrate.rs`: 1,471/day with park-and-ride
+at its three real lots (2% low; 1,917 when all ten stations had lots). The
+drive-access constant was tuned in SIM-10, so this is still not an independent
+check. Run alone, as below, it now carries 861/day, because
 without bus feeders and with walk access fitted to all of CapMetro it loses
 riders. The rest of this section records the pre-calibration probe.
 

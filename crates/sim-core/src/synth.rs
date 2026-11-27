@@ -234,6 +234,7 @@ pub fn straight_line(
                 lat,
                 name: format!("Stop {i}"),
                 park_ride: i == 0 || i == k,
+                park_ride_spaces: None,
             }
         })
         .collect();

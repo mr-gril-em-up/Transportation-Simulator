@@ -8,6 +8,8 @@
 //! one line per route ref (OSM keeps each direction as its own relation),
 //! the Red Line (ref 550) as commuter rail at 32/51 min, buses at the given
 //! headways (default 20/30 min; OSM has no frequencies, GTFS is a follow-up).
+//! Red Line park-and-ride runs only at the three stations with lots, capped
+//! at their spaces (SIM-11).
 //! Targets are ACS journey-to-work shares excluding work from home (`targets`).
 //! Paste the printed `asc` into `Params::default` to adopt a new fit.
 use sim_core::{Mode, ModeSplit, Params, ScenarioInput, Sim, Stop, TransitLine};
@@ -18,16 +20,11 @@ use std::time::Instant;
 /// `acs_travis_commute_transit`, ACS 2019-2023 B08301, share of all workers).
 const ACS_TRANSIT: f64 = 0.0167;
 
-/// Share of transit commuters who drive to their stop (park-and-ride).
-/// **Tuned, not sourced** (SIM-10): ACS has no access mode and no CapMetro
-/// on-board survey split was found. It sets the Red Line's ridership, so
-/// F19 is not an independent check. Override with `PNR_SHARE=0.05`.
-fn pnr_share() -> f64 {
-    std::env::var("PNR_SHARE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.03)
-}
+/// Red Line park-and-ride lots and spaces (figures.csv
+/// `pnr_spaces_capmetro_*`, CapMetro; rows pending from the data stream).
+/// The other stations have no lot.
+const RED_LINE_LOTS: [(&str, f64); 3] =
+    [("Leander", 619.0), ("Lakeline", 935.0), ("Howard", 301.0)];
 
 /// ACS 2019-2023 B08301 Travis commute shares of all workers (figures.csv
 /// `acs_travis_commute_*`). Work from home (27.2%) and taxi/motorcycle/other
@@ -36,8 +33,10 @@ fn targets() -> ModeSplit {
     ModeSplit {
         drive: 0.5973,
         carpool: 0.0746,
-        transit_walk: ACS_TRANSIT * (1.0 - pnr_share()),
-        transit_drive: ACS_TRANSIT * pnr_share(),
+        // Transit fitted as one share: the lots' spaces, not a tuned
+        // access split, set how many drive to the Red Line (SIM-11).
+        transit_walk: ACS_TRANSIT,
+        transit_drive: 0.0,
         walk: 0.0207,
         bike: 0.0060,
     }
@@ -64,6 +63,7 @@ fn main() {
                 lat: s["lat"].as_f64().unwrap(),
                 name: s["name"].as_str().unwrap_or("").into(),
                 park_ride: false,
+                park_ride_spaces: None,
             })
             .collect();
         if stops.len() < 2 || !seen.insert(reference.clone()) {
@@ -76,9 +76,13 @@ fn main() {
             stops: if rail {
                 stops
                     .into_iter()
-                    .map(|s| Stop {
-                        park_ride: true,
-                        ..s
+                    .map(|s| {
+                        let lot = RED_LINE_LOTS.iter().find(|(n, _)| *n == s.name);
+                        Stop {
+                            park_ride: lot.is_some(),
+                            park_ride_spaces: lot.map(|l| l.1),
+                            ..s
+                        }
                     })
                     .collect()
             } else {
@@ -155,4 +159,13 @@ fn report(sim: &Sim, label: &str) {
         "  all trips transit {}%  Red Line {red:.0}/day  buses {bus:.0}/day",
         pct(r.mode_share.transit())
     );
+    for l in r.lines.iter().filter(|l| l.mode == Mode::CommuterRail) {
+        let cars: Vec<String> = l
+            .park_ride_cars_by_stop
+            .iter()
+            .filter(|&&c| c > 0.0)
+            .map(|c| format!("{c:.0}"))
+            .collect();
+        println!("  {} park-and-ride cars {}", l.name, cars.join(" / "));
+    }
 }

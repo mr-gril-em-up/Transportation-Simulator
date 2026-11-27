@@ -179,6 +179,10 @@ pub struct Stop {
     /// Has a park-and-ride lot (enables drive-to-transit access).
     #[serde(default)]
     pub park_ride: bool,
+    /// Parking spaces this line may use at the lot (None: unlimited). When
+    /// set, drive-to-transit riders above it are priced off (SIM-11).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub park_ride_spaces: Option<f64>,
 }
 
 fn default_zero_car_share() -> f64 {

@@ -41,7 +41,7 @@ Coordinates are WGS84 longitude, latitude in degrees. Lengths in meters, speeds 
 | `road_links[].capacity_vph`, `toll` | Not set | sim-core derives capacity from speed and lanes |
 | `road_links[].oneway` | OSM `oneway`, motorway class, roundabouts | `oneway=-1` ways are flipped so `from → to` is the legal direction |
 | `commutes[]` | LODES OD `S000` summed to block-group pairs | Only pairs with both ends in the area |
-| `lines` | Always empty | The game starts with no transit; see `transit.json` |
+| `lines` | Always empty | The game starts with no transit; see `transit.json`. `Stop.park_ride_spaces` (SIM-11, optional) is never written; lot counts are figures.csv rows `pnr_spaces_*` (pending) |
 
 Zero-length links and self-loops are dropped from `scenario.json` (they remain in `roads.json`).
 
