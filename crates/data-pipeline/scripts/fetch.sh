@@ -14,7 +14,7 @@ get() { # get NAME URL [FALLBACK_URL]: saves data/raw/NAME, skipped if present
   if [[ -s "$out" ]]; then echo "have $out"; return; fi
   for url in "$@"; do
     echo "get  $url"
-    if curl -fL --retry 3 -o "$out.part" "$url"; then mv "$out.part" "$out"; return; fi
+    if curl -fL --retry 5 --retry-all-errors --retry-delay 15 -o "$out.part" "$url"; then mv "$out.part" "$out"; return; fi
   done
   echo "FAILED $out" >&2; return 1
 }
