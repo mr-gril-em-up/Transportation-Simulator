@@ -276,8 +276,8 @@ pub fn read_headways(dir: &Path) -> Result<HashMap<String, RouteHeadway>> {
 /// matching CapMetro route numbers.
 pub fn is_capmetro(operator: Option<&str>) -> bool {
     operator.is_none_or(|o| {
-        let o = o.to_lowercase();
-        o.contains("capmetro") || o.contains("capital metro")
+        let o: String = o.to_lowercase().split_whitespace().collect();
+        o.contains("capmetro") || o.contains("capitalmetro")
     })
 }
 
@@ -310,6 +310,7 @@ mod tests {
             "Capital Metropolitan Transportation Authority"
         )));
         assert!(is_capmetro(Some("CapMetro")));
+        assert!(is_capmetro(Some("Cap Metro")));
         assert!(!is_capmetro(Some("Amtrak")));
         assert!(!is_capmetro(Some("CARTS")));
     }
