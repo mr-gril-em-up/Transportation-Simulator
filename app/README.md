@@ -88,9 +88,18 @@ TRANSPO_SCENARIO=$PWD/../crates/data-pipeline/data/out/48-2023-tract-highway/sce
   SIM-15). Travis keeps the dense model. The panel header says `sim-core · Texas data`.
 - **Loading screen.** Startup is over a minute statewide, so a card shows the stage (reading the
   scenario, then the first traffic equilibrium for 6,896 census tracts), a bar and the seconds
-  elapsed and left against an estimate of 80 s. The bar stops at 97% and the text says when it
+  elapsed and left against an estimate (200 s cold, 70 s warm, as measured below). The bar stops at 97% and the text says when it
   is taking longer than the estimate. sim-core has no progress callback, so the bar is time
   against the estimate, not work done. A county build shows no card.
+- **Warm start** (SIM-19, A36). After a cold start the shell saves the starting road volumes
+  (`Sim::road_state`, 3.5 MB) as `road_state-network.json` (or `road_state-blank.json` on a
+  blank map) beside the scenario. The next start reads it and calls `Sim::new_warm`, so the first
+  equilibrium is one warm day: 230 s cold, 72 s warm with 455 lines (measured below). It is never
+  overwritten during play, so every warm start begins from the same roads. A state from another
+  road graph is ignored (sim-core checks a fingerprint) and the start is cold. Delete the file, or
+  set `TRANSPO_WARM_START=0`, to start cold; a cold start saves a fresh one. The card says
+  "Settling traffic from the last start's roads" when warm. The Travis build saves and reads one
+  too.
 - **Opens on all of Texas.** Once the scenario is read, the map fits the zone extent.
 - **Real regional rail and intercity lines** (A33). The pipeline's `transit.json` holds every
   OSM transit route in Texas. The shell keeps rail, light rail and tram, one variant per line
@@ -121,7 +130,7 @@ TRANSPO_SCENARIO=$PWD/../crates/data-pipeline/data/out/48-2023-tract-highway/sce
 
 Measured 2026-11-27 in `tauri dev` under Xvfb on 4 cores (WebKit's software rendering takes
 about 1.3 cores, so a desktop with a GPU should be faster), with the DATA-9 build (415 lines at
-start): ready in 201 to 214 s; a day's re-run takes about 45 s of wall time in slices; adding a
+start): ready in 201 to 214 s (230 s cold and 72 s warm with the republished 455-line build); a day's re-run takes about 45 s of wall time in slices; adding a
 2-stop bus line takes about 16 s for the whole round trip (preview, upsert, results, budget)
 with or without a day computing, and removing one about 2 s. The add cost grows with the
 number of lines (4.5 s with 61 lines before sim-core SIM-17); reported to sim-core. Today's
@@ -254,7 +263,7 @@ interface SimClient {
   referenceLines(): Promise<RouteSpec[]>;                // real rail sim-core does not run; drawn only
   zoneCounties(): Promise<[lon, lat, fips][]>;           // zone centroids with county FIPS
   results(): Promise<RouteResult[]>;                     // re-read after the daily re-run
-  clock(): Promise<ClockState>;                          // { gameSeconds, timelapse, paused, day, dayProgress? }
+  clock(): Promise<ClockState>;                          // { gameSeconds, timelapse, paused, day, dayProgress?, daysDone? }
   setClock(c: { paused?; timelapse? }): Promise<ClockState>;
   skipToNextMonth(): Promise<ClockState>;
 }
@@ -302,7 +311,7 @@ interface SimClient {
 | `ledger` | none | sim-core `Ledger` (`cash`, `current`, `history`, `served_population`, `bonds`, `distressed_months`, `bankrupt_month`) plus `debt`, `debt_service_per_month`, `bankruptcy_months`, `bond_rate`, `bond_term_months` |
 | `issue_bond` | `principal: number` | Same as `ledger`, after borrowing. Errors on a non-positive amount or once bankrupt |
 | `existing_routes` | none | Lines present at start: `{ route_id, line: TransitLine }[]` with ids `e0`, `e1`, ...; empty on a blank map |
-| `clock` | none | `{ game_seconds, timelapse, paused, day, day_progress? }` (sim-core `Clock` plus whole days; `day_progress` 0 to 1 only while a day re-runs) |
+| `clock` | none | `{ game_seconds, timelapse, paused, day, day_progress? }` (sim-core `Clock` plus whole days; `day_progress` 0 to 1 only while a day re-runs; `days_done` counts finished day re-runs, and results change when it does) |
 | `set_clock` | `paused?: boolean`, `timelapse?: number` | Same as `clock`; omitted fields unchanged, non-positive time-lapse ignored |
 | `skip_to_next_month` | none | Same as `clock`, after re-running the day and settling the month |
 | `results` | none | `RouteResultOut[]` for every route, no change |
@@ -378,8 +387,8 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | The browser mock builds instantly (no construction period) | Not planned: construction rules live in sim-core |
 | Cost preview only while drawing; a stop edit is charged on release with no preview first (the budget shows what it cost) | F16 follow-up if it matters in play |
 | A line edit statewide takes about 16 s with 415 lines (Xvfb, 4 cores) | sim-core: incremental transit update on a line change (reported) |
-| Statewide loading bar is elapsed time against an 80 s estimate, not work done | A progress callback from `Sim::new` (sim-core) |
-| Statewide startup recomputes the first equilibrium every launch (about 200 s here with 415 lines) | sim-core's coming `Sim::new_warm` with a saved `RoadState` (about 71 s to 21 s in sim-core) |
+| Statewide loading bar is elapsed time against an estimate (200 s cold, 70 s warm), not work done | A progress callback from `Sim::new` (sim-core) |
+| The first statewide start on a machine is cold (230 s here with 455 lines) | Ship a `road_state-network.json` with the data release (pipeline) |
 | Amtrak and the El Paso Streetcar are drawn only, not simulated | Intercity rail (F37); El Paso's feed in the pipeline |
 | County names cover 40 metro counties; others show the FIPS code | A county name list from the pipeline |
 | `npm run tauri build` bundles no scenario: an installed app on another machine opens on the synthetic region | Bundle the build as a Tauri resource when packaging matters (M3 release) |

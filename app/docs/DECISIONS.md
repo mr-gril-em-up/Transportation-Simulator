@@ -269,3 +269,17 @@ game time (the next step carries the elapsed time) and needs no change to
 the lock or to sim-core. Measured statewide with 415 lines, the edit was
 still about 16 s, the same as with no day running, so the remaining cost is
 the edit itself, not the lock.
+
+### A36. Warm start from the starting network's roads, saved once
+sim-core's warm start (SIM-19) cuts the statewide start from 230 s to 72 s
+here. Its state is road volumes, and a warm start lands near, not on, the
+cold equilibrium (sim-core: 40 km/h peak warm against 33 km/h cold), so
+which state is saved decides the numbers a new game opens with. The shell
+saves only the state of a cold start of the same starting network, keyed by
+network or blank map, and never during play: every warm start of a given
+data build begins from the same roads, so results repeat across launches
+(after the first), and one game's congestion never leaks into the next.
+Saving at game close was the alternative; it would make a new game depend
+on how the last one ended. The file sits beside the scenario because it
+belongs to that build; a new download replaces the directory's contents
+but not this file, and the fingerprint check catches a changed road graph.
