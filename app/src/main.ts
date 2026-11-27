@@ -21,6 +21,8 @@ let nextId = 1;
 // ---- Simulation round trip -------------------------------------------------
 async function apply(call: Promise<RouteResult[]>): Promise<void> {
   const t0 = performance.now();
+  // The first call can wait seconds while sim-core builds the scenario at startup.
+  $("sim-ms").textContent = `${sim.label} · running…`;
   try {
     results = new Map((await call).map((r) => [r.routeId, r]));
     $("sim-ms").textContent = `${sim.label} · ${Math.round(performance.now() - t0)} ms`;
