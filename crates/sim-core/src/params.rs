@@ -108,7 +108,7 @@ pub struct Params {
     pub instant_build: bool,
 
     /// Transit authority cash at the start, dollars. 0: the first line is
-    /// paid from grants and future tax (bonds arrive with F26).
+    /// paid from grants, future tax and bonds (`Sim::issue_bond`, F26).
     pub starting_cash: f64,
     /// Share of a line's capital cost the federal government pays when the
     /// line passes the cost-effectiveness gate (FTA Capital Investment Grants: up to 80%, typically ~50%).
@@ -121,6 +121,16 @@ pub struct Params {
     pub local_sales_tax_rate: f64,
     /// Taxable retail sales per resident per year, dollars.
     pub taxable_sales_per_capita: f64,
+    /// Annual interest rate on the authority's bonds (0.04 = 4%).
+    pub bond_rate: f64,
+    /// Bond repayment term, real years.
+    pub bond_term_years: f64,
+    /// Bond terms are divided by this in game. 1 keeps real 30-year terms;
+    /// D9 as written would set it to `construction_speedup` (SIM-5).
+    pub bond_term_speedup: f64,
+    /// Distressed months in a row (debt service above operating surplus, or
+    /// cash below zero) that make the authority bankrupt (F26).
+    pub bankruptcy_months: u32,
 }
 
 impl Default for Params {
@@ -179,6 +189,13 @@ impl Default for Params {
             local_sales_tax_rate: 0.01,
             // figures.csv `taxable_sales_per_capita`: CapMetro service area, 2023$.
             taxable_sales_per_capita: 20_600.0,
+            // Long tax-exempt municipal revenue bond, AA-ish, 2024-25: ~4%.
+            // Not yet a figures.csv row (unverified).
+            bond_rate: 0.04,
+            bond_term_years: 30.0,
+            bond_term_speedup: 1.0,
+            // ROADMAP F26: debt service above revenue for 12 months ends the game.
+            bankruptcy_months: 12,
         }
     }
 }
@@ -223,6 +240,13 @@ impl Params {
     /// In-game build duration for a real-world duration.
     pub fn build_days(&self, real_days: f64) -> f64 {
         real_days / self.construction_speedup.max(1.0)
+    }
+
+    /// Bond term in game months: `bond_term_years` x 12 / `bond_term_speedup`.
+    pub fn bond_term_months(&self) -> u32 {
+        (self.bond_term_years * 12.0 / self.bond_term_speedup.max(1.0))
+            .round()
+            .max(1.0) as u32
     }
 }
 
