@@ -82,3 +82,27 @@ describe("mock sim", () => {
     expect(fast).toBeGreaterThan(slow);
   });
 });
+
+describe("tauri adapter", () => {
+  it("maps RouteSpec to sim-core TransitLine and per-stop results back by stop id", async () => {
+    const { toTransitLine, fromLineResult } = await import("../src/sim/tauri");
+    const r = redLine();
+    const line = toTransitLine(r);
+    expect(line.mode).toBe("commuter_rail");
+    expect(line.headway_min).toBe(20);
+    expect(line.stops[0]).toMatchObject({ lon: RED_LINE[0].lngLat[0], lat: RED_LINE[0].lngLat[1], park_ride: true });
+    const res = fromLineResult(
+      {
+        route_id: "red",
+        daily_boardings: 2500.4,
+        boardings_by_stop: r.stops.map((_, i) => i * 10.4),
+        operating_cost_per_day: 50000,
+        farebox_recovery: 0.08,
+      },
+      r,
+    );
+    expect(res.dailyRiders).toBe(2500);
+    expect(res.boardingsByStop.s2).toBe(21);
+    expect(res.fareboxRecovery).toBe(0.08);
+  });
+});

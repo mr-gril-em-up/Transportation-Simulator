@@ -4,6 +4,7 @@ import type maplibregl from "maplibre-gl";
 import type { LngLat, Mode } from "./sim/api";
 import { setData } from "./map";
 
+/** Line drawing tool: owns the `draft` source and calls `onFinish` with at least two stops. */
 export class LineDrawer {
   private pts: LngLat[] = [];
   private mode: Mode | null = null;

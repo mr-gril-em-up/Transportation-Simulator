@@ -1,8 +1,10 @@
 // One game clock for the whole app. Zoom never touches it.
 // At 1x, 1 real second = 1 game minute. Time-lapse multiplies that everywhere.
 
+/** Time-lapse multipliers the button cycles through, in order. */
 export const LAPSE_STEPS = [1, 2, 10, 60] as const;
 
+/** The single game clock. Advanced only by real time x time-lapse; zoom never touches it. */
 export class GameClock {
   minutes = 6 * 60; // game minutes since Day 1 00:00
   paused = false;

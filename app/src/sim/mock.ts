@@ -23,6 +23,7 @@ const CENTERS: [number, number, number][] = [
 
 const DOWNTOWN: LngLat = [-97.743, 30.268];
 
+/** Equirectangular distance in km; accurate to <1% at county scale. */
 export function km(a: LngLat, b: LngLat): number {
   const kx = 111.32 * Math.cos(((a[1] + b[1]) / 2) * (Math.PI / 180));
   return Math.hypot((a[0] - b[0]) * kx, (a[1] - b[1]) * 110.57);
@@ -63,6 +64,7 @@ const decay = (d: number) => 1 / Math.max(d, 1) ** 1.2;
 const COST_COEF = 0.06;
 const ASC_CAR = 1.9;
 
+/** Weekday boardings for one route against the synthetic zones (no line interaction). */
 export function simulateRoute(route: RouteSpec, zones: Zone[]): RouteResult {
   const stops = route.stops;
   const kind: Kind = isRegional(route.mode) ? "regional" : "local";
@@ -109,7 +111,11 @@ export function simulateRoute(route: RouteSpec, zones: Zone[]): RouteResult {
   return { routeId: route.id, dailyRiders: Math.round(total), boardingsByStop: boardings };
 }
 
+/** Browser-only SimClient backed by `simulateRoute` (see docs/MOCK-SIM.md). */
 export class MockSim implements SimClient {
+  readonly label = "mock model (browser)";
+
+  async ready(): Promise<void> {}
   private zones = buildZones();
   private routes = new Map<string, RouteSpec>();
 

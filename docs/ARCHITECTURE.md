@@ -8,7 +8,7 @@ Last updated 2026-11-27.
 
 A Rust data pipeline turns public data (Census, LODES, OpenStreetMap) into a game package once per release. A headless Rust library, `sim-core`, loads that package and runs the travel model: aggregate zone-to-zone flows for the whole state, with individual agents only near the camera. A Tauri desktop app links `sim-core` as native code, talks to it through a message interface, and draws the map in its webview with MapLibre GL (deck.gl planned for the local tier in M2, see [app decision 2](../app/docs/DECISIONS.md)). There is no server.
 
-As built today (2026-11-27): the pipeline writes `scenario.json` for Travis County; sim-core has the input schema, the travel model and the `Sim` API (#7); the app runs against a TypeScript mock sim behind the same client interface it will use for sim-core.
+As built today (2026-11-27): the pipeline writes `scenario.json` for Travis County; sim-core has the input schema, the travel model and the `Sim` API (#7); the desktop app links sim-core through Tauri commands (the browser-only `npm run dev` still uses a TypeScript mock behind the same client interface).
 
 ## Components
 
@@ -40,7 +40,7 @@ flowchart LR
 
 ### Dependency direction
 
-`app` will depend on `sim-core` as a path dependency (stubbed, commented out in `app/src-tauri/Cargo.toml` until the `Sim` API exists). `data-pipeline` depends on `sim-core` only for the input schema types. `sim-core` depends on neither. Keep it that way: the design doc requires the core to stay a headless library so a future client swap does not touch it, and keeps the zone hierarchy and population decoupled from transport code so the city-builder path stays open.
+`app` depends on `sim-core` as a path dependency from `app/src-tauri/Cargo.toml`. `data-pipeline` depends on `sim-core` only for the input schema types. `sim-core` depends on neither. Keep it that way: the design doc requires the core to stay a headless library so a future client swap does not touch it, and keeps the zone hierarchy and population decoupled from transport code so the city-builder path stays open.
 
 ## Data flow
 
@@ -76,7 +76,7 @@ Owned by sim-core. Source of truth: [`crates/sim-core/src/schema.rs`](../crates/
 
 sim-core's side exists (#7, [sim-core README](../crates/sim-core/README.md#public-api-sim)): `Sim::new` / `from_json` build from a scenario; `add_line` returns a stable `LineId`, and `add_line` / `update_line` / `remove_line` each refresh `results()` for every line in about 20 ms. Each `LineResult` carries `daily_boardings` and `boardings_by_stop` aligned with the line's stops. `tick(real_dt)` advances the shared `Clock` and re-equilibrates at game-day boundaries (seconds; run it off the UI thread). Results are `serde::Serialize`; `Sim` is `Send`, so the app holds it in a `Mutex`.
 
-The app's side exists: [`app/src/sim/api.ts`](../app/src/sim/api.ts) defines `SimClient` (`upsertRoute`, `removeRoute`, each returning results for every route) with `RouteSpec` modes copied from sim-core's `TransitLine`. Today `createSim()` returns a TypeScript `MockSim`. The swap plan (Tauri state holding `sim_core::Sim`, `upsert_route`/`remove_route` commands, a `TauriSim` client) is in [app ARCHITECTURE, "Swapping in sim-core"](../app/docs/ARCHITECTURE.md#swapping-in-sim-core). The webview never holds simulation state. The game clock lives in the client until sim-core exposes clock advance (app decision 9).
+The app's side: [`app/src-tauri/src/sim.rs`](../app/src-tauri/src/sim.rs) holds the `Sim` in Tauri state, built at startup on a background thread from `TRANSPO_SCENARIO` or `synth::generate`. It exposes three commands: `upsert_route(routeId, line: TransitLine)`, `remove_route(routeId)` and `sim_status`. The first two return `LineResult` for every line, tagged with the client's route id, and the shell keeps the map from client ids to `LineId`. In the webview, [`app/src/sim/api.ts`](../app/src/sim/api.ts) defines `SimClient`, which `TauriSim` ([`app/src/sim/tauri.ts`](../app/src/sim/tauri.ts)) implements over those commands. `createSim()` falls back to `MockSim` only outside Tauri. Details are in [app ARCHITECTURE, "How the map and the sim talk"](../app/docs/ARCHITECTURE.md#how-the-map-and-the-sim-talk). The webview never holds simulation state. The game clock stays in the client until a shell worker drives `Sim::tick` (F21, app decision A9).
 
 ### Pipeline output files
 

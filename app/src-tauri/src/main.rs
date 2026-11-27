@@ -1,10 +1,18 @@
 // Desktop shell. The web client in app/src does all rendering; the simulation
-// runs in the client-side mock until sim-core lands, at which point it is
-// exposed here as Tauri commands behind the SimClient interface.
+// is sim-core, exposed here as Tauri commands behind the client's SimClient
+// interface (app/src/sim/tauri.ts).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod sim;
 
 fn main() {
     tauri::Builder::default()
+        .manage(sim::SimState::start())
+        .invoke_handler(tauri::generate_handler![
+            sim::sim_status,
+            sim::upsert_route,
+            sim::remove_route
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Transpo-Sim");
 }
