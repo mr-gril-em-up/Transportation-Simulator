@@ -54,7 +54,6 @@ if [[ ! -s "$RAW/tl_2020_48_bg.dbf" ]]; then
     echo "warning: TIGER download failed; zones will have no land area" >&2
   fi
 fi
-# OpenStreetMap Texas extract (ODbL, attribution required).
 # CapMetro GTFS (weekday headways for existing routes). Optional, small.
 if [[ -z "${SKIP_OSM:-}" && ! -s "$RAW/gtfs_capmetro/routes.txt" ]]; then
   echo "get  CapMetro GTFS"
@@ -66,4 +65,5 @@ if [[ -z "${SKIP_OSM:-}" && ! -s "$RAW/gtfs_capmetro/routes.txt" ]]; then
     echo "warning: CapMetro GTFS download failed; routes have no headways" >&2
   fi
 fi
+# OpenStreetMap Texas extract (ODbL, attribution required).
 [[ -n "${SKIP_OSM:-}" ]] || get texas-latest.osm.pbf https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
