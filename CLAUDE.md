@@ -16,5 +16,5 @@ Rules:
 - sim-core stays headless: no app, UI or pipeline dependencies inside it.
 - `ScenarioInput` (`crates/sim-core/src/schema.rs`) is the contract between pipeline and core. Change it only with both READMEs and the fixture updated.
 - Before opening a PR, run the checks for what you touched:
-  - Rust crates: `cargo test --workspace` and `cargo doc --workspace --no-deps`
+  - Rust crates: `cargo fmt --all --check`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo doc --workspace --no-deps` (CI runs the same in `.github/workflows/rust.yml`, warnings as errors)
   - App: `cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo check)` (not covered by the root workspace)

@@ -98,7 +98,8 @@ crates/
   data-pipeline/        tsim-data binary, public data -> game package
 app/                    Tauri desktop app: TypeScript client (src/), Rust shell (src-tauri/, own workspace)
 docs/                   this hub: roadmap, architecture, decisions, docs standard
-.github/workflows/      CI (data-pipeline workflow can build a package in Actions)
+.github/workflows/      CI: rust.yml (whole Cargo workspace: fmt, build, test, clippy, doc, sim-core bench gate),
+                        app.yml (app and its Tauri workspace), data-pipeline.yml (pipeline tests; manual data builds)
 ```
 
 ## As-built deviations from the design doc
