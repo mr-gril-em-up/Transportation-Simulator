@@ -10,7 +10,10 @@ Every number or rule in the code that is not read straight from a source. Each e
 | All jobs (`JT00`, `S000`/`C000`) | `census.rs`, `fetch.sh` | Total commute demand; wage and sector splits are not used by the model yet | Read `SE01–03` / `SI01–03` when mode choice or destination choice needs them |
 | Population is 2020 census, jobs are LODES 2023 | `lib.rs` | Latest of each; three years apart | ACS 5-year population if growth since 2020 matters for calibration |
 | Out-of-state commuters ignored | `census.rs` | `od_aux` is a rounding error for Travis | Read `tx_od_aux_*` for border metros (El Paso, Texarkana) at M3 |
-| `zero_car_share` 0.06, `median_income` 70,000, `parking_cost` 0 | `scenario.rs` | sim-core's own defaults; no ACS reader yet | ACS B08201 and B19013 by block group (M1) |
+| `median_income` = ACS B19013; `zero_car_share` = ACS B25044 no-vehicle households / households; ACS 5-year ending in the LODES year | `acs.rs` | Block-group level; B25044 counts the same households as B08201 (named in sim-core's schema), which is tract-only (DATA-4) | Tract-level B08201 cross-check |
+| Suppressed or zero-household ACS block groups take the household-weighted tract mean, then county mean; sim-core default (0.06, 70,000) only if both are empty | `acs.rs` `apply` | Neighbours in the same tract are the best available estimate; a statewide default would flatten rich and poor areas | Use ACS margins of error to blend small estimates |
+| `parking_cost` 0 | `scenario.rs` | No source yet | Downtown parking survey or meter rates |
+| `area_km2` = TIGER 2020 `ALAND` (land only, water excluded) | `acs.rs` | Density should count land people can live on | n/a |
 | `area_km2` omitted | `scenario.rs` | sim-core estimates it from zone spacing | TIGER `ALAND` (M1) |
 
 ## Road network
@@ -40,7 +43,7 @@ Every number or rule in the code that is not read straight from a source. Each e
 ## Known gaps
 
 1. No zone polygons yet (map draws points or desire lines).
-2. No ACS fields; sim-core defaults stand in.
+2. ACS fields are block-group estimates with large margins of error; suppressed ones use tract or county means.
 3. No synthetic population or non-work trips (later milestones).
 4. JSON output will be large statewide; binary format pending a sim-core loader.
 5. Raw file names hard-code Texas (`48`, `tx`, `texas-latest`).

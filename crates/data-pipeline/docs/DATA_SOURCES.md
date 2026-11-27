@@ -72,14 +72,42 @@ Tags read: `highway`, `maxspeed`, `lanes`, `oneway`, `junction`, `area`, `name` 
 
 **Citation:** OpenStreetMap contributors (2026). Texas extract retrieved from Geofabrik, https://download.geofabrik.de. Data available under the Open Database License.
 
+## 4. American Community Survey 5-year, block groups
+
+| | |
+|---|---|
+| Publisher | US Census Bureau |
+| API | `https://api.census.gov/data/<year>/acs/acs5?get=B19013_001E,B25044_001E,B25044_003E,B25044_010E&for=block%20group:*&in=state:48&in=county:*&in=tract:*` |
+| Vintage | 5-year estimates ending in the LODES year (2019–2023 by default), 2020 block groups |
+| Tables | B19013 median household income; B25044 tenure by vehicles available (`_001E` households, `_003E` owner no vehicle, `_010E` renter no vehicle) |
+| Key | Optional `CENSUS_API_KEY`; keyless use is limited to 500 calls per day and the pipeline makes one |
+| License | US federal government work, public domain |
+| Gives the game | `median_income`, `zero_car_share` per zone |
+
+Margins of error are large at block-group level, which is why suppressed values fall back to tract and county means rather than to a statewide default.
+
+**Citation:** U.S. Census Bureau, American Community Survey 5-Year Estimates, Tables B19013 and B25044, Texas block groups.
+
+## 5. TIGER/Line 2020 block groups
+
+| | |
+|---|---|
+| Publisher | US Census Bureau, Geography Division |
+| File | https://www2.census.gov/geo/tiger/TIGER2020/BG/tl_2020_48_bg.zip (only the `.dbf` is kept) |
+| Columns used | `GEOID`, `ALAND` (land area, m²) |
+| License | US federal government work, public domain |
+| Gives the game | `area_km2` per zone. Polygons (map fills) are not read yet |
+
+**Citation:** U.S. Census Bureau, 2020 TIGER/Line Shapefiles, Block Groups, Texas.
+
 ## Planned sources (not read yet)
 
 From the overview doc's data table, in the order the pipeline will likely add them:
 
 | Source | For | Milestone |
 |---|---|---|
-| ACS 5-year (B08201 vehicles, B19013 income, commute mode share) | `zero_car_share`, `median_income`, mode-choice calibration | M1 |
-| TIGER/Line block groups | Zone polygons for map fills, `area_km2` | M1 |
+| ACS 5-year commute mode share (B08301) | Mode-choice calibration | M1 |
+| TIGER/Line block group polygons | Zone polygons for map fills | M1 |
 | CapMetro GTFS | Red Line schedule for the M1 ridership check | M1 |
 | ACS PUMS | Synthetic population | M2+ |
 | NHTS | Non-work trip rates | M2+ |

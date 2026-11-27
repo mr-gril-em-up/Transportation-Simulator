@@ -1,6 +1,7 @@
 //! Transpo-Sim data pipeline: public Census and OpenStreetMap data in,
 //! game-ready zone, demand and network files out.
 
+pub mod acs;
 pub mod census;
 pub mod model;
 pub mod osm;
@@ -55,6 +56,12 @@ pub struct Manifest {
     /// relation (usually one per direction). Lets a build be checked for known
     /// lines, e.g. CapMetro's Red Line, from the manifest alone.
     pub rail_routes: Option<Vec<String>>,
+    /// Zones with their own ACS median income / zero-car share (the rest use
+    /// the tract or county fallback), and zones with a TIGER land area.
+    /// `None` when the ACS or TIGER file was not present.
+    pub acs_income_zones: Option<usize>,
+    pub acs_zero_car_zones: Option<usize>,
+    pub area_zones: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -146,7 +153,44 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         scenario_road_nodes: 0,
         scenario_road_links: 0,
         rail_routes: None,
+        acs_income_zones: None,
+        acs_zero_car_zones: None,
+        area_zones: None,
     };
+
+    // ACS 5-year ending in the LODES year, and TIGER 2020 land area.
+    let acs_path = raw.join(format!("acs5_bg48_{y}.json"));
+    let acs = if acs_path.exists() {
+        m.sources
+            .push("US Census Bureau, American Community Survey 5-year estimates (B19013, B25044)");
+        Some(acs::read_acs(&std::fs::read_to_string(&acs_path)?)?)
+    } else {
+        eprintln!(
+            "note: {} not found, zones keep default income and zero-car share",
+            acs_path.display()
+        );
+        None
+    };
+    let dbf_path = raw.join("tl_2020_48_bg.dbf");
+    let aland = if dbf_path.exists() {
+        m.sources
+            .push("US Census Bureau, TIGER/Line 2020 block groups (ALAND)");
+        Some(acs::read_dbf_aland(&std::fs::read(&dbf_path)?)?)
+    } else {
+        eprintln!(
+            "note: {} not found, zones have no land area",
+            dbf_path.display()
+        );
+        None
+    };
+    let (inc, zc, ar) = acs::apply(&mut zones, acs.as_ref(), aland.as_ref());
+    if acs.is_some() {
+        m.acs_income_zones = Some(inc);
+        m.acs_zero_car_zones = Some(zc);
+    }
+    if aland.is_some() {
+        m.area_zones = Some(ar);
+    }
 
     let pbf = raw.join("texas-latest.osm.pbf");
     let mut roads = None;

@@ -28,9 +28,11 @@ The cost: Python would make ad-hoc analysis easier. Analysis can still read the 
 CenPop2020_Mean_BG48.txt ──► 1. zones ──┐
 tx_rac_*.csv.gz ─────────► 2. workers ─┤
 tx_wac_*.csv.gz ─────────► 3. jobs ────┤
-tx_od_main_*.csv.gz ─────► 4. flows ───┼──► 6. scenario ──► validate ──► scenario.json
-texas-latest.osm.pbf ────► 5. roads,   │                                 zones.json
-                              transit ─┘                                 roads.json, transit.json
+tx_od_main_*.csv.gz ─────► 4. flows ───┤
+acs5_bg48_*.json, ───────► 4b. ACS,  ──┼──► 6. scenario ──► validate ──► scenario.json
+  tl_2020_48_bg.dbf           area     │                                 zones.json
+texas-latest.osm.pbf ────► 5. roads,   │                                 roads.json, transit.json
+                              transit ─┘
                                                                          manifest.json
 ```
 
@@ -58,6 +60,14 @@ LODES OD gives worker counts per (home block, work block) pair, column `S000` (a
 Intra-zone flows (home and work in the same block group) are kept; sim-core decides how to treat them.
 
 Only the OD **main** file is read: both ends in Texas. Out-of-state residents working in Texas (OD **aux**) are a rounding error for Travis and are listed as a gap.
+
+### 4b. ACS income, zero-car share and land area (`acs::apply`)
+
+Optional inputs; without them zones keep sim-core's defaults and the build prints a note.
+
+- `acs5_bg48_<year>.json`: ACS 5-year estimates ending in the LODES year (2019–2023 for `--year 2023`), every Texas block group, as returned by the Census API. Median household income is B19013_001E. Zero-car share is (owner + renter households with no vehicle) / households from B25044 (`_003E + _010E` over `_001E`). sim-core's schema comment names B08201, which measures the same households but is published only down to tract, so the pipeline uses B25044 to stay at block-group level (DATA-4).
+- Suppressed estimates (the Census writes negative sentinels such as -666666666 for small samples) and block groups with no households fall back to the household-weighted mean of the other block groups in the same tract, then the same county. Only if both are empty does the zone keep sim-core's default. The manifest counts zones with their own value (`acs_income_zones`, `acs_zero_car_zones`), so the fallback share is visible.
+- `tl_2020_48_bg.dbf`: the attribute table of the TIGER/Line 2020 block-group shapefile. `ALAND` (m²) becomes `area_km2`, which sim-core uses for density instead of estimating it from zone spacing. A minimal dBASE reader in `acs.rs` reads it, so no shapefile library is needed; polygons are a later step (F31, map fills).
 
 ### 5. Roads and transit (`osm::read_osm`)
 
@@ -106,7 +116,7 @@ Nothing changes but `--area 48`. Expected sizes: about 18,600 zones, a few hundr
 
 ## Extending
 
-- **New zone attribute** (for example ACS `zero_car_share`): add a reader in `census.rs`, a field on `model::Zone`, and set it in `scenario.rs`. Download it in `fetch.sh`. Document the source in DATA_SOURCES.md.
+- **New zone attribute** (see `acs.rs` for the pattern): add a reader, a field on `model::Zone`, and set it in `scenario.rs`. Download it in `fetch.sh`. Document the source in DATA_SOURCES.md.
 - **New road class or tag rule**: `class_defaults` and the tag parsing in `osm.rs`.
 - **Polygons for map fills**: add a TIGER block-group reader and write a GeoJSON beside `zones.json`; keep it out of `scenario.json`.
 - **Another state**: the code is state-agnostic except the file names in `lib.rs` and `fetch.sh` (`48`, `tx`, `texas-latest`). Parameterize those when a second state is needed.

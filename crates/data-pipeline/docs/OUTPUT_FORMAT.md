@@ -33,7 +33,10 @@ Coordinates are WGS84 longitude, latitude in degrees. Lengths in meters, speeds 
 | `zones[].population` | Centers of Population `POPULATION` | 2020 census |
 | `zones[].jobs` | LODES WAC `C000` summed to block group | |
 | `zones[].road_node` | Nearest node on a non-motorway, non-trunk road in the largest connected component | See ARCHITECTURE.md step 6 |
-| `zones[].zero_car_share`, `median_income`, `parking_cost`, `area_km2` | Not yet sourced | Written as sim-core's defaults (0.06, 70000, 0, null) until ACS and TIGER are added |
+| `zones[].median_income` | ACS 5-year B19013 | Tract, then county household-weighted fallback where suppressed; 70000 if no ACS file |
+| `zones[].zero_car_share` | ACS 5-year B25044 (no-vehicle households / households) | Same fallback; 0.06 if no ACS file |
+| `zones[].area_km2` | TIGER/Line 2020 `ALAND` / 10⁶ | `null` if no TIGER file |
+| `zones[].parking_cost` | Not sourced | 0 |
 | `road_links[].lanes` | OSM `lanes`, else class default | Converted to **per direction**: one-way keeps the total, two-way halves it (minimum 1) |
 | `road_links[].capacity_vph`, `toll` | Not set | sim-core derives capacity from speed and lanes |
 | `road_links[].oneway` | OSM `oneway`, motorway class, roundabouts | `oneway=-1` ways are flipped so `from → to` is the legal direction |
@@ -48,7 +51,8 @@ Zero-length links and self-loops are dropped from `scenario.json` (they remain i
 
 ```json
 {"zones": [{"geoid": "484530011001", "lon": -97.745, "lat": 30.27, "population": 1500,
-            "resident_workers": 500, "jobs": 5000, "commute_out": 30, "commute_in": 600}]}
+            "resident_workers": 500, "jobs": 5000, "commute_out": 30, "commute_in": 600,
+            "median_income": 90000.0, "zero_car_share": 0.1, "area_km2": 0.25}]}
 ```
 
 | Field | Meaning |
@@ -60,6 +64,7 @@ Zero-length links and self-loops are dropped from `scenario.json` (they remain i
 | `jobs` | LODES WAC `C000`: jobs located here |
 | `commute_out` | Workers living here, working in Texas outside the area |
 | `commute_in` | Jobs here held by Texas residents living outside the area |
+| `median_income`, `zero_car_share`, `area_km2` | As in `scenario.json` (after fallback); omitted when the ACS or TIGER file was absent |
 
 `resident_workers` is usually larger than (internal flows from the zone + `commute_out`) because RAC includes out-of-state work locations that `od_main` lacks.
 
@@ -92,7 +97,7 @@ Zero-length links and self-loops are dropped from `scenario.json` (they remain i
 
 ## `manifest.json`
 
-Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, sorted, so known lines can be checked from the manifest alone). `scenario_road_nodes` and `scenario_road_links` count the simplified graph in `scenario.json`; `road_nodes` and `road_edges` count `roads.json`.
+Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, sorted, so known lines can be checked from the manifest alone). `acs_income_zones`, `acs_zero_car_zones` and `area_zones` count zones with their own ACS value or TIGER area (`null` if the file was absent). `scenario_road_nodes` and `scenario_road_links` count the simplified graph in `scenario.json`; `road_nodes` and `road_edges` count `roads.json`.
 
 ## Distribution
 
