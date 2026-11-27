@@ -103,7 +103,7 @@ OSM route relations give stops in order but no frequencies. When `raw/gtfs_capme
 - Per route and direction, each trip's first departure. Each window takes the more frequent direction, so a peak-direction express (inbound mornings, outbound evenings) still gets a peak headway.
 - `peak_headway_min` = 120 / departures 07:00–09:00; `midday_headway_min` = 300 / departures 10:00–15:00; `span_hours` = last − first departure. These are averages, so a route with irregular gaps reads as its mean frequency.
 
-Only CapMetro is read; other operators' routes keep no headways. Matching by `ref` assumes OSM uses CapMetro's public route numbers, which it does for MetroBus, MetroRapid and the Red Line (route 550).
+Only CapMetro is read, and only OSM routes whose `operator` is missing or names CapMetro are matched, so Amtrak's Texas Eagle (trains 21 and 22) and CARTS routes keep no headways and never become existing lines. Matching by `ref` assumes OSM uses CapMetro's public route numbers, which it does for MetroBus, MetroRapid and the Red Line (route 550).
 
 ### 6. Scenario (`scenario::to_scenario`)
 
