@@ -6,8 +6,8 @@
 //! Method (DATA-6):
 //! - Service day: the Wednesday with the most scheduled trips, from
 //!   `calendar.txt` and `calendar_dates.txt` (either may be missing).
-//! - Per route (`route_short_name`), use the direction with more trips that
-//!   day, and each trip's first departure.
+//! - Per route (`route_short_name`) and direction, each trip's first
+//!   departure; each window takes the more frequent direction.
 //! - Peak headway = 120 min / departures in 07:00–09:00; midday headway =
 //!   300 min / departures in 10:00–15:00; span = last − first departure.
 //!   A window with no departures gives `None`.
@@ -24,7 +24,7 @@ pub struct RouteHeadway {
     pub peak_headway_min: Option<f64>,
     pub midday_headway_min: Option<f64>,
     pub span_hours: f64,
-    /// Trips in the busier direction that day.
+    /// Trips that day in the busier direction.
     pub trips: usize,
 }
 
@@ -253,10 +253,20 @@ pub fn read_headways(dir: &Path) -> Result<HashMap<String, RouteHeadway>> {
             span_hours: ((d[d.len() - 1] - d[0]) / 60.0 * 10.0).round() / 10.0,
             trips: d.len(),
         };
-        let keep = out.get(&name).is_none_or(|o| h.trips > o.trips);
-        if keep {
-            out.insert(name, h);
-        }
+        // Combine directions per window: a peak-direction express runs one
+        // way in the morning and the other in the evening.
+        let best = |a: Option<f64>, b: Option<f64>| match (a, b) {
+            (Some(x), Some(y)) => Some(x.min(y)),
+            (x, y) => x.or(y),
+        };
+        out.entry(name)
+            .and_modify(|o| {
+                o.peak_headway_min = best(o.peak_headway_min, h.peak_headway_min);
+                o.midday_headway_min = best(o.midday_headway_min, h.midday_headway_min);
+                o.span_hours = o.span_hours.max(h.span_hours);
+                o.trips = o.trips.max(h.trips);
+            })
+            .or_insert(h);
     }
     Ok(out)
 }

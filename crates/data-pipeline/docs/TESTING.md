@@ -19,7 +19,7 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `county_level_merges_block_groups` | `tests/sample.rs` | `--level county` on the whole sample: 5 block groups become 2 counties, totals unchanged, 5-digit GEOIDs, manifest `zone_level` and `block_groups`, `scenario.json` validates |
 | `tracts_merge_counts_weights_and_flows` | `src/aggregate.rs` | Tract merge: sums, population-weighted centroid and income, area only when complete, unpopulated tract, flows summed with intrazonal kept; county merge |
 | `commute_shares_sum_listed_block_groups` | `src/acs.rs` | B08301 shares sum only the listed block groups, skip county rows, and add to 1 |
-| `headways_from_a_tiny_feed` | `src/gtfs.rs` | Busiest-Wednesday service selection with a calendar_dates removal, weekend service ignored, busier direction chosen, peak and midday headways, span, empty windows give `None` |
+| `headways_from_a_tiny_feed` | `src/gtfs.rs` | Busiest-Wednesday service selection with a calendar_dates removal, weekend service ignored, directions combined per window, peak and midday headways, span, empty windows give `None` |
 | `dates_and_weekdays` | `src/gtfs.rs` | GTFS date to day number, Wednesday test, times past 24:00 |
 | `acs_parses_and_flags_suppressed` | `src/acs.rs` | Summary-file table parsing (block-group rows only, state row skipped), suppressed sentinels, blanks and zero-household rows become `None` |
 | `zones_without_header_row` | `src/census.rs` | Centers of Population file without a header |
@@ -110,4 +110,20 @@ Still to do: a full build with roads once Geofabrik answers again, which republi
 
 - Actions run [45947685279](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45947685279), `--area 48 --level tract`, census only: 6,896 zones, the exact 2020 Texas tract count; population 29,145,505 and internal commuters 13,335,103, the same as the block-group build; 3,878,003 tract-to-tract flows (6,596,749 at block group); build 5.5 s without roads. 18,625 of 18,638 block groups have a TIGER land area.
 - Actions run [45948912088](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45948912088), Travis, census only: `commute_mode_shares` sums 766 block groups to 736,639 workers, exactly the published Travis County `B08301_E001`. Shares: drove alone 0.5973, carpool 0.0746, transit 0.0167, walk 0.0207, bike 0.0060, work from home 0.2718, other 0.0129.
+
+## GTFS headways (2026-11-27)
+
+Actions run [45949840370](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45949840370), Travis with roads, branch build (not published). The CapMetro feed had 26,147 trips; 143 of 158 OSM routes matched a GTFS `route_short_name` (`gtfs_routes_matched`). Sample, peak / midday headway in minutes:
+
+| Route | Peak | Midday | Span (h) |
+|---|---|---|---|
+| 801 MetroRapid | 10.9 | 9.4 | 18.6 |
+| 803 MetroRapid | 10.0 | 10.3 | 18.5 |
+| 7 | 17.1 | 16.7 | 19.5 |
+| 10 | 15.0 | 15.8 | 19.1 |
+| 20 | 17.1 | 14.3 | 19.5 |
+| 1 | 30.0 | 30.0 | 18.7 |
+| 550 Red Line | 40.0 | 60.0 | 12.8 |
+
+The Red Line reads 40 / 60 min in the current feed (19 trips per direction), sparser than the 32 / 51 min in `figures.csv`, which came from the published timetable earlier. A count-based mean is coarse for a line with three trains in the peak window, so the timetable figures stay the calibration reference for route 550. That run took the busier direction for every window, which gave the peak-only express 985 no peak headway; windows now take the more frequent direction.
 
