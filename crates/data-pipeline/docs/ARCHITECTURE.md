@@ -120,12 +120,22 @@ Converts the layers into `sim_core::ScenarioInput`:
 - **Routing simplification** (`scenario::simplify`, DATA-2). sim-core's run time scales with road nodes, and most OSM nodes carry no routing choice. Three steps, none of which changes any zone-to-zone path or its length:
   1. Drop links outside the largest connected component (clipping fragments no zone uses).
   2. Prune dead ends repeatedly: a node with a single neighbor that is not a zone connector can be neither origin, destination nor a through point. This removes cul-de-sacs, driveways and freeway stubs cut by the clip box.
-  3. Contract pass-through nodes: a non-connector node with exactly two links of equal speed, lanes per direction and direction (two-way, or one-way flowing through) becomes one link of the summed length. Links that differ are left alone, so speed and capacity changes stay where OSM puts them.
+  3. Contract pass-through nodes: a non-connector node with exactly two links of equal speed, lanes per direction, class and direction (two-way, or one-way flowing through) becomes one link of the summed length. Links that differ are left alone, so speed and capacity changes stay where OSM puts them.
 
   Kept nodes keep their roads.json ids (sim-core allows sparse ids). On the real Travis build this takes road nodes from 93,461 to 52,210 and links from 121,120 to 79,583, and sim-core's baseline from 12.0 s to 6.8 s with identical mode shares and peak speed. `roads.json` keeps every node and edge for drawing.
 - Today's network (`lines::existing_lines`, DATA-7) is written to `existing_lines.json`, and into `scenario.json` `lines` only with `--existing-lines`. sim-core loads `lines` straight into the network with no switch, so the default stays an empty map until the app has a setting to drop them and Collins decides the default. The lines come straight from GTFS (DATA-9): one line per route of every feed read in step 5b that has a peak or midday headway and two or more stops, at least one stop inside the build's bounding box (so a Travis build gets CapMetro and a statewide build gets every agency). Stops are the longest trip's; mode is from GTFS `route_type` (0 light rail, or tram when the name says streetcar or trolley; 1 metro; 2 commuter rail; 3 bus; 5 tram; 11 trolleybus; 12 monorail; extended types by range; ferries, cable cars and funiculars dropped; `lines::MODE` corrects a feed's miscoded route, CapMetro 550 (the Red Line) and Trinity Metro's TEXRail, both coded light rail, are commuter rail). Names are the agency, then short and long name (`DART Red Line`, `CapMetro 7 Duval/Dove Springs`). OSM is not used for lines because it maps only five Houston METRO and four VIA routes. A route with a timetable entry in `figures.csv` (CapMetro 550: 32 / 51 min, 15.1 h) uses that instead. CapMetro rail stops whose name contains Leander, Lakeline or Howard get `park_ride: true` and `park_ride_spaces` from `pnr_spaces_capmetro_*`. Lines are built through JSON so optional sim-core fields do not have to exist. 
 
 `ScenarioInput::validate()` runs before anything is written to `scenario.json`; a failure aborts the build.
+
+### 6a. Traffic counts (`counts::snap`, DATA-10)
+
+When `raw/txdot_aadt.csv` exists (TxDOT AADT Annuals, see DATA_SOURCES section 7), each count station is snapped to a scenario link for car-assignment calibration (F38) and written to `counts.json`:
+
+- `scenario::to_scenario_mapped` records, for every `roads.json` edge, the scenario link it ended up in after simplification (contraction merges edges, and the merged link's members are tracked).
+- Candidates are `roads.json` edge segments, shape points included, within 100 m of the station, on a 0.01° grid.
+- The station's `ON_ROAD` must match the edge. Route numbers compare as system and number against the OSM `ref` (`IH0035` = `I 35`; `SH0071` = `TX 71` or `SH 71`; `FM` and `RM` share one numbering; `SL`/`LP` = `Loop`; `SS` = `Spur`). Anything else compares as a street name against OSM `name`, with suffixes (`BOULEVARD` = `BLVD` ...) and directions normalized; every word of the shorter name must appear in the longer in order.
+- The nearest matching edge gives `from`/`to`. If that edge is one-way (a divided road), the nearest matching one-way edge heading the opposite way (direction dot product below −0.5) gives `from2`/`to2`, because AADT counts both directions.
+- Stations with no matching edge in range are dropped. On a highway-only build most `FM` and city-street stations drop, because those roads are not in the graph.
 
 ### Manifest
 

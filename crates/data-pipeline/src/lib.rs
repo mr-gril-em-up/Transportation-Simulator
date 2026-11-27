@@ -4,6 +4,7 @@
 pub mod acs;
 pub mod aggregate;
 pub mod census;
+pub mod counts;
 pub mod gtfs;
 pub mod lines;
 pub mod model;
@@ -80,6 +81,10 @@ pub struct Manifest {
     pub existing_lines: usize,
     /// OSM transit routes given GTFS headways (`null` without a GTFS feed).
     pub gtfs_routes_matched: Option<usize>,
+    /// TxDOT count stations read (`null` without `txdot_aadt.csv`).
+    pub count_stations: Option<usize>,
+    /// Stations snapped to scenario links and written to `counts.json`.
+    pub counts_snapped: Option<usize>,
     /// GTFS feeds read, with their route counts (DATA-9).
     pub gtfs_feeds: Vec<String>,
     /// `all` or `highway` (`--roads`).
@@ -175,6 +180,8 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         commute_mode_shares: None,
         gtfs_routes_matched: None,
         gtfs_feeds: Vec::new(),
+        count_stations: None,
+        counts_snapped: None,
         existing_lines: 0,
         road_classes: if cfg.highway_only { "highway" } else { "all" },
         zone_level: cfg.level.name(),
@@ -311,7 +318,18 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         );
     }
 
-    let mut scenario = scenario::to_scenario(&zones, &flows, roads.as_ref());
+    let (mut scenario, edge_link) = scenario::to_scenario_mapped(&zones, &flows, roads.as_ref());
+    let aadt = raw.join("txdot_aadt.csv");
+    if let (Some(r), true) = (roads.as_ref(), aadt.exists()) {
+        let stations = counts::read_stations(&aadt)?;
+        let c = counts::snap(&stations, r, &edge_link);
+        m.count_stations = Some(stations.len());
+        m.counts_snapped = Some(c.len());
+        m.sources.push(
+            "TxDOT AADT Annuals (Public View), TxDOT Transportation Planning and Programming",
+        );
+        write_json(&cfg.out, "counts.json", &c)?;
+    }
     m.existing_lines = existing.len();
     if cfg.existing_lines {
         scenario.lines = existing;

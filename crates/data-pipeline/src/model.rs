@@ -73,6 +73,10 @@ pub struct RoadEdge {
     pub oneway: bool,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub name: Option<String>,
+    /// OSM `ref` (route numbers such as `I 35;US 290`), for matching TxDOT
+    /// count stations (`counts.rs`).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub r#ref: Option<String>,
     /// Intermediate [lon, lat] points between `from` and `to`, for drawing.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub shape: Vec<[f64; 2]>,

@@ -81,6 +81,7 @@ struct WayRec {
     oneway: bool,
     reversed: bool,
     name: Option<String>,
+    r#ref: Option<String>,
 }
 
 struct RouteRec {
@@ -150,6 +151,7 @@ pub fn read_osm(path: &Path, bbox: &BBox, highway_only: bool) -> Result<(Roads, 
                 oneway,
                 reversed,
                 name: tags.get("name").map(|s| s.to_string()),
+                r#ref: tags.get("ref").map(|s| s.to_string()),
             });
         }
         Element::Relation(r) => {
@@ -282,6 +284,7 @@ fn build_roads(
                         lanes: w.lanes,
                         oneway: w.oneway,
                         name: w.name.clone(),
+                        r#ref: w.r#ref.clone(),
                         shape,
                     });
                 }

@@ -23,6 +23,9 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `headways_from_a_tiny_feed` | `src/gtfs.rs` | Busiest-Wednesday service selection with a calendar_dates removal, weekend service ignored, directions combined per window, peak and midday headways, span, empty windows give `None`; long name, route type and stop sequence with coordinates; a route with no short name keyed by its long name; the feed list parses |
 | `highway_roads_keep_only_motorway_to_secondary` | `tests/sample.rs` | `--roads highway`: only motorway to secondary classes in `roads.json`, fewer edges than the full build, manifest `road_classes` |
 | `only_capmetro_operators_match` | `src/gtfs.rs` | Missing or CapMetro operator matches; Amtrak and CARTS do not |
+| `contraction_keeps_class_boundaries` | `src/scenario.rs` | Two links with equal speed and lanes but different class (motorway, motorway_link) are not contracted |
+| `route_and_street_matching` | `src/counts.rs` | TxDOT `ON_ROAD` against OSM refs (IH/I, SH/TX, FM/RM, SL/Loop, multi-ref ways, no partial numbers) and street names with suffix and direction normalization |
+| `snaps_both_carriageways_and_drops_misses` | `src/counts.rs` | Nearest matching link wins over a closer link with another ref; opposite carriageway found; stations out of range or unmatched dropped |
 | `dates_and_weekdays` | `src/gtfs.rs` | GTFS date to day number, Wednesday test, times past 24:00 |
 | `acs_parses_and_flags_suppressed` | `src/acs.rs` | Summary-file table parsing (block-group rows only, state row skipped), suppressed sentinels, blanks and zero-household rows become `None` |
 | `zones_without_header_row` | `src/census.rs` | Centers of Population file without a header |
@@ -170,3 +173,8 @@ Actions run [45970882831](https://github.com/mr-gril-em-up/Transportation-Simula
 ## Republish after DATA-9 (2026-11-27)
 
 Runs [45972336256](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45972336256) (statewide tract highway, 415 lines) and [45972339982](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45972339982) (Travis, 61 lines: CapMetro's 67 GTFS routes minus 6 with no morning or midday trips) from main 8206bcc. Checking the Travis `existing_lines.json` found the Red Line as `light_rail` with no park-and-ride stops: CapMetro's feed codes route 550 as `route_type` 0. `lines::MODE` now maps it to commuter rail, and the unit test uses type 0 for it.
+
+## TxDOT counts (2026-11-27)
+
+Branch runs, not published: [45982061651](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45982061651) (Travis, block groups, all roads) snapped 888 of the 41,921 statewide stations to its 79,583 scenario links; [45982066230](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45982066230) (statewide tract, highway roads) snapped 29,772 to 283,966 links.
+

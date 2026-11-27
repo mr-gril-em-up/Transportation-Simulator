@@ -71,5 +71,13 @@ if [[ -z "${SKIP_OSM:-}" ]]; then
     fi
   done < <(tail -n +2 reference/gtfs_feeds.csv)
 fi
+# TxDOT AADT Annuals (one point per traffic count station, latest annual
+# AADT; F38 calibration). ArcGIS feature service, paged 2,000 at a time.
+# Optional: without it no counts.json is written.
+if [[ -z "${SKIP_OSM:-}" && ! -s "$RAW/txdot_aadt.csv" ]]; then
+  echo "get  TxDOT AADT Annuals"
+  python3 scripts/txdot_aadt.py "$RAW/txdot_aadt.csv" \
+    || echo "warning: TxDOT AADT download failed; no counts.json" >&2
+fi
 # OpenStreetMap Texas extract (ODbL, attribution required).
 [[ -n "${SKIP_OSM:-}" ]] || get texas-latest.osm.pbf https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
