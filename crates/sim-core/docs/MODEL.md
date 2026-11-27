@@ -407,7 +407,7 @@ with 67k residents in walking range it collects about $1.2M a month in local tax
 `Sim::issue_bond(principal)` borrows now and repays in equal monthly
 payments (a level-payment annuity, like a mortgage):
 
-`payment = P x r / (1 - (1 + r)^-n)`, with `r = bond_rate [4%] / 12` and
+`payment = P x r / (1 - (1 + r)^-n)`, with `r = bond_rate [5.43%] / 12` and
 `n = bond_term_months()` = `bond_term_years [30] x 12 / bond_term_speedup [1]` = 360.
 
 The cash arrives in the month of issue (`MonthStatement::bond_proceeds`).
@@ -438,15 +438,19 @@ construction. Only construction is compressed; fares, costs and taxes are per
 real day. Compressing the term 12x alone makes each payment ~12x larger, so a
 tax base that carries $X of 30-year debt carries about X/7 at 2.5 years.
 Rough Travis scale: all 1.3M residents in reach of a stop would raise
-1.3M x $20,600 x 1% = $268M a year; at 4% over 30 years that services at most
-$4.6B (annuity factor 17.3), versus about $0.6B over 2.5 years. Austin's
+1.3M x $20,600 x 1% = $268M a year; at 5.43% over 30 years that services at most
+about $4.0B (annuity factor 14.8), versus about $0.6B over 2.5 years. Austin's
 light rail is priced in billions, so compression would rule it out.
 `bond_term_speedup` is the switch if Collins prefers D9 as written; the
 question is with him.
 
-Rate: a long tax-exempt revenue bond for a highly rated issuer yielded about
-4% in 2024-25. It is not yet a sourced `figures.csv` row, so treat it as
-unverified.
+Sources (figures.csv rows of the same names): `bond_rate` is the Bond Buyer
+Revenue Bond Index (25 revenue bonds maturing in 30 years) for 29 Oct 2026,
+5.43%, with the 2026 range 4.92-5.47% as low/high. It fits Austin Transit
+Partnership's contract revenue bonds, which are not yet rated; a 30-year AAA
+general obligation yielded 4.81%. `bond_term_years` 30 is the market
+convention (unverified): ATP's January 2026 resolution caps maturities at 40
+years and ATP had no bonds outstanding at the end of FY2025.
 
 Balance note: the local tax only covers residents within walking range of a
 stop, so a lone expensive line runs a large operating deficit and soon

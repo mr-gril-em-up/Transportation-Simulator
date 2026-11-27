@@ -121,7 +121,7 @@ pub struct Params {
     pub local_sales_tax_rate: f64,
     /// Taxable retail sales per resident per year, dollars.
     pub taxable_sales_per_capita: f64,
-    /// Annual interest rate on the authority's bonds (0.04 = 4%).
+    /// Annual interest rate on the authority's bonds (0.0543 = 5.43%).
     pub bond_rate: f64,
     /// Bond repayment term, real years.
     pub bond_term_years: f64,
@@ -189,9 +189,10 @@ impl Default for Params {
             local_sales_tax_rate: 0.01,
             // figures.csv `taxable_sales_per_capita`: CapMetro service area, 2023$.
             taxable_sales_per_capita: 20_600.0,
-            // Long tax-exempt municipal revenue bond, AA-ish, 2024-25: ~4%.
-            // Not yet a figures.csv row (unverified).
-            bond_rate: 0.04,
+            // figures.csv `bond_rate`: Bond Buyer Revenue Bond Index (30-year),
+            // Oct 2026; 2026 range 4.92-5.47%. `bond_term_years`: market
+            // convention (ATP caps maturities at 40 years).
+            bond_rate: 0.0543,
             bond_term_years: 30.0,
             bond_term_speedup: 1.0,
             // ROADMAP F26: debt service above revenue for 12 months ends the game.

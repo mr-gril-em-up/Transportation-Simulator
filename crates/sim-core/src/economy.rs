@@ -72,7 +72,7 @@ impl MonthStatement {
 pub struct Bond {
     /// Amount borrowed, dollars.
     pub principal: f64,
-    /// Annual interest rate (0.04 = 4%).
+    /// Annual interest rate (0.0543 = 5.43%).
     pub annual_rate: f64,
     /// Monthly payments in all.
     pub term_months: u32,
