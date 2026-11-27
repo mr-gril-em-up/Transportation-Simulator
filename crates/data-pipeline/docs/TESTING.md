@@ -64,6 +64,8 @@ Second run (Actions run 45935018791, from the release-publishing branch) produce
 
 Routing simplification (DATA-2), checked by re-running `scenario::to_scenario` on that release's `zones.json` and `roads.json`: road nodes 93,461 → 52,210, links 121,120 → 79,583, summed link length 18,483 → 15,410 km (the dropped km are dead ends and fragments). sim-core baseline 11.96 s → 6.79 s, with mode shares and peak average speed equal to the full graph to 12 significant digits. Still above the 2 s line-edit target; the next lever is a coarser road class cut, which changes results and needs a decision.
 
+Re-measured after sim-core's own pruning and contraction (SIM-2, #28) merged: the full graph now baselines in 6.86 s and the DATA-2 graph in 6.17 s, again with identical mode shares and peak speed. SIM-2 captures most of the gain internally; DATA-2 adds about 10% on top and keeps `scenario.json` smaller (fewer links to parse and ship). Same container, same release, main as of #25.
+
 ## First statewide build (2026-11-27)
 
 Actions run [45938347124](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45938347124), `--area 48`, LODES 2023, published as release `data-48-2023` (tarball 220 MB). An earlier attempt (run 45936886984) failed `validate()` on a link with a zero or unparseable `maxspeed`; `parse_speed` now rejects those.
