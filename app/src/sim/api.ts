@@ -153,8 +153,9 @@ export interface SimClient {
   /** Routes under construction and their opening days. */
   pendingRoutes(): Promise<PendingRoute[]>;
   /**
-   * Lines present at start (today's network, F44), as routes with ids the backend chose. Empty on a
-   * blank map, which is the default (APP-4). The client may edit or delete them like its own.
+   * Lines present at start (today's network, F44), as routes with ids the backend chose. The network
+   * start is the provisional default (APP-4); empty on a blank map (`TRANSPO_EXISTING_NETWORK=0`).
+   * The client may edit or delete them like its own.
    */
   existingRoutes(): Promise<RouteSpec[]>;
   /** Results for every route without changing anything (re-read after the day re-runs). */

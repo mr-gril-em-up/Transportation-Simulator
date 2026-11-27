@@ -236,6 +236,12 @@ Contracting degree-2 road nodes (SIM-2, above) roughly halved the real
 Travis numbers again. The next lever is renumbering the surviving nodes
 densely so Dijkstra's arrays shrink with the graph.
 
+Scaling with zone count (`cargo run --release -p sim-core --example scale --
+26 40 56`): 676 zones 0.5 s / 0.15 GB, 1,600 zones 2.6 s / 0.83 GB, 3,136
+zones 11.0 s / 3.1 GB per cold day. Dense zone-pair storage extrapolates to
+~60 s and ~15 GB at Texas's 6,900 tracts; the F34 plan is in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
+
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#what-is-recomputed-when).

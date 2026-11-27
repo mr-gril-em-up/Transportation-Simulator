@@ -303,7 +303,7 @@ sim.ready().then(
     clearInterval(showLoading);
     $("sim-ms").textContent = `${sim.label} · ready`;
     renderBudget(await sim.budget());
-    // Today's network when the shell started with it (off by default, APP-4).
+    // Today's network when the shell started with it (the provisional default, APP-4; empty on a blank map).
     const start = await sim.existingRoutes();
     if (start.length) {
       for (const r of start) {
