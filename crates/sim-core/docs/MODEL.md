@@ -421,13 +421,28 @@ is **distressed** if either:
 
 - debt service exceeds the operating surplus (fares + operating assistance +
   local tax - operating cost, `MonthStatement::operating_surplus`), the
-  roadmap's rule, a debt-service coverage ratio below 1; or
-- cash ends the month below zero (SIM-5).
+  roadmap's rule, a debt-service coverage ratio below 1. This test is
+  skipped in any month when a line or new alignment is under construction
+  (SIM-6); or
+- cash ends the month below zero (SIM-5), tested every month.
 
 A healthy month resets `distressed_months`. `bankruptcy_months [12]`
 distressed months in a row set `Ledger::bankrupt_month`; the game is over.
 sim-core keeps simulating so the app can show what went wrong, but
 `issue_bond` refuses from then on. Ending the game is the app's call.
+
+Why construction months skip the coverage test (SIM-6): a line under
+construction has no riders and its stops are not yet in the served
+population, so a bond taken to build it fails the coverage test every month
+until it opens. On real Travis a $510M bond ($2.9M a month) showed a
+distressed month after one month with cash positive, and any line taking 12
+or more game months to build would bankrupt its borrower before opening.
+Real projects handle this with capitalized interest: the bond issue funds its
+own interest until the asset earns. Skipping the test is the simple stand-in.
+The cash test still runs, so payments must come from cash on hand. A player
+can stretch the exemption by always keeping something under construction;
+the real limit on that is a borrowing cap (an additional-bonds test), a
+listed follow-up.
 
 Why cash counts: with only the debt-service test, a player could skip bonds
 and run cash negative forever, an interest-free loan. Counting negative cash
@@ -472,6 +487,6 @@ In rough priority for M1 tuning:
 7. Park-and-ride car trips are not added to road volumes.
 8. Capital cost has no terrain or right-of-way multipliers; construction time
    ignores length and roads under works keep full capacity; bonds carry no
-   borrowing limit beyond the bankruptcy rule and no refinancing (F23, F24,
+   borrowing limit (additional-bonds test) beyond the bankruptcy rule and no refinancing (F23, F24,
    F26). There is no state appropriation because Texas gives big-city transit
    authorities none (figures.csv `operating_assistance_share` note).
