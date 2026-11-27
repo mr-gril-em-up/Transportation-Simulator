@@ -346,6 +346,38 @@ Why one peak hour: congestion
 is what drives mode choice for commuters, and the peak hour is where it lives.
 Midday and evening congestion come with the regional tier's time slices.
 
+## 7a. Intercity travel (F37 step 1, SIM-24)
+
+With a strategic cutoff (statewide), zone pairs farther apart than the cutoff
+are not in the tract tier. Intercity travel gives them demand at a coarser
+grain:
+
+- **Cells.** Zones are grouped into `intercity.cell_km [30]` squares; a cell's
+  position is its population-weighted centroid and its road node is that of
+  its most populous zone. Statewide: about 500 populated cells.
+- **Demand.** For every ordered pair of cells whose free-flow car time `t`
+  exceeds the cutoff, daily one-way person trips = `scale x pop_o x pop_d /
+  t^decay`, `decay [2.0]` (assumed; one market cannot fit it). `scale
+  [2.323e-5]` is fitted so Dallas-Fort Worth <-> Houston carries the FRA
+  Dallas-Houston HSR FEIS 2017 market, 15.97M person trips a year (43,753 a
+  day both ways; `examples/intercity.rs`, metros as disks around the three
+  downtowns). Statewide that gives 524k intercity trips a day, 6.6 a
+  resident a year, mean 276 km.
+- **Mode.** Step 1 gives every intercity trip the FEIS base-year car share,
+  `car_share [0.94]` (air 5.6%, bus 0.4%, no rail), at `car_occupancy [1.7]`
+  persons per car (assumed).
+- **Roads.** Each origin cell's cars are loaded all-or-nothing on its
+  free-flow tree, and `peak_hour_share [0.08]` of them (assumed; rural
+  design-hour factors are 8-10% of AADT) is fixed background volume on those
+  edges: BPR times, the line search, `link_flows` and vehicle-km all see
+  regional plus intercity volume. Intercity cars do not reroute around
+  congestion. Built once at start (1.9 s statewide).
+
+Not yet: mode choice between car, air and rail (step 2: an HSR or rail line
+wins intercity riders, checked against the FEIS Texas Central forecast of
+6.5M riders in 2029), growth, and air. LODES commutes past the cutoff
+(`beyond_cutoff_trips`) stay counted only; they overlap with this demand.
+
 ## 8. Transit loading
 
 Daily transit trips per zone pair:

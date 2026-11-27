@@ -595,6 +595,41 @@ fn strategic_cutoff_covering_every_pair_matches_the_dense_model() {
 }
 
 #[test]
+fn intercity_trips_past_the_cutoff_load_their_cars_on_the_roads() {
+    // SIM-24: cell pairs farther apart than the cutoff get gravity demand,
+    // and their cars are background volume on the free-flow route.
+    let run = |enabled: bool, cut: Option<f64>| {
+        let mut p = Params {
+            instant_build: true,
+            strategic_max_min: cut,
+            ..Params::default()
+        };
+        p.intercity.enabled = enabled;
+        p.intercity.cell_km = 3.0;
+        p.intercity.scale = 1e-3;
+        Sim::new(generate(&SynthConfig::small()), p).unwrap()
+    };
+    let (on, off) = (run(true, Some(8.0)), run(false, Some(8.0)));
+    let pairs = on.intercity_pairs();
+    assert!(!pairs.is_empty());
+    assert!(pairs.iter().all(|q| q.car_min > 8.0 && q.trips > 0.0));
+    let total: f64 = pairs.iter().map(|q| q.trips).sum();
+    assert!((on.results().intercity_trips - total).abs() < 1e-9 * total);
+    assert_eq!(off.results().intercity_trips, 0.0);
+    assert!(off.intercity_pairs().is_empty());
+    // The same regional trips plus intercity cars: more vehicle-km.
+    let (a, b) = (on.results(), off.results());
+    assert!(
+        a.peak_vehicle_km > b.peak_vehicle_km,
+        "{} vs {}",
+        a.peak_vehicle_km,
+        b.peak_vehicle_km
+    );
+    // No cutoff: the tract tier holds every pair, so there is no intercity layer.
+    assert!(run(true, None).intercity_pairs().is_empty());
+}
+
+#[test]
 fn short_strategic_cutoff_drops_far_pairs_but_conserves_trips() {
     let dense = cutoff_sim(None);
     let s = cutoff_sim(Some(8.0));
