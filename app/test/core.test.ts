@@ -129,3 +129,18 @@ describe("mock desire lines", () => {
     for (let i = 1; i < lines.length; i++) expect(lines[i - 1].trips).toBeGreaterThanOrEqual(lines[i].trips);
   });
 });
+
+describe("stop editing", () => {
+  it("inserts a stop where it lengthens the line least", async () => {
+    const { bestInsertIndex } = await import("../src/edit");
+    const line: [number, number][] = [
+      [-97.75, 30.25],
+      [-97.75, 30.3],
+      [-97.75, 30.35],
+    ];
+    expect(bestInsertIndex(line, [-97.751, 30.27])).toBe(1); // between 0 and 1
+    expect(bestInsertIndex(line, [-97.749, 30.33])).toBe(2); // between 1 and 2
+    expect(bestInsertIndex(line, [-97.75, 30.2])).toBe(0); // before the first stop
+    expect(bestInsertIndex(line, [-97.75, 30.4])).toBe(3); // after the last stop
+  });
+});

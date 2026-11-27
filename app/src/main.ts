@@ -3,6 +3,7 @@ import "./style.css";
 import { GameClock } from "./clock";
 import { RED_LINE, TEXAS_BOUNDS, TRAVIS_CENTER } from "./data/geo";
 import { LineDrawer } from "./draw";
+import { StopEditor } from "./edit";
 import { createMap, GEO_FULL, SCHEMATIC_FULL, setData, zoomBand } from "./map";
 import { layoutSchematic, morph } from "./schematic";
 import { isRegional, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
@@ -10,6 +11,7 @@ import { createSim } from "./sim";
 import { serialQueue } from "./sim/queue";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const COLORS = ["#dc241f", "#0098d4", "#00782a", "#9b0056", "#f3a9bb", "#ee7c0e", "#6950a1", "#b36305"];
 
 const sim = createSim();
@@ -63,7 +65,8 @@ function addRoute(mode: Mode, pts: LngLat[], stopNames?: string[], name?: string
 // ---- Rendering --------------------------------------------------------------
 function render(): void {
   const z = map.getZoom();
-  const t = Math.min(1, Math.max(0, (z - SCHEMATIC_FULL) / (GEO_FULL - SCHEMATIC_FULL)));
+  // While editing, draw true geography so dragged stops land where the cursor is.
+  const t = editor.active ? 1 : Math.min(1, Math.max(0, (z - SCHEMATIC_FULL) / (GEO_FULL - SCHEMATIC_FULL)));
   const pxPerDeg = (512 * 2 ** z) / 360;
   const rail = routes.filter((r) => isRegional(r.mode));
   const layouts = layoutSchematic(rail, pxPerDeg);
@@ -79,10 +82,10 @@ function render(): void {
     })),
   );
   for (const l of layouts)
-    for (const s of l.stops) {
+    l.stops.forEach((s, idx) => {
       const b = results.get(l.routeId)?.boardingsByStop[s.id] ?? 0;
-      stops.push(stopFeature(morph(s.schem, s.geo, t), true, l.color, s.name, b, s.interchange));
-    }
+      stops.push(stopFeature(morph(s.schem, s.geo, t), true, l.color, s.name, b, s.interchange, l.routeId, idx));
+    });
 
   const bus = routes.filter((r) => !isRegional(r.mode));
   setData(
@@ -95,10 +98,10 @@ function render(): void {
     })),
   );
   for (const r of bus)
-    for (const s of r.stops) {
+    r.stops.forEach((s, idx) => {
       const b = results.get(r.id)?.boardingsByStop[s.id] ?? 0;
-      stops.push(stopFeature(s.lngLat, false, r.color, s.name, b, false));
-    }
+      stops.push(stopFeature(s.lngLat, false, r.color, s.name, b, false, r.id, idx));
+    });
   setData(map, "stops", stops);
 
   $("zoom-badge").innerHTML =
@@ -106,10 +109,20 @@ function render(): void {
     ` <button data-go="tx">Texas</button><button data-go="travis">Travis</button>`;
 }
 
-function stopFeature(c: LngLat, regional: boolean, color: string, name: string, boardings: number, interchange: boolean): GeoJSON.Feature {
+function stopFeature(
+  c: LngLat,
+  regional: boolean,
+  color: string,
+  name: string,
+  boardings: number,
+  interchange: boolean,
+  routeId: string,
+  idx: number,
+): GeoJSON.Feature {
   return {
     type: "Feature",
-    properties: { regional, color, boardings, interchange, label: boardings ? `${name} · ${boardings.toLocaleString()}` : name },
+    // routeId + idx let the stop editor find which stop was grabbed.
+    properties: { regional, color, boardings, interchange, routeId, idx, editing: routeId === editor.route?.id, label: boardings ? `${name} · ${boardings.toLocaleString()}` : name },
     geometry: { type: "Point", coordinates: c },
   };
 }
@@ -131,10 +144,12 @@ function renderPanel(): void {
       const opts = [5, 10, 15, 20, 30, 60]
         .map((h) => `<option value="${h}" ${h === r.headwayMin ? "selected" : ""}>every ${h} min</option>`)
         .join("");
-      return `<div class="route" data-id="${r.id}">
+      const editing = editor.route?.id === r.id;
+      return `<div class="route${editing ? " editing" : ""}" data-id="${r.id}">
         <span class="swatch" style="background:${r.color}"></span>
-        <b>${r.name}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day${econ}
+        <b class="name" data-act="rename" title="Double-click to rename">${escapeHtml(r.name)}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day${econ}
         <div class="row"><select data-act="headway">${opts}</select>
+        <button data-act="edit">${editing ? "Done" : "Edit stops"}</button>
         <button data-act="del" title="Delete line">✕</button></div></div>`;
     })
     .join("");
@@ -183,8 +198,26 @@ const drawer = new LineDrawer(
   (mode, pts) => addRoute(mode, pts),
   (drawing) => ($("draw-hint").hidden = !drawing),
 );
-$("btn-draw-bus").onclick = () => drawer.start("bus");
-$("btn-draw-rail").onclick = () => drawer.start("light_rail");
+$("btn-draw-bus").onclick = () => (editor.stop(), drawer.start("bus"));
+$("btn-draw-rail").onclick = () => (editor.stop(), drawer.start("light_rail"));
+
+const editor = new StopEditor(
+  map,
+  render,
+  (route) => void apply(() => sim.upsertRoute(route)),
+  () => {
+    updateEditHint();
+    render();
+    renderPanel();
+  },
+);
+function updateEditHint(): void {
+  const route = editor.route;
+  $("draw-hint").hidden = !route;
+  $("draw-hint").textContent = route
+    ? `Editing ${route.name}: drag a stop to move it, click the map to add one, right-click a stop to delete it. Esc to finish.`
+    : "Click to place stops. Enter or double-click to finish, Esc to cancel.";
+}
 $("btn-demo").onclick = () =>
   addRoute("commuter_rail", RED_LINE.map((s) => s.lngLat), RED_LINE.map((s) => s.name), "Red Line (demo)");
 
@@ -199,11 +232,47 @@ $("route-list").addEventListener("change", (e) => {
 $("route-list").addEventListener("click", (e) => {
   const el = e.target as HTMLElement;
   const id = el.closest<HTMLElement>(".route")?.dataset.id;
+  const route = routes.find((x) => x.id === id);
+  if (route && el.dataset.act === "edit") {
+    if (editor.route?.id === id) editor.stop();
+    else {
+      drawer.cancel();
+      editor.start(route);
+    }
+    return;
+  }
   if (id && el.dataset.act === "del") {
+    if (editor.route?.id === id) editor.stop();
     routes.splice(routes.findIndex((x) => x.id === id), 1);
     void apply(() => sim.removeRoute(id));
   }
 });
+// Rename: double-click a line name, Enter or click away to commit, Esc to cancel.
+$("route-list").addEventListener("dblclick", (e) => {
+  const el = e.target as HTMLElement;
+  if (el.dataset.act !== "rename") return;
+  const route = routes.find((x) => x.id === el.closest<HTMLElement>(".route")?.dataset.id);
+  if (!route) return;
+  el.contentEditable = "true";
+  el.focus();
+  document.getSelection()?.selectAllChildren(el);
+  const finish = (commit: boolean) => {
+    el.onblur = el.onkeydown = null;
+    const name = el.textContent?.trim();
+    if (commit && name && name !== route.name) {
+      route.name = name;
+      updateEditHint();
+      void apply(() => sim.upsertRoute(route));
+    } else renderPanel();
+  };
+  el.onblur = () => finish(true);
+  el.onkeydown = (k) => {
+    k.stopPropagation(); // keep Space/T from reaching the clock shortcuts
+    if (k.key === "Enter") (k.preventDefault(), finish(true));
+    if (k.key === "Escape") finish(false);
+  };
+});
+
 $("zoom-badge").addEventListener("click", (e) => {
   const go = (e.target as HTMLElement).dataset.go;
   if (go === "tx") map.fitBounds(TEXAS_BOUNDS, { padding: 40 });
@@ -224,6 +293,7 @@ lapseBtn.onclick = cycleLapse;
 window.addEventListener("keydown", (e) => {
   // Skip form controls: a focused button would also fire its own click on Space.
   if (drawer.active || e.target instanceof HTMLSelectElement || e.target instanceof HTMLButtonElement) return;
+  if ((e.target as HTMLElement).isContentEditable) return;
   if (e.key === " ") togglePause();
   if (e.key === "t" || e.key === "T") cycleLapse();
 });
