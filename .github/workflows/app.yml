@@ -43,5 +43,6 @@ jobs:
           key: tauri-${{ runner.os }}-${{ hashFiles('app/src-tauri/Cargo.lock') }}
       # generate_context! needs ../dist to exist; an empty folder is enough for check/test.
       - run: mkdir -p ../dist
+      - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings

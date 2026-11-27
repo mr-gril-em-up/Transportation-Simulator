@@ -84,7 +84,7 @@ cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo check &&
   workspace.
 - CI: [.github/workflows/app.yml](../.github/workflows/app.yml) runs on PRs that touch `app/`,
   `crates/sim-core/` or the workflow. The `web` job runs `npm ci`, `npm run build` and `npm test`.
-  The `tauri` job installs the WebKitGTK and GTK dev packages, then runs `cargo test --locked` and
+  The `tauri` job installs the WebKitGTK and GTK dev packages, then runs `cargo fmt --check`, `cargo test --locked` and
   `cargo clippy --locked --all-targets -- -D warnings` in `src-tauri`.
 
 ## Interfaces
