@@ -146,10 +146,39 @@ agents.
 - `Sim` is `Send` and has no interior mutability. The app holds it in a
   `Mutex`; long calls (`tick`, `equilibrate`) belong on a worker thread.
 
-Scaling notes for M3 (statewide): dense Z x Z storage is fine to ~2,000 zones.
-At 6,900 tracts each matrix is ~380 MB as f64, so the strategic tier will need
-sparse demand, f32 or blocked skims, and a contracted highway graph. The
-module boundaries above are where those changes go; the API does not change.
+### Statewide scale (F34 plan)
+
+Measured with `examples/scale.rs` (synthetic grid region, 1 km road spacing,
+default params, one cold equilibrium day, 4 cores):
+
+| Zones | Road nodes | Day | Peak memory |
+|---|---|---|---|
+| 676 (Travis block groups) | 2,809 | 0.5 s | 0.15 GB |
+| 1,600 | 6,561 | 2.6 s | 0.83 GB |
+| 3,136 | 12,769 | 11.0 s | 3.1 GB |
+| 6,900 (Texas tracts), extrapolated | ~28k | ~60 s | ~15 GB |
+
+Dense storage costs ~316 bytes per zone pair (car skims, four transit skim
+rows of `TOd`, demand and flow matrices), and the day grows about as zones²
+(trees x destinations). At 6,900 tracts both the 20 s target and a desktop's
+memory fail, so the strategic tier changes storage, not the model:
+
+1. **Sparse OD.** Each origin keeps only destinations within a car-time
+   cutoff (`strategic_max_min`, ~90 min) plus every LODES commute pair, in
+   compressed rows. Gravity distribution, mode choice and loading run over
+   that set. Longer trips are intercity travel and belong to F37. Expected
+   ~300 destinations per tract: ~2M pairs, under 1 GB.
+2. **Bounded trees.** Dijkstra stops at the cutoff instead of settling every
+   zone node, so tree cost scales with the destinations kept, not with Texas.
+3. **Transit skims only where transit reaches.** Most of Texas has no line;
+   transit rows exist only for origins with a stop within access range.
+4. **Highway graph.** The statewide build carries motorway to secondary roads
+   plus zone connectors (pipeline), contracted at load as today (SIM-2).
+
+Order: (A) sparse OD and bounded trees behind the same `Sim` API, with a test
+that Travis results match the dense model when the cutoff covers every pair;
+(B) transit rows only where transit reaches; (C) the statewide tract build
+and a CI bench against the 20 s target. The API does not change.
 
 ## Testing
 
