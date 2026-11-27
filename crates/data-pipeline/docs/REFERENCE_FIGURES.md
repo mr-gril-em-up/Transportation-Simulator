@@ -48,6 +48,7 @@ Collected 2026-11-27 from the pages linked in the CSV.
 | — | Travis commute mode (ACS 2019-2023 B08301, all workers 16+): drove alone 59.7%, carpool 7.5%, transit 1.7%, walk 2.1%, bike 0.6%, work from home 27.2%, other 1.3%. CapMetro bus 22,490,883 trips in 2023 and 75,447 average weekday trips across all modes (NTD) | New. F14 mode-choice calibration and bus-side validation |
 | — | Red Line park-and-ride lots: Leander 619, Lakeline 935, Howard 301 spaces (1,855 total), all shared with bus park-and-ride; no other Red Line station lists a lot | New. Caps drive access to rail in sim-core calibration |
 | — | CapMetro 2023 (NTD): bus 1,312,824 revenue hours and $235.5M, rail 28,388 hours and $34.8M, total operating expenses $345.1M; FY2023 sales tax $382.4M (ACFR) | New. sim-core budget check of the loaded network |
+| — | Calibrated tax rate for sim-core's 3 km stop-buffer tax base: about $39,100 per served resident, so today's network yields the real $382.4M. Calibrated from the ACFR, not a sourced rate; sim-core recomputes it on the DATA-7 lines | New. Keeps one tax rule for a blank map and a loaded network |
 
 ## Still open
 
