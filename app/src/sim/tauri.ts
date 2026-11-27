@@ -89,15 +89,23 @@ export function fromLineResult(o: LineResultOut, route: RouteSpec | undefined): 
   };
 }
 
+/** Panel label for the shell's scenario source: a file path or "synthetic". */
+export function sourceLabel(source: string): string {
+  if (source === "synthetic") return "sim-core · synthetic region";
+  return source.includes("48453") ? "sim-core · Travis data" : `sim-core · ${source.split(/[\\/]/).slice(-2).join("/")}`;
+}
+
 /** SimClient that calls sim-core through the desktop shell's Tauri commands. */
 export class TauriSim implements SimClient {
-  readonly label = "sim-core";
+  /** "sim-core · Travis data" or "sim-core · synthetic region", once the shell reports its source. */
+  label = "sim-core";
   // Stop ids live only in the client; keep specs to map per-stop results back.
   private routes = new Map<string, RouteSpec>();
 
   async ready(): Promise<void> {
     for (;;) {
-      const s = await invoke<{ ready: boolean; error: string | null }>("sim_status");
+      const s = await invoke<{ ready: boolean; error: string | null; source: string }>("sim_status");
+      this.label = sourceLabel(s.source);
       if (s.error) throw new Error(s.error);
       if (s.ready) return;
       await new Promise((r) => setTimeout(r, 500));

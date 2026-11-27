@@ -43,6 +43,7 @@ Detailed app decisions also live in [app/docs/DECISIONS.md](../app/docs/DECISION
 | # | Date | Decision | Why | Status | Source |
 |---|---|---|---|---|---|
 | APP-1 | 2026-11-27 | sim-core owns the game clock: a worker thread in the desktop shell calls `Sim::tick` every 100 ms under the Sim lock; the client polls `clock` and interpolates | One clock for every tier; polling needs no event plumbing and the day number tells the client when to re-read results | As built | [app A23](../app/docs/DECISIONS.md) |
+| APP-2 | 2026-11-27 | The desktop app opens on the pipeline's published Travis build by default: `npm run data` runs `crates/data-pipeline/scripts/download-build.sh`, and the shell loads `crates/data-pipeline/data/out/48453-2023/scenario.json` if present (after `TRANSPO_SCENARIO`, before the synthetic region) | Real roads and commutes in every dev checkout with one command; reuses DATA-1's release instead of committing data; the synthetic fallback keeps CI offline | As built | [app A24](../app/docs/DECISIONS.md) |
 
 ## Project and docs (DOC)
 

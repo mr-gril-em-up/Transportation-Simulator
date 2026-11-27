@@ -215,3 +215,14 @@ describe("sim-owned clock (F21)", () => {
     });
   });
 });
+
+describe("scenario source label", () => {
+  it("names the real Travis build, the synthetic region, or another file", async () => {
+    const { sourceLabel } = await import("../src/sim/tauri");
+    expect(sourceLabel("synthetic")).toBe("sim-core · synthetic region");
+    expect(sourceLabel("/x/crates/data-pipeline/src-tauri/../../crates/data-pipeline/data/out/48453-2023/scenario.json")).toBe(
+      "sim-core · Travis data",
+    );
+    expect(sourceLabel("C:\\data\\harris\\scenario.json")).toBe("sim-core · harris/scenario.json");
+  });
+});

@@ -9,6 +9,7 @@ use sim_core::{
     synth, Clock, Ledger, LineId, LinePreview, LineResult, Params, ScenarioInput, Sim, TransitLine,
 };
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -16,9 +17,15 @@ use std::time::{Duration, Instant};
 /// client's display (which interpolates between polls) never drifts visibly.
 const TICK_EVERY: Duration = Duration::from_millis(100);
 
-/// Set TRANSPO_SCENARIO to a ScenarioInput JSON file (data-pipeline output).
-/// Without it the app uses sim-core's synthetic Travis-sized region.
+/// Set TRANSPO_SCENARIO to a ScenarioInput JSON file (data-pipeline output)
+/// to load it instead of the default below.
 const SCENARIO_ENV: &str = "TRANSPO_SCENARIO";
+
+/// The real Travis County build, where `npm run data` (the pipeline's
+/// `scripts/download-build.sh`) puts it. Relative to this crate's source
+/// directory, so it resolves in a source checkout; an installed bundle on
+/// another machine falls back to the synthetic region.
+const DEFAULT_SCENARIO: &str = "../../crates/data-pipeline/data/out/48453-2023/scenario.json";
 
 #[derive(Default)]
 struct Inner {
@@ -254,13 +261,25 @@ impl SimState {
     }
 }
 
+/// Scenario file to load: `TRANSPO_SCENARIO` if set (an error if it is
+/// missing, since it was asked for), else the real Travis build if it has been
+/// downloaded, else `None` for sim-core's synthetic Travis-sized region.
+fn scenario_path() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var(SCENARIO_ENV) {
+        return Some(p.into());
+    }
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_SCENARIO);
+    p.exists().then_some(p)
+}
+
 fn load_scenario() -> Result<ScenarioInput, String> {
-    match std::env::var(SCENARIO_ENV) {
-        Ok(path) => {
-            let json = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+    match scenario_path() {
+        Some(path) => {
+            let json =
+                std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             ScenarioInput::from_json(&json).map_err(|e| e.to_string())
         }
-        Err(_) => Ok(synth::generate(&synth::SynthConfig::default())),
+        None => Ok(synth::generate(&synth::SynthConfig::default())),
     }
 }
 
@@ -281,7 +300,7 @@ pub struct Status {
     ready: bool,
     /// Why the build failed, if it did. Commands return this error too.
     error: Option<String>,
-    /// `TRANSPO_SCENARIO` path, or `"synthetic"`.
+    /// Scenario file path (`TRANSPO_SCENARIO` or the downloaded Travis build), or `"synthetic"`.
     source: String,
 }
 
@@ -307,7 +326,7 @@ pub fn sim_status(state: tauri::State<'_, SimState>) -> Status {
     Status {
         ready: inner.sim.is_some(),
         error: inner.error.clone(),
-        source: std::env::var(SCENARIO_ENV).unwrap_or_else(|_| "synthetic".into()),
+        source: scenario_path().map_or_else(|| "synthetic".into(), |p| p.display().to_string()),
     }
 }
 

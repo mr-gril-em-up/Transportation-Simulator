@@ -26,6 +26,7 @@ Prerequisites: Node 20+, npm, Rust stable, and the
 ```bash
 cd app
 npm ci              # exact versions from package-lock.json
+npm run data        # once: download the real Travis County build (11 MB) from GitHub Releases
 npm run tauri dev   # desktop app with the real sim-core (first Rust build takes a few minutes)
 npm run dev         # browser only at http://localhost:1420, mock sim, no Rust needed
 ```
@@ -36,14 +37,24 @@ npm run dev         # browser only at http://localhost:1420, mock sim, no Rust n
 | `npm run tauri build` | Installable desktop bundle |
 | `npm run dev` | Browser client against `MockSim` |
 | `npm run build` | Type-check (`tsc --noEmit`) then production build into `dist/` |
-| `TRANSPO_SCENARIO=path/to/scenario.json npm run tauri dev` | Load a real `ScenarioInput` (data-pipeline output) instead of the synthetic region |
+| `npm run data` | Download the data pipeline's published Travis build (release `data-48453-2023`) into `crates/data-pipeline/data/out/48453-2023/` (gitignored). Runs the pipeline's `scripts/download-build.sh` |
+| `TRANSPO_SCENARIO=path/to/scenario.json npm run tauri dev` | Load any `ScenarioInput` file (another pipeline build) instead of the default |
 
-On startup, sim-core builds the scenario on a background thread. That takes about 4 s for the
-synthetic Travis-sized region in `tauri dev`, where sim-core is optimized even in dev builds
-(decision A16), and about 2 s in a release build. sim-core reports about 15 s (release) on the
-real Travis road graph (93k nodes). The window opens right away, the ridership panel header shows
-`sim-core · loading…` until `sim_status` reports ready, and a line drawn before then waits for
-the build. The terminal prints
+**Which scenario loads** (first match wins, decision A24):
+
+1. `TRANSPO_SCENARIO`, if set. A missing file is an error, since you asked for it.
+2. The real Travis County build at `crates/data-pipeline/data/out/48453-2023/scenario.json`, if
+   `npm run data` has downloaded it.
+3. sim-core's synthetic Travis-sized region.
+
+The panel header names the source: `sim-core · Travis data` or `sim-core · synthetic region`.
+
+On startup, sim-core builds the scenario on a background thread. Measured in `tauri dev` (sim-core
+optimized even in dev builds, decision A16): about 19 s on the real Travis build (766 zones,
+93k-node road graph) and about 4 s on the synthetic region. sim-core reports about 7 s on real
+Travis in a release build. The window opens right away, the ridership panel header shows
+`sim-core · Travis data · loading…` until `sim_status` reports ready, and a line drawn before
+then waits for the build. The terminal prints
 `[sim] ready in N ms` or `[sim] failed to start: ...`.
 
 ### Controls
@@ -157,7 +168,7 @@ interface SimClient {
 | `set_clock` | `paused?: boolean`, `timelapse?: number` | Same as `clock`; omitted fields unchanged, non-positive time-lapse ignored |
 | `skip_to_next_month` | none | Same as `clock`, after re-running the day and settling the month |
 | `results` | none | `RouteResultOut[]` for every route, no change |
-| `sim_status` | none | `{ ready, error, source }`; `source` is the scenario path or `"synthetic"` |
+| `sim_status` | none | `{ ready, error, source }`; `source` is the scenario file path or `"synthetic"` |
 
 `RouteResultOut` is sim-core's `LineResult` with `route_id` (the client id) flattened into it.
 `boardings_by_stop` is aligned with the line's stops. The shell keeps the map from client
@@ -171,10 +182,14 @@ defaults.
 
 ### Scenario input
 
-The `TRANSPO_SCENARIO` environment variable points to a `ScenarioInput` JSON file
-([schema](../crates/sim-core/README.md#input-schema-contract-with-data-pipeline)). Without it the
-shell uses `sim_core::synth::generate(&SynthConfig::default())`, a Travis-sized synthetic region
-(676 zones, 1.3M people) centered on downtown Austin.
+A `ScenarioInput` JSON file
+([schema](../crates/sim-core/README.md#input-schema-contract-with-data-pipeline)), chosen as in
+"Which scenario loads" above. The default is the data pipeline's real Travis County build (766
+block-group zones, 1.29M people, 948k jobs, LODES 2023 commutes, OSM roads). Without it the shell
+uses `sim_core::synth::generate(&SynthConfig::default())`, a Travis-sized synthetic region (676
+zones, 1.3M people) centered on downtown Austin. On the real build, the Red Line demo returns
+about 3,600 riders/day at 30-minute headway (reported pre-2020: about 2,500) and a line edit
+takes under 100 ms.
 
 ## Design and rationale
 
@@ -208,7 +223,9 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | Desire lines are straight zone-to-zone chords capped at 300 pairs; no filtering by purpose or mode | F06 follow-up if playtests want it |
 | Cost preview only while drawing; a stop edit is charged on release with no preview first (the budget shows what it cost) | F16 follow-up if it matters in play |
 | No monthly statement view; settlement shows only as the cash change | Budget panel (M2) |
-| A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (well under a second on the synthetic region) | Fine for M1; revisit with the statewide scenario (M3) |
+| A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (well under a second on the synthetic region, about 2 s on real Travis) | Fine for M1; revisit with the statewide scenario (M3) |
+| `npm run tauri build` bundles no scenario: an installed app on another machine opens on the synthetic region | Bundle the build as a Tauri resource when packaging matters (M3 release) |
+| Startup on real Travis takes about 19 s in `tauri dev` | sim-core startup work (graph contraction, SIM stream) |
 | Mode picker is two buttons (bus, light rail); fare fixed at $1.25 | F16 |
 | `park_ride` is all-or-nothing per line | Per-stop properties in the stop editor (F16) |
 | Clock is client-side; `Sim::tick` is not called, so car congestion only updates at sim build | F21 |
