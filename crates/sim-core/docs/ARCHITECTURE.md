@@ -94,7 +94,11 @@ tick_budgeted (SIM-18)  (each call about `budget`)
      origins, summing their AON loads -> Frank-Wolfe step -> final round: pass_range slices
      -> commit car (and transit) skims -> finish -> settle months
   line edits between calls run as usual on the previous day's car times; if one
-  lands during the final round, transit is re-skimmed at commit
+  lands during the final round, transit is re-skimmed at commit. One landing
+  during an assign round mixes old- and new-network slices into that round's
+  load; later days pull it back, as they do any day's error. Note that
+  the budget is a floor per slice, not a hard cap: the final commit and
+  finish are one step (0.5-0.6 s statewide)
 
 finish
   mode choice (origins with no transit reuse their totals, SIM-17) -> transit loading
@@ -311,12 +315,22 @@ call is 0.50 s (the final commit). Results are the previous day's until the
 job ends; a test checks the budgeted day lands within 1e-6 of the blocking
 one, and that a line added mid-day is in the day's results.
 
+**Warm start (SIM-19).** The statewide cold start is 8 feedback rounds from
+free flow (71 s). `Sim::road_state()` returns the road volumes with a
+fingerprint of the contracted road graph (FNV-1a over every member's ends,
+free-flow time and capacity, so it is stable across Rust versions);
+`Sim::new_warm` loads them and runs one warm game day instead
+(`equilibrate_warm`). Statewide after 3 game days saved: **21.4 s** to start,
+peak 40 km/h (cold: 70.9 s, 33 km/h). A state whose fingerprint or length
+does not match is ignored, so a rebuilt scenario starts cold. The app can
+ship a state with each scenario release, or save one when a game closes.
+
 ## Testing
 
 | Test | Covers |
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
-| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
+| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), warm start from saved roads matches and rejects another graph (SIM-19), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share, bond rate and term) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
 | unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit, grant gate and settlement arithmetic |

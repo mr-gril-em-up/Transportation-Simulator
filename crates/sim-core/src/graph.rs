@@ -261,6 +261,30 @@ impl RoadGraph {
         &self.members[ed.m_lo as usize..ed.m_hi as usize]
     }
 
+    /// Identifies this contracted graph: a hash of every edge's endpoints and
+    /// every member's free-flow time and capacity. Saved road volumes
+    /// (`RoadState`) only apply to the graph they came from.
+    /// FNV-1a, so the value is stable across Rust versions and saved files
+    /// keep matching.
+    pub fn fingerprint(&self) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut eat = |x: u64| {
+            for b in x.to_le_bytes() {
+                h = (h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+            }
+        };
+        eat(self.n_nodes as u64);
+        eat(self.edges.len() as u64);
+        for e in 0..self.edges.len() {
+            for m in self.members_of(e) {
+                eat(((m.from as u64) << 32) | m.to as u64);
+                eat(m.t0_min.to_bits());
+                eat(m.cap_vph.to_bits());
+            }
+        }
+        h
+    }
+
     /// BPR time of edge `e` at `vol` vehicles/hour: the sum over its members.
     pub fn bpr_time(&self, e: usize, vol: f64, alpha: f64, beta: f64) -> f64 {
         self.members_of(e)
