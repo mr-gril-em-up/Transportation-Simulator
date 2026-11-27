@@ -375,11 +375,13 @@ fn offpeak_headway_thins_non_work_riders_and_cost() {
 fn bond_pays_for_a_line_and_is_serviced_monthly() {
     let mut s = sim();
     s.add_line(rail()).unwrap();
-    let owed = -s.ledger().cash;
-    assert!(owed > 0.0, "capital left cash negative");
+    assert!(s.ledger().cash < 0.0, "capital left cash negative");
+    // The synthetic county's tax capacity may not cover the whole line.
+    let owed = (-s.ledger().cash).min(s.bond_capacity());
+    let cash0 = s.ledger().cash;
     let bond = s.issue_bond(owed).unwrap();
     assert_eq!(bond.term_months, 360, "real 30-year term by default");
-    assert!(s.ledger().cash.abs() < 1e-6);
+    assert!((s.ledger().cash - cash0 - owed).abs() < 1e-3);
     assert!(s.issue_bond(0.0).is_err() && s.issue_bond(f64::NAN).is_err());
     s.skip_to_next_month(); // issue month: no payment
     s.skip_to_next_month();
@@ -404,4 +406,29 @@ fn twelve_distressed_months_is_bankruptcy() {
     assert_eq!(l.distressed_months, 12);
     assert_eq!(l.bankrupt_month, Some(l.history.last().unwrap().month));
     assert!(s.issue_bond(1e6).is_err(), "no borrowing once bankrupt");
+}
+
+#[test]
+fn borrowing_is_capped_by_tax_capacity() {
+    let mut s = sim();
+    let cap = s.bond_capacity();
+    assert!(cap > 0.0 && s.tax_capacity() > 0.0);
+    assert!(s.issue_bond(cap * 1.01).is_err(), "above capacity");
+    s.issue_bond(cap * 0.5).unwrap();
+    let left = s.bond_capacity();
+    assert!((left - cap * 0.5).abs() < cap * 1e-6, "half used");
+    s.issue_bond(left).unwrap();
+    assert!(s.bond_capacity() < cap * 1e-6);
+    assert!(s.issue_bond(cap * 0.01).is_err(), "capacity used up");
+}
+
+#[test]
+fn bond_for_a_line_under_construction_waits_for_opening_before_coverage() {
+    let mut s = building_sim();
+    s.add_line(rail()).unwrap();
+    let opens = s.pending_lines()[0].opens_day;
+    let amount = s.bond_capacity().min(-s.ledger().cash).max(1.0);
+    let b = s.issue_bond(amount).unwrap();
+    let opens_month = opens.div_ceil(30);
+    assert_eq!(b.coverage_from_month, b.issued_month + 1 + opens_month);
 }

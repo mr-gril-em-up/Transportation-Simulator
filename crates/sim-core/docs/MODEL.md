@@ -416,14 +416,31 @@ the remaining balance and principal (`debt_service`, `interest`). The last
 payment clears the balance and the bond leaves `Ledger::bonds`.
 `Ledger::debt()` is the principal still owed.
 
+**Borrowing cap (additional-bonds test, SIM-7).** Revenue bonds are secured
+by the transit sales tax, and a new issue must leave annual debt service, old
+plus new, within the pledged revenue divided by a coverage ratio:
+
+`12 x (monthly_debt_service + new payment) <= tax_capacity() / bond_coverage_min [2.0]`
+
+`tax_capacity()` is the tax every resident of the scenario would pay
+(population x `taxable_sales_per_capita` x `local_sales_tax_rate`), not just
+those near a stop: a Texas MTA taxes its whole member area, and the cap must
+let the first line be bonded before any stop exists. `Sim::bond_capacity()`
+is the principal still allowed; `issue_bond` refuses above it. Rough Travis
+scale: 1.3M residents give $268M a year, so $134M of annual debt service, about
+$2.0B of 30-year debt at 5.43%; the synthetic test region allows about $183M.
+Source (figures.csv `bond_coverage_min`): Houston METRO's sales-tax bonds
+require 2.0x maximum annual debt service before new parity bonds (KBRA AAA
+affirmation, Sep 2023); DART's senior lien is reported at 2x too.
+
 Bankruptcy is the sandbox's only fail state (D15). At each settlement a month
 is **distressed** if either:
 
 - debt service exceeds the operating surplus (fares + operating assistance +
   local tax - operating cost, `MonthStatement::operating_surplus`), the
-  roadmap's rule, a debt-service coverage ratio below 1. This test is
-  skipped in any month when a line or new alignment is under construction
-  (SIM-6); or
+  roadmap's rule, a debt-service coverage ratio below 1. Each bond's
+  payments join this test only from `Bond::coverage_from_month`: the month
+  after the last line under construction at issue opens (SIM-7); or
 - cash ends the month below zero (SIM-5), tested every month.
 
 A healthy month resets `distressed_months`. `bankruptcy_months [12]`
@@ -431,18 +448,19 @@ distressed months in a row set `Ledger::bankrupt_month`; the game is over.
 sim-core keeps simulating so the app can show what went wrong, but
 `issue_bond` refuses from then on. Ending the game is the app's call.
 
-Why construction months skip the coverage test (SIM-6): a line under
+Why bonds get a construction grace (SIM-6, refined by SIM-7): a line under
 construction has no riders and its stops are not yet in the served
-population, so a bond taken to build it fails the coverage test every month
-until it opens. On real Travis a $510M bond ($2.9M a month) showed a
+population, so a bond taken to build it would fail the coverage test every
+month until it opens. On real Travis a $510M bond ($2.9M a month) showed a
 distressed month after one month with cash positive, and any line taking 12
 or more game months to build would bankrupt its borrower before opening.
-Real projects handle this with capitalized interest: the bond issue funds its
-own interest until the asset earns. Skipping the test is the simple stand-in.
-The cash test still runs, so payments must come from cash on hand. A player
-can stretch the exemption by always keeping something under construction;
-the real limit on that is a borrowing cap (an additional-bonds test), a
-listed follow-up.
+Real projects use capitalized interest: the issue funds its own interest until
+the asset earns. SIM-6 skipped the test in any month with something under
+construction, which a player could stretch forever by keeping one cheap line
+building. SIM-7 fixes the grace per bond when it is issued: until the last
+line then under construction opens (`opening_day`), at most the longest build
+time of any mode. Later construction does not extend it. The cash test still
+runs throughout, and the borrowing cap stops rolling new bonds to pay old ones.
 
 Why cash counts: with only the debt-service test, a player could skip bonds
 and run cash negative forever, an interest-free loan. Counting negative cash
@@ -486,7 +504,7 @@ In rough priority for M1 tuning:
    contracted highway graph).
 7. Park-and-ride car trips are not added to road volumes.
 8. Capital cost has no terrain or right-of-way multipliers; construction time
-   ignores length and roads under works keep full capacity; bonds carry no
-   borrowing limit (additional-bonds test) beyond the bankruptcy rule and no refinancing (F23, F24,
-   F26). There is no state appropriation because Texas gives big-city transit
+   ignores length and roads under works keep full capacity; bankruptcy only
+   blocks new bonds (its consequence is a pending design call); bonds cannot
+   be refinanced (F23, F24, F26). There is no state appropriation because Texas gives big-city transit
    authorities none (figures.csv `operating_assistance_share` note).

@@ -128,6 +128,10 @@ pub struct Params {
     /// Bond terms are divided by this in game. 1 keeps real 30-year terms;
     /// D9 as written would set it to `construction_speedup` (SIM-5).
     pub bond_term_speedup: f64,
+    /// Additional-bonds test: a new bond is refused if annual debt service
+    /// would exceed the authority's full tax capacity (every resident in the
+    /// scenario x taxable sales x tax rate) divided by this (SIM-7).
+    pub bond_coverage_min: f64,
     /// Distressed months in a row (debt service above operating surplus, or
     /// cash below zero) that make the authority bankrupt (F26).
     pub bankruptcy_months: u32,
@@ -197,6 +201,9 @@ impl Default for Params {
             bond_term_speedup: 1.0,
             // ROADMAP F26: debt service above revenue for 12 months ends the game.
             bankruptcy_months: 12,
+            // figures.csv `bond_coverage_min`: Houston METRO sales-tax bonds'
+            // additional-bonds test, 2.0x maximum annual debt service (KBRA 2023).
+            bond_coverage_min: 2.0,
         }
     }
 }

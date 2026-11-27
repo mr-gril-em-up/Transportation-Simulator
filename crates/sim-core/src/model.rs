@@ -549,10 +549,51 @@ impl Sim {
         &self.ledger
     }
 
+    /// Annual local tax the authority could raise if every resident in the
+    /// scenario were in its taxing area: the revenue pledged to its bonds.
+    pub fn tax_capacity(&self) -> f64 {
+        let pop: f64 = self.input.zones.iter().map(|z| z.population).sum();
+        pop * self.params.taxable_sales_per_capita * self.params.local_sales_tax_rate
+    }
+
+    /// Most principal a new bond may borrow now under the additional-bonds
+    /// test: annual debt service, old plus new, at most `tax_capacity() /
+    /// bond_coverage_min`. 0 once bankrupt.
+    pub fn bond_capacity(&self) -> f64 {
+        if self.ledger.bankrupt_month.is_some() {
+            return 0.0;
+        }
+        let room = self.tax_capacity() / self.params.bond_coverage_min.max(1e-9) / 12.0
+            - self.ledger.monthly_debt_service();
+        let per_dollar = economy::Bond::new(
+            1.0,
+            self.params.bond_rate,
+            self.params.bond_term_months(),
+            0,
+        )
+        .payment;
+        (room / per_dollar).max(0.0)
+    }
+
+    /// Months until the last line now under construction opens (0 if none).
+    fn construction_months_left(&self) -> u64 {
+        let today = self.clock.day();
+        let days = self
+            .pending
+            .iter()
+            .flatten()
+            .map(|(_, d)| d.saturating_sub(today))
+            .max()
+            .unwrap_or(0);
+        days.div_ceil(crate::clock::DAYS_PER_MONTH)
+    }
+
     /// Borrow `principal` dollars as a level-payment bond at `bond_rate`
     /// over `bond_term_months()`. Cash arrives now; payments start at the next
-    /// month's settlement. Errors on a non-positive or non-finite amount, or
-    /// once the authority is bankrupt.
+    /// month's settlement. Payments falling before the last line now under
+    /// construction opens stay out of the coverage test (capitalized
+    /// interest, SIM-7). Errors on a non-positive or non-finite amount, above
+    /// `bond_capacity()`, or once the authority is bankrupt.
     pub fn issue_bond(&mut self, principal: f64) -> Result<economy::Bond, SimError> {
         if !(principal.is_finite() && principal > 0.0) {
             return Err(SimError(format!(
@@ -562,8 +603,17 @@ impl Sim {
         if let Some(m) = self.ledger.bankrupt_month {
             return Err(SimError(format!("bankrupt since month {m}: no new bonds")));
         }
+        let cap = self.bond_capacity();
+        if principal > cap * (1.0 + 1e-9) {
+            return Err(SimError(format!(
+                "bond of ${:.0}M exceeds borrowing capacity ${:.0}M",
+                principal / 1e6,
+                cap / 1e6
+            )));
+        }
         let (rate, term) = (self.params.bond_rate, self.params.bond_term_months());
-        Ok(self.ledger.issue_bond(principal, rate, term).clone())
+        let grace = self.construction_months_left();
+        Ok(self.ledger.issue_bond(principal, rate, term, grace).clone())
     }
 
     fn line_result(&self, id: LineId) -> Option<&LineResult> {
@@ -631,9 +681,8 @@ impl Sim {
     fn settle_months(&mut self) {
         while self.ledger.current.month < self.clock.month() {
             let served = self.served_population();
-            let building = self.pending.iter().any(Option::is_some);
             self.ledger
-                .settle(&self.results.lines, served, building, &self.params);
+                .settle(&self.results.lines, served, &self.params);
         }
     }
 

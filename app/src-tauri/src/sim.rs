@@ -681,9 +681,10 @@ mod tests {
         assert!(l.debt_service_per_month > 0.0 && l.bond_term_months > 0);
         assert!(state.issue_bond(-5.0).is_err());
 
-        // Run deep into the red: a big bond's payments exceed the small
-        // region's operating surplus every month until bankruptcy.
-        state.issue_bond(50e9).unwrap();
+        // With no lines the operating surplus is 0, so the $100M bond's
+        // payments fail the coverage test every month until bankruptcy.
+        // (A $50B bond is now refused by the borrowing cap, SIM-7.)
+        assert!(state.issue_bond(50e9).unwrap_err().contains("capacity"));
         let months = state.ledger().unwrap().bankruptcy_months;
         for _ in 0..=months {
             state.skip_to_next_month().unwrap();
