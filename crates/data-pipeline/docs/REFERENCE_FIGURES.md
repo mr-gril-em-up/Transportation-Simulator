@@ -40,6 +40,7 @@ Collected 2026-11-27 from the pages linked in the CSV.
 | ~3.5 trips per person per day (NHTS) | 2.28 (2022 NHTS), 3.37 (2017) | Doc used the 2017 value. 2022 is post-pandemic and changed survey method; use 3.37 as the steady-state default and 2.28 as a low case |
 | Value of time ~$18/h, wait and walk ~2x | $19.60/h personal local, $35.80/h walk/wait, car operating cost $0.52/mi (2022 USD; USDOT Dec 2023 tables via a grant application) | Doc close; figures are secondary-source and `unverified` until the USDOT appendix is read directly |
 | Fares $1.25–2.50 (DART) | DART local 3-hour pass $3.00, day pass $6.00 (March 2025) | DART sits above the doc's range |
+| — | Transit sales tax 1% (CapMetro, DART, METRO); about $20,600 taxable sales per resident per year in the CapMetro service area (2023, derived from NTD); federal plus state operating assistance 14.3% of CapMetro operating funds, no state money | New. These feed sim-core's local tax base and grant model (F26). The per-capita figure assumes all non-fare directly generated funds are sales tax |
 | — | CapMetro MetroRail 477,322 annual trips (2023); Austin light rail forecast 18,700 weekday trips at opening | New. These are the M1 calibration targets |
 
 ## Still open
