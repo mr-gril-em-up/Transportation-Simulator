@@ -33,7 +33,7 @@ gantt
     Pipeline writes ScenarioInput              :done,   f03, 2026-11-27, 1d
     Synthetic population (IPF from PUMS)       :        f04, 2026-11-30, 6d
     Tauri and MapLibre shell                   :done,   f05, 2026-11-26, 2d
-    Desire-line layer                          :        f06, after f05, 4d
+    Desire-line layer                          :active, f06, after f05, 4d
     Exit check, top 20 flows vs LODES          :        f07, 2026-12-07, 2d
     v0.1.0                                     :milestone, r01, 2026-12-08, 0d
 
@@ -118,10 +118,10 @@ Goal: the core loop. Draw a transit line, see ridership respond in under 2 secon
 |---|---|---|---|---|---|
 | F11 | Car travel times: shortest paths on the road graph, static assignment with BPR congestion | core | F03 | Zone-to-zone car skims computed for Travis; congested times exceed free-flow on I-35 at peak | Built (#7); exit check on real Travis data (I-35 peak) pending |
 | F12 | Transit skims: walk access and egress, wait (half headway), in-vehicle, transfers; drive-to-transit (park-and-ride) access | core | F03 | Skims exist for every zone pair a line serves; park-and-ride stops offer drive access | Done (#7) |
-| F13 | Non-work trips: NHTS rates by purpose (~3.5 trips/person/day), gravity destinations weighted by OSM POIs and LODES jobs by sector | core, pipeline | F04 | Daily trips per person and purpose split match NHTS within 10%. *Placed in M1 because Red Line calibration (F19) counts all riders, not only commuters.* | Partial (#7, #14): single-purpose gravity model on car time; total rate 2.28 trips/person/day from the 2022 NHTS (D29); no purpose split or POI weights |
+| F13 | Non-work trips: NHTS rates by purpose (2.28 total trips/person/day, 2022 NHTS, D29), gravity destinations weighted by OSM POIs and LODES jobs by sector | core, pipeline | F04 | Daily trips per person and purpose split match NHTS within 10%. *Placed in M1 because Red Line calibration (F19) counts all riders, not only commuters.* | Partial (#7, #14): single-purpose gravity model on car time; total rate 2.28 trips/person/day from the 2022 NHTS (D29); no purpose split or POI weights |
 | F14 | Multinomial logit mode split on generalized cost (wait and walk weighted ~2x in-vehicle); ASCs calibrated per metro to ACS mode share | core | F11, F12, F13 | Baseline reproduces Travis ACS commute mode shares within 2 points | Partial (#7): six-way logit and `calibrate_mode_shares`; not yet calibrated to Travis ACS shares |
 | F15 | Sim API (`Sim`: build, add/update/remove lines, read results, advance clock) and Tauri command/event interface | core, app | F01, F05 | App calls sim-core through the message interface only, no direct state access | Partial (#7, #9): sim-core `Sim` API done (#7); Tauri commands `upsert_route`, `remove_route`, `sim_status` wired (#9); clock advance not wired (F21) |
-| F16 | Line drawing tool: place stops, pick mode, set headway and fare; preview cost and forecast before commit | app | F15 | A line can be drawn, edited and deleted in the app | Partial (#2, #9, pending review): drawing, stop editing (move, insert, delete), rename, headway and delete work against sim-core; no capital cost preview (needs F23) or mode/fare pickers |
+| F16 | Line drawing tool: place stops, pick mode, set headway and fare; preview cost and forecast before commit | app | F15 | A line can be drawn, edited and deleted in the app | Partial (#2, #9, #15): drawing, stop editing (move, insert, delete), rename, headway and delete work against sim-core; no capital cost preview (needs F23) or mode/fare pickers |
 | F17 | Ridership readout per line and stop | app, core | F14, F16 | Boardings per line and stop shown after each edit | Partial (#2, #9): daily boardings per line and per stop come from sim-core in the desktop app, from the mock in browser-only `npm run dev`; numbers uncalibrated until F14/F19 |
 | F18 | Incremental re-evaluation after a line edit | core | F14 | **A line edit updates ridership in under 2 seconds** on Travis | Partial (#7): line edit re-evaluates in 20-40 ms on a synthetic Travis-sized region; confirm on real Travis data |
 | F19 | Calibration harness: CapMetro Red Line replica from GTFS, compared against NTD ridership | core, pipeline | F17 | **Red Line replica forecasts within 30% of reported ridership** | Planned |
