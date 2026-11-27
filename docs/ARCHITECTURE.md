@@ -8,7 +8,7 @@ Last updated 2026-11-27.
 
 A Rust data pipeline turns public data (Census, LODES, OpenStreetMap) into a game package once per release. A headless Rust library, `sim-core`, loads that package and runs the travel model: aggregate zone-to-zone flows for the whole state, with individual agents only near the camera. A Tauri desktop app links `sim-core` as native code, talks to it through a message interface, and draws the map in its webview with MapLibre GL (deck.gl planned for the local tier in M2, see [app decision 2](../app/docs/DECISIONS.md)). There is no server.
 
-As built today (2026-11-27): the pipeline writes `scenario.json` for Travis County; sim-core has the input schema, the travel model and the `Sim` API (#7); the desktop app links sim-core through Tauri commands (the browser-only `npm run dev` still uses a TypeScript mock behind the same client interface).
+As built today (2026-11-27): the pipeline writes `scenario.json` for Travis County; sim-core has the input schema, the travel model and the `Sim` API (#7); the desktop app links sim-core through Tauri commands (the browser-only `npm run dev` still uses a TypeScript mock behind the same client interface). A statewide tract build (`--roads highway`, DATA-8) runs on sim-core's strategic tier in the app when loaded through `TRANSPO_SCENARIO` (F34, app A32).
 
 ## Components
 
