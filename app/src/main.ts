@@ -7,6 +7,7 @@ import { createMap, GEO_FULL, SCHEMATIC_FULL, setData, zoomBand } from "./map";
 import { layoutSchematic, morph } from "./schematic";
 import { isRegional, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
 import { createSim } from "./sim";
+import { serialQueue } from "./sim/queue";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const COLORS = ["#dc241f", "#0098d4", "#00782a", "#9b0056", "#f3a9bb", "#ee7c0e", "#6950a1", "#b36305"];
@@ -19,12 +20,21 @@ let results = new Map<string, RouteResult>();
 let nextId = 1;
 
 // ---- Simulation round trip -------------------------------------------------
-async function apply(call: Promise<RouteResult[]>): Promise<void> {
+// Sim calls run one at a time, in order. Each response is the full state after
+// that call, so if two calls overlapped, an earlier call's late response could
+// overwrite a newer one (review follow-up on #9).
+const queued = serialQueue();
+
+function apply(call: () => Promise<RouteResult[]>): Promise<void> {
+  return queued(() => applyNow(call)).then(refreshDesire);
+}
+
+async function applyNow(call: () => Promise<RouteResult[]>): Promise<void> {
   const t0 = performance.now();
   // The first call can wait seconds while sim-core builds the scenario at startup.
   $("sim-ms").textContent = `${sim.label} · running…`;
   try {
-    results = new Map((await call).map((r) => [r.routeId, r]));
+    results = new Map((await call()).map((r) => [r.routeId, r]));
     $("sim-ms").textContent = `${sim.label} · ${Math.round(performance.now() - t0)} ms`;
   } catch (e) {
     $("sim-ms").textContent = `${sim.label} error: ${e}`;
@@ -47,7 +57,7 @@ function addRoute(mode: Mode, pts: LngLat[], stopNames?: string[], name?: string
     fare: 1.25,
   };
   routes.push(route);
-  void apply(sim.upsertRoute(route));
+  void apply(() => sim.upsertRoute(route));
 }
 
 // ---- Rendering --------------------------------------------------------------
@@ -137,6 +147,33 @@ sim.ready().then(
   (e) => ($("sim-ms").textContent = `${sim.label} failed to start: ${e}`),
 );
 
+// ---- Desire lines (F06) -------------------------------------------------------
+const DESIRE_N = 300; // top zone pairs drawn; more turns the map into a hairball
+let showDesire = false;
+async function refreshDesire(): Promise<void> {
+  if (!showDesire) return setData(map, "desire", []);
+  const lines = await queued(() => sim.desireLines(DESIRE_N)).catch((e) => {
+    console.error(e);
+    return [];
+  });
+  const max = Math.max(1, ...lines.map((d) => d.trips));
+  setData(
+    map,
+    "desire",
+    lines.map((d) => ({
+      type: "Feature",
+      // rel: share of the busiest pair, so widths read the same on any scenario size
+      properties: { rel: d.trips / max, transitShare: d.trips ? d.transitTrips / d.trips : 0 },
+      geometry: { type: "LineString", coordinates: [d.from, d.to] },
+    })),
+  );
+}
+$("btn-desire").onclick = () => {
+  showDesire = !showDesire;
+  $("btn-desire").classList.toggle("on", showDesire);
+  void refreshDesire();
+};
+
 // Zoom re-renders only the map: the schematic morphs, the clock is untouched.
 map.on("zoom", render);
 
@@ -156,7 +193,7 @@ $("route-list").addEventListener("change", (e) => {
   const r = routes.find((x) => x.id === el.closest<HTMLElement>(".route")?.dataset.id);
   if (r && el.dataset.act === "headway") {
     r.headwayMin = Number(el.value);
-    void apply(sim.upsertRoute(r));
+    void apply(() => sim.upsertRoute(r));
   }
 });
 $("route-list").addEventListener("click", (e) => {
@@ -164,7 +201,7 @@ $("route-list").addEventListener("click", (e) => {
   const id = el.closest<HTMLElement>(".route")?.dataset.id;
   if (id && el.dataset.act === "del") {
     routes.splice(routes.findIndex((x) => x.id === id), 1);
-    void apply(sim.removeRoute(id));
+    void apply(() => sim.removeRoute(id));
   }
 });
 $("zoom-badge").addEventListener("click", (e) => {

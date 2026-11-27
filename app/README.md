@@ -12,6 +12,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Desktop app: Red Line demo with ridership, cost and farebox from sim-core](docs/img/desktop-sim-core.png)
 ![Browser client (mock sim): Red Line demo and a drawn bus line](docs/img/city-view.png)
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
+![Desire lines from sim-core with the Red Line; pairs along the line turn green as transit share rises](docs/img/desire-lines.png)
 
 ## Run
 
@@ -47,6 +48,9 @@ the build. The terminal prints
 - **Draw bus line / Draw rail line**: click the map to drop stops. **Enter** or double-click
   finishes, **Esc** cancels. Clicking an existing stop snaps to it, so lines can share an
   interchange.
+- **Desire lines**: toggles the top 300 zone pairs by daily trips (F06). Width scales with the
+  square root of trips relative to the busiest pair. Color runs from purple (no transit) to green
+  (10%+ transit share). It refreshes after every line edit, so you can watch transit share move.
 - **Add Red Line demo**: an approximate CapMetro Red Line (9 stations, commuter rail, 30-min
   headway).
 - **Ridership panel** (top right): weekday boardings per line. With sim-core it also shows
@@ -80,7 +84,7 @@ cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo check &&
   workspace.
 - CI: [.github/workflows/app.yml](../.github/workflows/app.yml) runs on PRs that touch `app/`,
   `crates/sim-core/` or the workflow. The `web` job runs `npm ci`, `npm run build` and `npm test`.
-  The `tauri` job installs the WebKitGTK and GTK dev packages, then runs `cargo test --locked` and
+  The `tauri` job installs the WebKitGTK and GTK dev packages, then runs `cargo fmt --check`, `cargo test --locked` and
   `cargo clippy --locked --all-targets -- -D warnings` in `src-tauri`.
 
 ## Interfaces
@@ -91,6 +95,7 @@ cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo check &&
 interface SimClient {
   readonly label: string;                                // shown in the ridership panel
   ready(): Promise<void>;                                // resolves when the backend is built
+  desireLines(n: number): Promise<DesireLine[]>;         // top n zone pairs by daily trips
   upsertRoute(route: RouteSpec): Promise<RouteResult[]>; // add or replace; results for EVERY route
   removeRoute(id: string): Promise<RouteResult[]>;
 }
@@ -115,6 +120,7 @@ interface SimClient {
 |---|---|---|
 | `upsert_route` | `routeId: string`, `line: TransitLine` | `RouteResultOut[]` for every client route |
 | `remove_route` | `routeId: string` | `RouteResultOut[]` |
+| `desire_lines` | `n: number` | Top `n` zone pairs by daily trips: `{ from: [lon,lat], to: [lon,lat], trips, transit_trips }[]`, largest first |
 | `sim_status` | none | `{ ready, error, source }`; `source` is the scenario path or `"synthetic"` |
 
 `RouteResultOut` is sim-core's `LineResult` with `route_id` (the client id) flattened into it.
@@ -161,7 +167,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | Gap | Fixed by |
 |---|---|
 | Lines are straight from stop to stop, not snapped to roads | Road graph from the pipeline plus a router (F16 follow-up) |
-| No desire-line layer | F06 (needs `Sim::desire_lines`, which sim-core already has) |
+| Desire lines are straight zone-to-zone chords capped at 300 pairs; no filtering by purpose or mode | F06 follow-up if playtests want it |
 | No cost preview while drawing | F16 / F23 |
 | `park_ride` is all-or-nothing per line | Per-stop editing (F16) |
 | Clock is client-side; `Sim::tick` is not called, so car congestion only updates at sim build | F21 |
@@ -180,7 +186,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | F17 Ridership readout | Done for line totals and per-stop boardings, plus cost and farebox from sim-core |
 | F21 Clock and time-lapse | Prototype: client clock at 1/2/10/60x, no skip-to-month |
 | F41 / F42 Schematic and morph | Prototype: heuristic layout, no pins |
-| F06 Desire lines | Not started |
+| F06 Desire lines | Done (app): layer from `Sim::desire_lines`; the M0 exit check (F07) is the pipeline's |
 
 ## Layout
 
@@ -199,6 +205,7 @@ app/
 │       ├── api.ts        SimClient interface + shared types (the contract)
 │       ├── tauri.ts      TauriSim: sim-core through Tauri commands
 │       ├── mock.ts       MockSim: browser-only stand-in model
+│       ├── queue.ts      serialQueue(): sim calls run one at a time, in order
 │       └── index.ts      createSim(): picks the backend
 ├── test/core.test.ts     Vitest unit tests
 ├── src-tauri/

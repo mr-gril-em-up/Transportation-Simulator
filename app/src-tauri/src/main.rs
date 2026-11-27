@@ -11,7 +11,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             sim::sim_status,
             sim::upsert_route,
-            sim::remove_route
+            sim::remove_route,
+            sim::desire_lines
         ])
         .run(tauri::generate_context!())
         .expect("error while running Transpo-Sim");

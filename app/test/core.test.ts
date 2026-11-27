@@ -106,3 +106,26 @@ describe("tauri adapter", () => {
     expect(res.fareboxRecovery).toBe(0.08);
   });
 });
+
+describe("sim call queue", () => {
+  it("finishes calls in call order even when an earlier call is slower, and survives failures", async () => {
+    const { serialQueue } = await import("../src/sim/queue");
+    const q = serialQueue();
+    const done: string[] = [];
+    const wait = (ms: number, tag: string, fail = false) => () =>
+      new Promise<string>((res, rej) => setTimeout(() => (done.push(tag), fail ? rej(new Error(tag)) : res(tag)), ms));
+    const a = q(wait(30, "a"));
+    const b = q(wait(1, "b", true)).catch(() => "b-failed");
+    const c = q(wait(1, "c"));
+    expect(await Promise.all([a, b, c])).toEqual(["a", "b-failed", "c"]);
+    expect(done).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("mock desire lines", () => {
+  it("returns the requested number of pairs, largest first", async () => {
+    const lines = await new MockSim().desireLines(20);
+    expect(lines).toHaveLength(20);
+    for (let i = 1; i < lines.length; i++) expect(lines[i - 1].trips).toBeGreaterThanOrEqual(lines[i].trips);
+  });
+});

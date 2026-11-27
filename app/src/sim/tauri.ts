@@ -2,7 +2,7 @@
 // app/src-tauri/src/sim.rs. Converts the app's RouteSpec to sim-core's
 // TransitLine and LineResult back to RouteResult.
 import { invoke } from "@tauri-apps/api/core";
-import { isRegional, type RouteResult, type RouteSpec, type SimClient } from "./api";
+import { isRegional, type DesireLine, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 /** sim-core TransitLine (crates/sim-core/src/schema.rs). Omitted fields take mode defaults. */
 interface TransitLine {
@@ -72,6 +72,11 @@ export class TauriSim implements SimClient {
   async removeRoute(id: string): Promise<RouteResult[]> {
     this.routes.delete(id);
     return this.convert(await invoke<LineResultOut[]>("remove_route", { routeId: id }));
+  }
+
+  async desireLines(n: number): Promise<DesireLine[]> {
+    const out = await invoke<{ from: LngLat; to: LngLat; trips: number; transit_trips: number }[]>("desire_lines", { n });
+    return out.map((d) => ({ from: d.from, to: d.to, trips: d.trips, transitTrips: d.transit_trips }));
   }
 
   private convert(out: LineResultOut[]): RouteResult[] {
