@@ -542,7 +542,7 @@ impl Sim {
                 }
             }
         }
-        out.sort_by(|a, b| b.trips.partial_cmp(&a.trips).unwrap());
+        out.sort_by(|a, b| b.trips.total_cmp(&a.trips));
         out.truncate(n);
         out
     }

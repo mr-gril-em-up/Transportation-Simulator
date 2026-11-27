@@ -75,9 +75,9 @@ let days_crossed = sim.tick(real_dt_seconds);
 | Call | Cost | What it does |
 |---|---|---|
 | `Sim::new(input, params)` / `Sim::from_json(json, params)` | seconds | Validates input, builds networks, runs the baseline to equilibrium. Lines in the input become lines 0..n. |
-| `add_line(TransitLine) -> LineId` | ~20 ms | Adds a line, refreshes `results()`. Ids are never reused. |
-| `update_line(LineId, TransitLine)` | ~20 ms | Replaces a line in place (same id). |
-| `remove_line(LineId)` | ~20 ms | Removes a line. Its id is retired. |
+| `add_line(TransitLine) -> LineId` | 20-40 ms | Adds a line, refreshes `results()`. Ids are never reused. |
+| `update_line(LineId, TransitLine)` | 20-40 ms | Replaces a line in place (same id). |
+| `remove_line(LineId)` | 20-40 ms | Removes a line. Its id is retired. |
 | `lines() -> Vec<(LineId, &TransitLine)>` | free | Active lines. |
 | `results() -> &Results` | free | Latest results (see below). |
 | `zone_results() -> Vec<ZoneResult>` | ms | Per zone: daily trips, transit trips and share, stop coverage. For heatmaps. |
@@ -204,7 +204,7 @@ choices a reader is most likely to question:
 - **Line edits do not re-run road congestion.** A new line moves car volumes a
   few percent; the player needs instant feedback. Car times catch up at the next
   game-day boundary, the strategic tier's cadence. `results.car_times_stale`
-  flags the gap. This is how a line edit takes 20 ms instead of seconds.
+  flags the gap. This is how a line edit takes 20 to 40 ms instead of seconds.
 - **Method of successive averages with mode-choice feedback** instead of
   Frank-Wolfe: same equilibrium, no line search, and mode choice sits in the
   same loop.
@@ -246,7 +246,7 @@ choices a reader is most likely to question:
 | F13 Non-work trips | Partial: gravity model, single purpose; total rate 2.28/person/day (2022 NHTS) minus work trips |
 | F14 Logit mode split | Partial: six-way MNL and `calibrate_mode_shares` done; ACS calibration needs pipeline data |
 | F15 Sim API | sim-core side done; Tauri commands are the app's |
-| F18 Incremental re-evaluation | Done on the synthetic Travis-sized region (20 ms); confirm on real Travis data |
+| F18 Incremental re-evaluation | Done on the synthetic Travis-sized region (20-40 ms); confirm on real Travis data |
 | F21 One clock | Partial: `Clock` with time-lapse and skip-to-next-month in sim-core; app still runs its own client clock |
 | F22 Desired arrival times | Partial: arrival profile drives peak share and transit schedule delay; no departure-time choice |
 | F24 Construction compression | Partial: `construction_speedup` and `build_days` only |

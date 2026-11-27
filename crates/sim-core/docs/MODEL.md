@@ -214,9 +214,13 @@ Then it skims once more, runs mode choice and loads transit.
 `equilibrate_warm` (what the game runs once per game day) starts from the
 previous day's volumes and runs `daily_iterations [1]` round with step
 `1/(feedback_iterations + n)`, i.e. it treats the previous solution as four
-rounds of history. Demand does not change between days unless the player
-changed lines, so the previous equilibrium is already close; one round absorbs
-the line edits made during the day.
+rounds of history. The step is fixed at 1/5, so each game day moves road
+volumes a fifth of the way toward the day's all-or-nothing target: a line edit's
+effect on car times is about half absorbed after 3 game days and 90% after
+10. That lag is deliberate. Demand does not change between days unless the
+player changed lines, car volumes move a few percent per line, and drivers in
+reality take days to weeks to re-sort their routes. A caller that needs the
+settled state at once (tests, a scenario load) runs `equilibrate`.
 
 Why MSA with feedback and not Frank-Wolfe user equilibrium: MSA with feedback
 converges to the same combined mode-and-route equilibrium, needs no line

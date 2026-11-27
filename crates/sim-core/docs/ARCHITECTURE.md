@@ -57,7 +57,7 @@ equilibrate_warm  (once per game day via tick; keeps yesterday's link volumes)
 pass  (one parallel loop over origins, ONE shortest-path tree each)
   tree -> car skim row -> transit skim row -> mode choice row -> [AON load of the row's car demand on the same tree]
 
-add_line / update_line / remove_line  (~20 ms)
+add_line / update_line / remove_line  (20-40 ms)
   rebuild transit net -> transit skims -> finish        (car times held; results.car_times_stale = true)
 
 finish
