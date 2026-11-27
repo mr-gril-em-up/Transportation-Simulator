@@ -1336,9 +1336,9 @@ impl Sim {
         let rows: Vec<(Vec<f32>, Vec<f32>, Vec<f32>)> = (0..z)
             .into_par_iter()
             .map_init(
-                // The bound is only a guard: trees stop once the row's own
-                // destinations are settled (`run_tree`).
-                || (self.tree(10.0), vec![0.0; g.n_nodes], vec![0.0; g.n_nodes]),
+                // Kept pairs are within the cutoff both ways at free flow, so
+                // the bound only guards against float ties.
+                || (self.tree(1.01), vec![0.0; g.n_nodes], vec![0.0; g.n_nodes]),
                 |(tree, km, toll), i| {
                     self.run_tree(tree, times, i);
                     tree.km_and_toll(g, km, toll);
@@ -1529,7 +1529,7 @@ impl Sim {
                     let (mut tree, mut km, mut toll, mut srch, mut nd, mut outs) = acc
                         .unwrap_or_else(|| {
                             (
-                                self.tree(10.0),
+                                self.tree(4.0),
                                 vec![0.0; g.n_nodes],
                                 vec![0.0; g.n_nodes],
                                 Searcher::new(net, p, z),

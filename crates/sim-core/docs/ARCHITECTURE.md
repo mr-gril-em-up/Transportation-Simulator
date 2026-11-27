@@ -191,10 +191,14 @@ and a CI bench against the 20 s target. The API does not change.
 
 **(A) is built (SIM-13).** `Params::strategic_max_min` (None by default, so
 Travis runs dense and unchanged) keeps pairs within that free-flow car time.
-The pair set comes from free-flow trees bounded at the cutoff; after that
-every tree runs until its origin's own kept destinations are settled
-(`Tree::set_targets`), so a kept pair is drivable both ways even when road
-times are asymmetric (a 10x-cutoff bound is only a guard). Trees reset only
+The pair set comes from free-flow trees bounded at the cutoff, and a pair
+is kept only if **both** directions are within it (SIM-14), so every kept
+pair is drivable both ways. After that every tree runs until its origin's own
+kept destinations are settled (`Tree::set_targets`); the bound (1.01x the
+cutoff at free flow, 4x when congested) is only a guard. SIM-13 first kept a
+pair if either direction was within the cutoff: on the real statewide graph,
+with one-way ramps, some destinations were unreachable from the other side,
+and those trees searched all of Texas (45 s a day). Trees reset only
 the nodes the last run touched, so a bounded search costs what it explores,
 not the size of the statewide graph. Commutes
 beyond it are counted in `Results::beyond_cutoff_trips` and still reduce
@@ -205,10 +209,26 @@ their home zone's non-work trip budget, so trips are conserved. Measured with
 |---|---|---|
 | 676 | 0.5 s, 0.18 GB | 0.4 s, 0.10 GB |
 | 3,136 | 12.3 s, 3.25 GB | 3.5 s, 0.52 GB |
-| 6,889 | ~60 s, ~15 GB (extrapolated) | 7.2 s, 1.14 GB |
+| 6,889 | ~60 s, ~15 GB (extrapolated) | 6.2 s, 1.12 GB |
 
-The synthetic region is 166 km across at 6,889 zones and 28k road nodes;
-the real statewide graph is larger, so the 20 s check waits for (C).
+The synthetic region is 166 km across at 6,889 zones and 28k road nodes.
+
+**(C) Real Texas** (`examples/statewide.rs` on release
+`data-48-2023-tract-highway`: 6,896 tracts, 213,801 road nodes, 283,966
+links, 3.88M LODES flows; 4 cores):
+
+| Cutoff | Cold start (`Sim::new`) | Game day (`equilibrate_warm`) | Peak memory | Work trips beyond cutoff |
+|---|---|---|---|---|
+| 45 min | 35 s | 10.3 s | 1.8 GB | 6.1M |
+| 60 min | 45 s | **13.8 s** | 2.2 GB | 5.2M |
+| 90 min | 74 s | 24.8 s | 2.9 GB | 4.4M |
+
+60 minutes meets the 20 s target (F34). Each feedback pass is one tree per
+tract, so cost grows with the area a cutoff covers. **Open:** the
+congested speeds are not credible yet (peak average 7 km/h at 60 min): the
+highway-only graph carries every trip, including short ones that use local
+streets in reality. That is the next statewide fix, then F38 calibrates to
+TxDOT counts.
 
 ## Testing
 
