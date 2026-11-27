@@ -19,7 +19,9 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `county_level_merges_block_groups` | `tests/sample.rs` | `--level county` on the whole sample: 5 block groups become 2 counties, totals unchanged, 5-digit GEOIDs, manifest `zone_level` and `block_groups`, `scenario.json` validates |
 | `tracts_merge_counts_weights_and_flows` | `src/aggregate.rs` | Tract merge: sums, population-weighted centroid and income, area only when complete, unpopulated tract, flows summed with intrazonal kept; county merge |
 | `commute_shares_sum_listed_block_groups` | `src/acs.rs` | B08301 shares sum only the listed block groups, skip county rows, and add to 1 |
+| `red_line_uses_timetable_and_park_and_ride` | `src/lines.rs` | One line per ref (most stops), routes without headways dropped, `train` becomes commuter rail with the figures.csv 32/51 min timetable, Leander and Lakeline stops get park-and-ride and Downtown does not, midday headway carried |
 | `headways_from_a_tiny_feed` | `src/gtfs.rs` | Busiest-Wednesday service selection with a calendar_dates removal, weekend service ignored, directions combined per window, peak and midday headways, span, empty windows give `None` |
+| `only_capmetro_operators_match` | `src/gtfs.rs` | Missing or CapMetro operator matches; Amtrak and CARTS do not |
 | `dates_and_weekdays` | `src/gtfs.rs` | GTFS date to day number, Wednesday test, times past 24:00 |
 | `acs_parses_and_flags_suppressed` | `src/acs.rs` | Summary-file table parsing (block-group rows only, state row skipped), suppressed sentinels, blanks and zero-household rows become `None` |
 | `zones_without_header_row` | `src/census.rs` | Centers of Population file without a header |
@@ -127,3 +129,7 @@ Actions run [45949840370](https://github.com/mr-gril-em-up/Transportation-Simula
 
 The Red Line reads 40 / 60 min in the current feed (19 trips per direction), sparser than the 32 / 51 min in `figures.csv`, which came from the published timetable earlier. A count-based mean is coarse for a line with three trains in the peak window, so the timetable figures stay the calibration reference for route 550. That run took the busier direction for every window, which gave the peak-only express 985 no peak headway; windows now take the more frequent direction.
 
+
+## Existing lines (2026-11-27)
+
+Actions run [45951673767](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45951673767), Travis with roads, branch build: 61 existing lines (`existing_lines`), one per GTFS-matched route number, passed sim-core `validate()` inside `scenario.json` (that build put them there unconditionally; they now go to `existing_lines.json`, and into `scenario.json` only with `--existing-lines`). The same day's main build (run 45951703196) republished `data-48453-2023` with GTFS headways (143 routes) and `commute_mode_shares`, but without lines.

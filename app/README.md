@@ -248,10 +248,15 @@ A `ScenarioInput` JSON file
 block-group zones, 1.29M people, 948k jobs, LODES 2023 commutes, OSM roads). Without it the shell
 uses `sim_core::synth::generate(&SynthConfig::default())`, a Travis-sized synthetic region (676
 zones, 1.3M people) centered on downtown Austin. On the real build, the Red Line demo returns
-about 1,860 riders/day once open (Day 151) with MetroRail's real 32/51-minute headways and
-$3.50 fare, against APTA's about 1,500 a weekday (+24%; sim-core's own probe gives 1,738 on day
-0). A line edit
-takes under 100 ms.
+about 870 riders/day once open (Day 181) with MetroRail's real 32/51-minute headways and $3.50
+fare, against APTA's about 1,500 a weekday. That is low because the map starts empty: with mode
+constants fitted to Travis ACS commute shares (sim-core SIM-10), a rail line with no bus feeders
+loses riders. That matches sim-core's 861/day for the line alone at the same headways; inside
+today's CapMetro network it gets 1,917/day. An older data build without ACS income (every
+zone at $70k) gave about 640; re-run `npm run data` if your figure is that low. At 870 riders the line costs about $1.2M per daily rider, over
+the $600k grant gate, so it gets no federal grant: cash drops to about -$1.0B, more than the
+about $440M the line lets you borrow, and the demo heads to bankruptcy. A line edit takes under
+100 ms.
 
 ## Design and rationale
 

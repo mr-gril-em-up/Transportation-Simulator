@@ -271,11 +271,24 @@ pub fn read_headways(dir: &Path) -> Result<HashMap<String, RouteHeadway>> {
     Ok(out)
 }
 
-/// Copies headways onto OSM routes whose `ref` equals a GTFS
+/// True if an OSM `operator` tag can be CapMetro: missing, or naming it.
+/// Keeps Amtrak (Texas Eagle trains 21 and 22) and other operators from
+/// matching CapMetro route numbers.
+pub fn is_capmetro(operator: Option<&str>) -> bool {
+    operator.is_none_or(|o| {
+        let o: String = o.to_lowercase().split_whitespace().collect();
+        o.contains("capmetro") || o.contains("capitalmetro")
+    })
+}
+
+/// Copies headways onto CapMetro OSM routes whose `ref` equals a GTFS
 /// `route_short_name`. Returns the number of OSM routes matched.
 pub fn apply(transit: &mut Transit, hw: &HashMap<String, RouteHeadway>) -> usize {
     let mut n = 0;
     for r in &mut transit.routes {
+        if !is_capmetro(r.operator.as_deref()) {
+            continue;
+        }
         if let Some(h) = r.r#ref.as_deref().and_then(|k| hw.get(k.trim())) {
             r.peak_headway_min = h.peak_headway_min;
             r.midday_headway_min = h.midday_headway_min;
@@ -289,6 +302,18 @@ pub fn apply(transit: &mut Transit, hw: &HashMap<String, RouteHeadway>) -> usize
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_capmetro_operators_match() {
+        assert!(is_capmetro(None));
+        assert!(is_capmetro(Some(
+            "Capital Metropolitan Transportation Authority"
+        )));
+        assert!(is_capmetro(Some("CapMetro")));
+        assert!(is_capmetro(Some("Cap Metro")));
+        assert!(!is_capmetro(Some("Amtrak")));
+        assert!(!is_capmetro(Some("CARTS")));
+    }
 
     #[test]
     fn dates_and_weekdays() {
