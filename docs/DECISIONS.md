@@ -35,6 +35,7 @@ If two PRs in the same stream still pick the same number, the one that merges se
 | # | Date | Decision | Why | Status | Source |
 |---|---|---|---|---|---|
 | DATA-1 | 2026-11-27 | Pipeline builds are distributed as GitHub Release assets (`data-<area>-<year>`), published by the manual data-pipeline workflow; never committed to git | Consumers (app, sim-core, reviewers) get real data with one command and no raw downloads; keeps tens of MB of generated JSON out of history; re-runs replace assets in place | As built | [pipeline README](../crates/data-pipeline/README.md#use-a-published-build-no-raw-downloads) |
+| DATA-2 | 2026-11-27 | scenario.json's road graph is simplified for routing: fragments outside the largest component dropped, dead ends without a zone connector pruned, identical pass-through links merged; node ids stay roads.json ids (sparse) | sim-core run time scales with road nodes and none of these nodes can change a zone-to-zone path or its length. Travis: 93k → 52k nodes, baseline 12.0 s → 6.8 s, identical mode shares. A road class cut would go further but changes results, so it is left for a separate decision | As built | [pipeline ARCHITECTURE step 6](../crates/data-pipeline/docs/ARCHITECTURE.md#6-scenario-scenarioto_scenario) |
 
 ## App (APP)
 

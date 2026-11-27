@@ -26,6 +26,7 @@ Every number or rule in the code that is not read straight from a source. Each e
 | Clip box = zone bbox + 0.05° | `lib.rs`, `--margin` | Keeps the roads just past the county line that boundary zones use | Clip by county polygon if the bbox pulls in too much of neighboring counties |
 | Edges that cross the clip box are dropped, not cut | `osm.rs` `build_roads` | No dangling half-edges; the margin makes the loss irrelevant | n/a |
 | Zone connector = nearest node on a non-motorway, non-trunk road in the largest connected component, straight line | `scenario.rs` | One connector per zone is what sim-core's schema takes; freeway nodes would make access free; fragments cut off by clipping would leave a zone with no paths | Multiple connectors per zone if sim-core adds them |
+| Routing graph in scenario.json is simplified: fragments dropped, dead ends without a zone pruned, identical pass-through links merged | `scenario.rs` | None of these can carry a zone-to-zone trip or change a path length, and sim-core's run time scales with nodes (DATA-2) | Keep a node if sim-core later loads transit stops or non-work destinations onto road nodes: add it to the protected set |
 
 ## Transit
 

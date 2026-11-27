@@ -78,10 +78,16 @@ If `texas-latest.osm.pbf` is missing, this step is skipped with a note, and the 
 
 Converts the layers into `sim_core::ScenarioInput`:
 
-- Zone `id` = index in the sorted zone list. Road node `id` = index in `roads.nodes`. Ids are therefore dense and line up with the detail files.
+- Zone `id` = index in the sorted zone list. Road node `id` = index in `roads.nodes`, so scenario ids line up with the detail files. Zone ids are dense; road node ids are a subset after simplification (below).
 - Each zone's `road_node` is the nearest node to its centroid that touches a **local** road (anything except motorway and trunk classes and their links). Loading trips onto a freeway node would let them skip the local network and make access look free. Candidates are also limited to the largest connected component of the road graph: clipping at the margin leaves small fragments, and a zone loaded onto one would pass validation but reach nothing. Search uses a 0.01° grid and expanding rings, so statewide matching is fast.
 - Road lanes are converted from OSM's total-lane count to sim-core's lanes per direction.
 - Zero-length links and self-loops are dropped (sim-core's validator rejects them).
+- **Routing simplification** (`scenario::simplify`, DATA-2). sim-core's run time scales with road nodes, and most OSM nodes carry no routing choice. Three steps, none of which changes any zone-to-zone path or its length:
+  1. Drop links outside the largest connected component (clipping fragments no zone uses).
+  2. Prune dead ends repeatedly: a node with a single neighbor that is not a zone connector can be neither origin, destination nor a through point. This removes cul-de-sacs, driveways and freeway stubs cut by the clip box.
+  3. Contract pass-through nodes: a non-connector node with exactly two links of equal speed, lanes per direction and direction (two-way, or one-way flowing through) becomes one link of the summed length. Links that differ are left alone, so speed and capacity changes stay where OSM puts them.
+
+  Kept nodes keep their roads.json ids (sim-core allows sparse ids). On the real Travis build this takes road nodes from 93,461 to 52,210 and links from 121,120 to 79,583, and sim-core's baseline from 12.0 s to 6.8 s with identical mode shares and peak speed. `roads.json` keeps every node and edge for drawing.
 - `lines` is empty: the game starts with no transit by default (design doc, "Starting map"). Existing routes stay in `transit.json`.
 
 `ScenarioInput::validate()` runs before anything is written to `scenario.json`; a failure aborts the build.

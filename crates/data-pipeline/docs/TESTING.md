@@ -14,9 +14,10 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 
 | Test | File | Checks |
 |---|---|---|
-| `builds_travis_sample` | `tests/sample.rs` | Full `build()` on the synthetic sample: zone filtering and GEOID order; block-to-block-group roll-up of RAC, WAC and OD; `commute_in`/`commute_out`; road splitting at shared nodes; clipping (a road to Dallas and a footway are dropped); `maxspeed` in mph; motorway one-way and tagged lanes; transit stop order and names; a route outside the area dropped; `scenario.json` loads with `ScenarioInput::from_json` and passes `validate()`; zones never connect to a freeway-only node or to a disconnected fragment closer to the centroid; per-direction lane conversion; empty `lines` |
+| `builds_travis_sample` | `tests/sample.rs` | Full `build()` on the synthetic sample: zone filtering and GEOID order; block-to-block-group roll-up of RAC, WAC and OD; `commute_in`/`commute_out`; road splitting at shared nodes; clipping (a road to Dallas and a footway are dropped); `maxspeed` in mph; motorway one-way and tagged lanes; transit stop order and names; a route outside the area dropped; `scenario.json` loads with `ScenarioInput::from_json` and passes `validate()`; zones never connect to a freeway-only node or to a disconnected fragment closer to the centroid; per-direction lane conversion; routing simplification leaves only the two connectors and the link between them, with matching manifest counts; empty `lines` |
 | `whole_state_area_keeps_both_counties` | `tests/sample.rs` | `--area 48` keeps both counties; flows between them become internal; census-only build (no PBF) still validates |
 | `zones_without_header_row` | `src/census.rs` | Centers of Population file without a header |
+| `simplify_contracts_chains_and_prunes_dead_ends` | `src/scenario.rs` | Dead-end pruning, fragment removal, contraction only across equal speed and lanes, one-way contraction only when traffic flows through, summed lengths |
 | `speeds`, `distance` | `src/osm.rs` | `maxspeed` parsing; haversine length |
 
 ## The synthetic Travis sample
@@ -60,3 +61,5 @@ Actions run [45932728431](https://github.com/mr-gril-em-up/Transportation-Simula
 Largest flow: 183 workers from block group 484530003081 to 484530004013 (downtown). Not yet done: comparing the top 20 against OnTheMap independently (F07).
 
 Second run (Actions run 45935018791, from the release-publishing branch) produced the same totals and published release `data-48453-2023`. Loading its `scenario.json` into `sim_core::Sim::from_json` with default `Params` gave a baseline in 12 s on a 4-core cloud container with sim-core as of D28 (23 s before it; 93k road nodes); drive 76%, carpool 21%, walk and bike 3.5%. That is far above the 2-second line-edit target, mostly from the size of the road graph (see ASSUMPTIONS: residential streets are kept).
+
+Routing simplification (DATA-2), checked by re-running `scenario::to_scenario` on that release's `zones.json` and `roads.json`: road nodes 93,461 → 52,210, links 121,120 → 79,583, summed link length 18,483 → 15,410 km (the dropped km are dead ends and fragments). sim-core baseline 11.96 s → 6.79 s, with mode shares and peak average speed equal to the full graph to 12 significant digits. Still above the 2 s line-edit target; the next lever is a coarser road class cut, which changes results and needs a decision.

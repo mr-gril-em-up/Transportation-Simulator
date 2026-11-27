@@ -72,6 +72,7 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 
 - **Rust, not Python** (D14): builds `sim_core::ScenarioInput` directly, so a schema change breaks this compile instead of the game at load time.
 - **Block-group zones from Centers of Population** (D13): one small CSV gives population and a population-weighted centroid, with no geometry library.
+- **Routing simplification** (DATA-2): `scenario.json` drops road fragments, prunes dead ends without a zone and merges identical pass-through links. Paths between zones are unchanged; on Travis it cuts road nodes 44% and sim-core's baseline from 12.0 s to 6.8 s. `roads.json` keeps full detail for drawing.
 - **Zone connectors** (D19) go to the nearest local-road node (never motorway or trunk) in the largest connected component, so access is not free and clipping fragments cannot strand a zone.
 - **Lanes per direction in `scenario.json`**, because sim-core capacity is per direction; `roads.json` keeps OSM's total for drawing.
 - **No starting transit** in `scenario.json` (design doc "Starting map"); existing routes stay in `transit.json` for calibration.
@@ -115,7 +116,8 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 - No GTFS schedules for the Red Line replica: F19.
 - Out-of-state commuters (LODES `od_aux`) not loaded.
 - JSON output will be large statewide; binary package is F33.
-- Reference figures still missing: dollar value of travel time, toll per mile, DART local fare, Texas road costs, 2024-USD normalization ([docs/REFERENCE_FIGURES.md](docs/REFERENCE_FIGURES.md)).
+- sim-core's Travis baseline is 6.8 s on the simplified graph, above the 2 s line-edit target; a road class cut would change results and needs a decision.
+- Reference figures still missing: primary-source value of travel time, express-lane tolls, Texas road costs, 2024-USD normalization ([docs/REFERENCE_FIGURES.md](docs/REFERENCE_FIGURES.md)).
 
 ## Status
 
