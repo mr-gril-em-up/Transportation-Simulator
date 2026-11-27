@@ -631,8 +631,9 @@ impl Sim {
     fn settle_months(&mut self) {
         while self.ledger.current.month < self.clock.month() {
             let served = self.served_population();
+            let building = self.pending.iter().any(Option::is_some);
             self.ledger
-                .settle(&self.results.lines, served, &self.params);
+                .settle(&self.results.lines, served, building, &self.params);
         }
     }
 
