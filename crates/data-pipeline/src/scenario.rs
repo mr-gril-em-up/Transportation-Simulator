@@ -278,10 +278,10 @@ pub fn to_scenario(zones: &[Zone], flows: &[Flow], roads: Option<&Roads>) -> Sce
                 population: z.population as f64,
                 jobs: z.jobs as f64,
                 road_node: n.unwrap_or(0),
-                zero_car_share: 0.06,
-                median_income: 70_000.0,
+                zero_car_share: z.zero_car_share.unwrap_or(0.06),
+                median_income: z.median_income.unwrap_or(70_000.0),
                 parking_cost: 0.0,
-                area_km2: None,
+                area_km2: z.area_km2,
             })
             .collect(),
         road_nodes,

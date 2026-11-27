@@ -154,7 +154,7 @@ Goal: all 254 counties at tract level, every metro at block-group level, at 60x 
 
 | ID | Feature | Area | Depends on | Done when | Status |
 |---|---|---|---|---|---|
-| F31 | Statewide pipeline: all 254 counties, tract and county zone levels, TIGER boundaries, ACS tables | pipeline | F02 | `--area 48` builds the full zone hierarchy (county, tract, block group, block) | Planned |
+| F31 | Statewide pipeline: all 254 counties, tract and county zone levels, TIGER boundaries, ACS tables | pipeline | F02 | `--area 48` builds the full zone hierarchy (county, tract, block group, block) | Partial: `--area 48` builds and publishes (DATA-1); ACS income, zero-car share and TIGER land area (DATA-4). Tract/county levels and polygons next |
 | F32 | Statewide synthetic population (~31M people) | pipeline | F04, F31 | Population matches ACS county totals | Planned |
 | F33 | Compact binary game package (target: a few GB) and neighborhood tile streaming in the client | pipeline, app | F31 | App opens Texas without loading all detail into memory | Planned |
 | F34 | Strategic tier: tract OD (~6,900 zones), logit split, static assignment on a contracted highway graph, once per game day, incremental | core | F14, F31 | **One game day for all of Texas in under 20 s** | Planned. Groundwork: the pipeline simplifies scenario road graphs for routing (DATA-2, #25) and sim-core contracts degree-2 chains at load (SIM-2, #28). M1 keeps local streets (DATA-3); the statewide highway-only graph is still to build |

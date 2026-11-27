@@ -23,6 +23,16 @@ pub struct Zone {
     pub commute_out: u32,
     /// Jobs here filled by workers living outside the study area (in Texas).
     pub commute_in: u32,
+    /// ACS 5-year median household income (B19013), dollars. Suppressed
+    /// estimates take the tract, then county, household-weighted mean.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub median_income: Option<f64>,
+    /// Share of households with no vehicle (ACS B25044), same fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zero_car_share: Option<f64>,
+    /// Land area in km² (TIGER/Line 2020 `ALAND`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub area_km2: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

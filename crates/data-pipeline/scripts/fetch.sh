@@ -2,7 +2,7 @@
 # Downloads the raw inputs for tsim-data into data/raw (about 800 MB, mostly OSM).
 # The same files cover all of Texas; --area picks Travis or the whole state at build time.
 #   YEAR=2023 ./scripts/fetch.sh            # all inputs
-#   SKIP_OSM=1 ./scripts/fetch.sh           # census only (zones + flows, no roads)
+#   SKIP_OSM=1 ./scripts/fetch.sh           # census only (zones, flows, ACS, area; no roads)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 YEAR="${YEAR:-2023}"
@@ -27,5 +27,29 @@ LODES=https://lehd.ces.census.gov/data/lodes/LODES8/tx
 get "tx_od_main_JT00_${YEAR}.csv.gz" "$LODES/od/tx_od_main_JT00_${YEAR}.csv.gz"
 get "tx_rac_S000_JT00_${YEAR}.csv.gz" "$LODES/rac/tx_rac_S000_JT00_${YEAR}.csv.gz" "$LODES/rac/tx_rac_S000_JT00_${YEAR}_1.csv.gz"
 get "tx_wac_S000_JT00_${YEAR}.csv.gz" "$LODES/wac/tx_wac_S000_JT00_${YEAR}.csv.gz"
+# ACS 5-year ending in YEAR: table-based summary files (one pipe-delimited
+# file per table, every US geography; no API key needed). Only the header and
+# Texas block-group rows (GEO_ID 1500000US48...) are kept.
+# Optional: without them zones keep default income and zero-car share.
+ACS_SF="https://www2.census.gov/programs-surveys/acs/summary_file/${YEAR}/table-based-SF/data/5YRData"
+for t in b19013 b25044; do
+  out="$RAW/acs5_bg48_${YEAR}_${t}.dat"
+  if [[ -s "$out" ]]; then echo "have $out"; continue; fi
+  echo "get  $ACS_SF/acsdt5y${YEAR}-${t}.dat"
+  if curl -fsSL --retry 5 --retry-all-errors --retry-delay 15 "$ACS_SF/acsdt5y${YEAR}-${t}.dat" \
+       | awk -F'|' 'NR == 1 || $1 ~ /^1500000US48/' > "$out.part" && [[ $(wc -l < "$out.part") -gt 1 ]]; then
+    mv "$out.part" "$out"; echo "     $(($(wc -l < "$out") - 1)) Texas block groups"
+  else
+    rm -f "$out.part"; echo "warning: ACS table $t download failed; building without ACS" >&2
+  fi
+done
+# TIGER/Line 2020 block groups: only the .dbf attribute table (ALAND) is kept.
+if [[ ! -s "$RAW/tl_2020_48_bg.dbf" ]]; then
+  if get tl_2020_48_bg.zip https://www2.census.gov/geo/tiger/TIGER2020/BG/tl_2020_48_bg.zip; then
+    unzip -p "$RAW/tl_2020_48_bg.zip" tl_2020_48_bg.dbf > "$RAW/tl_2020_48_bg.dbf" && rm "$RAW/tl_2020_48_bg.zip"
+  else
+    echo "warning: TIGER download failed; zones will have no land area" >&2
+  fi
+fi
 # OpenStreetMap Texas extract (ODbL, attribution required).
 [[ -n "${SKIP_OSM:-}" ]] || get texas-latest.osm.pbf https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf

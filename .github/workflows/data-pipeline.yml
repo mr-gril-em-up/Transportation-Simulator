@@ -11,6 +11,10 @@ on:
       year:
         description: "LODES year"
         default: "2023"
+      skip_osm:
+        description: "Census-only check: skip OSM roads and transit, and do not publish a release"
+        type: boolean
+        default: false
 
 defaults:
   run:
@@ -36,6 +40,7 @@ jobs:
     env:
       AREA: ${{ inputs.area }}
       YEAR: ${{ inputs.year }}
+      SKIP_OSM: ${{ inputs.skip_osm && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
       - run: ./scripts/fetch.sh
@@ -45,6 +50,7 @@ jobs:
           name: tsim-data-${{ inputs.area }}-${{ inputs.year }}
           path: crates/data-pipeline/data/out/area
       - name: Publish release data-${{ inputs.area }}-${{ inputs.year }}
+        if: ${{ !inputs.skip_osm }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

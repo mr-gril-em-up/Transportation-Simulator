@@ -18,6 +18,33 @@ fn gz(path: &Path, text: &str) {
     e.finish().unwrap();
 }
 
+/// Minimal dBASE III table with GEOID (C12) and ALAND (N14), the two
+/// fields the pipeline reads from TIGER/Line `tl_2020_48_bg.dbf`.
+fn write_dbf(path: &Path, rows: &[(&str, u64)]) {
+    let fields: [(&str, u8, u8); 2] = [("GEOID", b'C', 12), ("ALAND", b'N', 14)];
+    let header_len = 32 + 32 * fields.len() + 1;
+    let rec_len = 1 + fields.iter().map(|f| f.2 as usize).sum::<usize>();
+    let mut b = vec![0u8; 32];
+    b[0] = 3;
+    b[4..8].copy_from_slice(&(rows.len() as u32).to_le_bytes());
+    b[8..10].copy_from_slice(&(header_len as u16).to_le_bytes());
+    b[10..12].copy_from_slice(&(rec_len as u16).to_le_bytes());
+    for (name, ty, len) in fields {
+        let mut d = [0u8; 32];
+        d[..name.len()].copy_from_slice(name.as_bytes());
+        d[11] = ty;
+        d[16] = len;
+        b.extend_from_slice(&d);
+    }
+    b.push(0x0D);
+    for (geoid, aland) in rows {
+        b.push(b' ');
+        b.extend_from_slice(format!("{geoid:<12}{aland:>14}").as_bytes());
+    }
+    b.push(0x1A);
+    std::fs::write(path, b).unwrap();
+}
+
 /// Four Travis block groups downtown and one in Williamson County (48491).
 fn write_sample(raw: &Path) {
     std::fs::create_dir_all(raw).unwrap();
@@ -49,6 +76,35 @@ fn write_sample(raw: &Path) {
          484530011001001,484910203011000,600,0,20240101\n\
          484910203011000,484530011001001,30,0,20240101\n\
          481130001001000,484910203011000,999,0,20240101\n",
+    );
+
+    // ACS 5-year summary-file tables (Texas block-group rows): 011002 is suppressed and 018041 is
+    // missing, so both exercise the tract/county fallback.
+    std::fs::write(
+        raw.join("acs5_bg48_2022_b19013.dat"),
+        "GEO_ID|B19013_E001|B19013_M001\n\
+         1500000US484530011001|90000|5000\n\
+         1500000US484530011002|-666666666|-222222222\n\
+         1500000US484530006031|50000|4000\n\
+         1500000US484910203011|80000|6000\n",
+    )
+    .unwrap();
+    std::fs::write(
+        raw.join("acs5_bg48_2022_b25044.dat"),
+        "GEO_ID|B25044_E001|B25044_E003|B25044_E010\n\
+         1500000US484530011001|600|10|50\n\
+         1500000US484530011002|0|0|0\n\
+         1500000US484530006031|800|40|120\n\
+         1500000US484910203011|900|5|4\n",
+    )
+    .unwrap();
+    write_dbf(
+        &raw.join("tl_2020_48_bg.dbf"),
+        &[
+            ("484530011001", 250_000),
+            ("484530011002", 300_000),
+            ("484530006031", 1_200_000),
+        ],
     );
 
     let mut m = Map::default();
@@ -172,11 +228,44 @@ fn builds_travis_sample() {
     );
     assert_eq!(z("484530011001").commute_out, 30);
 
+    // ACS and TIGER: own values where published, tract then county fallback otherwise.
+    let close = |a: Option<f64>, b: f64| (a.unwrap() - b).abs() < 1e-6;
+    assert!(close(z("484530011001").median_income, 90_000.0));
+    assert!(close(z("484530011001").zero_car_share, 0.1));
+    assert!(
+        close(z("484530011002").median_income, 90_000.0),
+        "tract fallback"
+    );
+    assert!(
+        close(z("484530011002").zero_car_share, 0.1),
+        "tract fallback"
+    );
+    // County 48453 household-weighted: (90000*600 + 50000*800) / 1400; (60 + 160) / 1400.
+    assert!(
+        close(z("484530018041").median_income, 94_000_000.0 / 1400.0),
+        "county fallback"
+    );
+    assert!(
+        close(z("484530018041").zero_car_share, 220.0 / 1400.0),
+        "county fallback"
+    );
+    assert!(close(z("484530006031").area_km2, 1.2));
+    assert_eq!(z("484530018041").area_km2, None);
+    assert_eq!(
+        (m.acs_income_zones, m.acs_zero_car_zones, m.area_zones),
+        (Some(2), Some(2), Some(3))
+    );
+
     // Flows: two blocks in 006031 -> 011001 merge into one block-group flow.
     // scenario.json is sim-core's ScenarioInput; it must load and validate.
     let text = std::fs::read_to_string(out.join("scenario.json")).unwrap();
     let sc = sim_core::ScenarioInput::from_json(&text).unwrap();
     sc.validate().unwrap();
+    assert!(
+        (sc.zones[1].median_income - 90_000.0).abs() < 1e-6,
+        "ACS reaches scenario.json"
+    );
+    assert_eq!(sc.zones[0].area_km2, Some(1.2));
     let named: Vec<(&str, &str, u32)> = sc
         .commutes
         .iter()

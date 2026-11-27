@@ -43,6 +43,7 @@ Collected 2026-11-27 from the pages linked in the CSV.
 | — | Transit sales tax 1% (CapMetro, DART, METRO); about $20,600 taxable sales per resident per year in the CapMetro service area (2023, derived from NTD); federal plus state operating assistance 14.3% of CapMetro operating funds, no state money | New. These feed sim-core's local tax base and grant model (F26). The per-capita figure assumes all non-fare directly generated funds are sales tax |
 | — | MetroRail averaged 1,500 weekday trips in every quarter of 2023 (APTA); weekday peak headway about 32 min, midday about 51 min, service 5:41 AM to 8:45 PM (current schedule) | New. The F19 calibration target for sim-core's Red Line replica: compare weekday output to 1,500, not annual trips divided by a guessed day count |
 | — | Long tax-exempt revenue bond yield 5.43% (Bond Buyer Revenue Bond Index, Oct 29 2026; 2026 range 4.92–5.47%); term 30 years, with Austin Transit Partnership authorized up to 40 | New. Feeds sim-core bonds (F26) |
+| — | Additional bonds test: new parity sales-tax bonds need pledged revenue ≥ 2.0× maximum annual debt service (Houston METRO, KBRA 2023; DART also 2× per Fitch 2016, unverified) | New. Feeds sim-core bond capacity (`bond_coverage_min`) |
 | — | CapMetro MetroRail 477,322 annual trips (2023); Austin light rail forecast 18,700 weekday trips at opening | New. These are the M1 calibration targets |
 
 ## Still open

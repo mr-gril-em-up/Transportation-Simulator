@@ -51,7 +51,7 @@ tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--mar
 | `--raw` | `data/raw` | Directory holding the files `scripts/fetch.sh` downloads |
 | `--out` | `data/out/travis` | Where output files are written (created if missing) |
 | `--area` | `48453` | Comma-separated GEOID prefixes. `48453` = Travis County, `48453,48491` = Travis + Williamson, `48` = Texas |
-| `--year` | `2023` | LODES data year (must match the downloaded file names) |
+| `--year` | `2023` | LODES data year, and the end year of the ACS 5-year estimates (must match the downloaded file names) |
 | `--margin` | `0.05` | Degrees of padding around the zones' bounding box when clipping OSM (about 5 km) |
 
 The build prints `manifest.json` to stdout and the elapsed time to stderr.
@@ -61,7 +61,7 @@ The build prints `manifest.json` to stdout and the elapsed time to stderr.
 | File | Consumer | Contents |
 |---|---|---|
 | `scenario.json` | sim-core | `sim_core::ScenarioInput`: zones, road nodes, road links, commutes. Validated with `ScenarioInput::validate()` before it is written. |
-| `zones.json` | app map, debugging | Per-zone detail sim-core does not need: GEOID, resident workers, in/out commuters |
+| `zones.json` | app map, debugging | Per-zone detail: GEOID, resident workers, in/out commuters, and the ACS/TIGER values written to the scenario |
 | `roads.json` | app map | Road graph with OSM class, street name and drawing geometry (`shape`) |
 | `transit.json` | calibration, "keep existing transit" toggle | Existing OSM transit routes with ordered, named stops |
 | `manifest.json` | humans, CI | Counts, totals, bounding box, and the top 20 commute flows (the M0 exit check) |
@@ -72,7 +72,8 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 
 - **Rust, not Python** (D14): builds `sim_core::ScenarioInput` directly, so a schema change breaks this compile instead of the game at load time.
 - **Block-group zones from Centers of Population** (D13): one small CSV gives population and a population-weighted centroid, with no geometry library.
-- **Routing simplification** (DATA-2): `scenario.json` drops road fragments, prunes dead ends without a zone and merges identical pass-through links. Paths between zones are unchanged; on Travis it cuts road nodes 44% and sim-core's baseline from 12.0 s to 6.8 s. `roads.json` keeps full detail for drawing.
+- **Routing simplification** (DATA-2): `scenario.json` drops road fragments, prunes dead ends without a zone and merges identical pass-through links. Paths between zones are unchanged; on Travis it cuts road nodes 44%. `roads.json` keeps full detail for drawing.
+- **ACS income and zero-car share at block-group level** (DATA-4): B19013 and B25044 from the ACS table-based summary files (no API key); suppressed estimates take the tract, then county, household-weighted mean. Land area from TIGER `ALAND`. Both inputs are optional.
 - **Zone connectors** (D19) go to the nearest local-road node (never motorway or trunk) in the largest connected component, so access is not free and clipping fragments cannot strand a zone.
 - **Lanes per direction in `scenario.json`**, because sim-core capacity is per direction; `roads.json` keeps OSM's total for drawing.
 - **No starting transit** in `scenario.json` (design doc "Starting map"); existing routes stay in `transit.json` for calibration.
@@ -96,6 +97,7 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 |---|---|
 | `src/main.rs` | CLI argument parsing, calls `build` |
 | `src/lib.rs` | `build()`: orchestrates the steps, writes files and the manifest |
+| `src/acs.rs` | Reads ACS summary-file tables (pipe-delimited) and TIGER `ALAND` (dBASE), fills zone income, zero-car share and area with tract/county fallback |
 | `src/census.rs` | Reads Centers of Population (zones) and LODES RAC/WAC/OD, aggregates blocks to block groups |
 | `src/osm.rs` | Two-pass OSM PBF reader: road graph and transit routes, clipped to a bbox |
 | `src/scenario.rs` | Converts the layers to `sim_core::ScenarioInput`, picks each zone's road node |
@@ -110,7 +112,6 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 
 ## Known gaps
 
-- ACS fields (`zero_car_share`, `median_income`) use sim-core defaults: planned with F04/F31.
 - No block-group polygons (TIGER): planned F31.
 - No synthetic population: F04. No non-work trips: F13.
 - No GTFS schedules for the Red Line replica: F19.
@@ -123,4 +124,5 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 
 - F02 done (#3). F03 done (#3).
 - Real-data Travis build: published as release `data-48453-2023` by the Actions workflow; checks in [docs/TESTING.md](docs/TESTING.md).
-- F04, F31, F32, F33 not started.
+- F31 partial: statewide `--area 48` builds and publishes (release `data-48-2023`); ACS income and zero-car share plus TIGER land area added. Tract and county zone levels and polygons are next.
+- F04, F32, F33 not started.

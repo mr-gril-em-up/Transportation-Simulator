@@ -86,6 +86,9 @@ pub fn read_zones<R: Read>(mut r: R, area: &Area) -> Result<Vec<Zone>> {
             jobs: 0,
             commute_out: 0,
             commute_in: 0,
+            median_income: None,
+            zero_car_share: None,
+            area_km2: None,
         });
     }
     zones.sort_by(|a, b| a.geoid.cmp(&b.geoid));
