@@ -6,6 +6,9 @@ Status values: **Decided** (by Collins), **Approved** (proposed in the design do
 
 | # | Date | Decision | Why | Status | Source |
 |---|---|---|---|---|---|
+| D17 | 2026-11-27 | Repo made public with no licence; root `LICENSE` file states copyright and all rights reserved, and excludes ODbL OSM data. Holder name pending (Collins); added in a follow-up PR | Public visibility is not permission to reuse; an explicit notice removes doubt | Decided | Collins |
+| D16 | 2026-11-27 | The repo stays closed: `UNLICENSED`, all rights reserved. All crates inherit the workspace licence | Not open source for now; revisit before any public release | Decided | Collins |
+| D15 | 2026-11-27 | The Texas MVP is a sandbox: no region unlocks, no scenario win conditions. Both move to post-MVP. Onboarding (F45) stays as a guided session without a win condition | Keeps MVP scope on the core question (is building against real statewide demand fun?) | Decided | Collins |
 | D14 | 2026-11-27 | Data pipeline written in Rust, not Python | One toolchain (`cargo` only); builds `sim_core::ScenarioInput` so a schema change breaks the pipeline's compile, not the game at load; streams the statewide OSM extract fast; few dependencies, no GDAL. Cost: ad-hoc analysis is easier in Python | As built | [pipeline architecture](../crates/data-pipeline/docs/ARCHITECTURE.md) |
 | D13 | 2026-11-27 | Pipeline zones are 2020 block groups (12-digit GEOID); LODES 8 blocks roll up by their first 12 digits | LODES 8 uses 2020 blocks, so no crosswalk is needed | As built | [data-pipeline README](../crates/data-pipeline/README.md) |
 | D12 | 2026-11-27 | sim-core owns the input schema (`ScenarioInput`); the pipeline conforms to it | One source of truth for the contract between build time and run time | As built | [sim-core README](../crates/sim-core/README.md) |
