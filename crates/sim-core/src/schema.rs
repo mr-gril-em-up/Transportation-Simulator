@@ -1,0 +1,153 @@
+//! Input data schema. This is the contract between `data-pipeline` (producer)
+//! and `sim-core` (consumer). Plain serde types, JSON on disk.
+//!
+//! Conventions:
+//! - Coordinates are WGS84 `lon`, `lat` in degrees.
+//! - Ids are `u32`, unique within their list. They do not need to be dense.
+//! - Money is US dollars (2024), time is minutes unless a field says otherwise.
+//! - Optional fields have defaults; the pipeline may omit them.
+
+use serde::{Deserialize, Serialize};
+
+/// Everything the simulation needs for one region (a county for M0/M1).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ScenarioInput {
+    pub zones: Vec<Zone>,
+    pub road_nodes: Vec<RoadNode>,
+    pub road_links: Vec<RoadLink>,
+    /// Home-zone to work-zone worker flows (LODES, aggregated to zones).
+    pub commutes: Vec<Commute>,
+    /// Transit lines present at start (empty by default: the player builds them).
+    #[serde(default)]
+    pub lines: Vec<TransitLine>,
+}
+
+/// A demand zone (census block group for M0/M1).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Zone {
+    pub id: u32,
+    /// Centroid (population-weighted if available).
+    pub lon: f64,
+    pub lat: f64,
+    /// Residents.
+    pub population: f64,
+    /// Jobs located in the zone (LODES WAC total).
+    pub jobs: f64,
+    /// Road node the zone's trips load onto (nearest drivable node to the centroid).
+    pub road_node: u32,
+    /// Share of households with no vehicle (ACS B08201). Default 0.06.
+    #[serde(default = "default_zero_car_share")]
+    pub zero_car_share: f64,
+    /// Median household income in dollars (ACS B19013). Default 70,000.
+    #[serde(default = "default_income")]
+    pub median_income: f64,
+    /// Daily parking cost at this zone as a destination. Default 0.
+    #[serde(default)]
+    pub parking_cost: f64,
+    /// Land area in km². If omitted, estimated from spacing to the nearest zone.
+    #[serde(default)]
+    pub area_km2: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoadNode {
+    pub id: u32,
+    pub lon: f64,
+    pub lat: f64,
+}
+
+/// A drivable road segment between two nodes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoadLink {
+    pub from: u32,
+    pub to: u32,
+    pub length_m: f64,
+    /// Free-flow speed.
+    pub speed_kph: f64,
+    /// Lanes per direction. Default 1.
+    #[serde(default = "default_lanes")]
+    pub lanes: u8,
+    /// Capacity per direction, vehicles/hour. If omitted, derived from speed and lanes.
+    #[serde(default)]
+    pub capacity_vph: Option<f64>,
+    /// Toll per traversal, dollars. Default 0.
+    #[serde(default)]
+    pub toll: f64,
+    /// If false (default) the link is usable in both directions.
+    #[serde(default)]
+    pub oneway: bool,
+}
+
+/// Workers living in `home` and working in `work` (zone ids).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Commute {
+    pub home: u32,
+    pub work: u32,
+    pub workers: f64,
+}
+
+/// Transit technologies. Every mode shares one model (stops, headway, speed,
+/// fare); defaults per mode live in `params::ModeDefaults`.
+/// Hyperloop is intentionally not a mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    Bus,
+    Trolleybus,
+    Brt,
+    Tram,
+    LightRail,
+    CommuterRail,
+    Metro,
+    HighSpeedRail,
+    Monorail,
+    PeopleMover,
+    Gondola,
+    Maglev,
+    Ferry,
+}
+
+/// A two-way transit line drawn by the player (or present at start).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransitLine {
+    #[serde(default)]
+    pub name: String,
+    pub mode: Mode,
+    /// Stops in order. At least two.
+    pub stops: Vec<Stop>,
+    /// Minutes between vehicles in each direction.
+    pub headway_min: f64,
+    /// Flat fare per boarding. Default from mode.
+    #[serde(default)]
+    pub fare: Option<f64>,
+    /// Extra fare per km ridden (distance-based fares, e.g. HSR). Default from mode.
+    #[serde(default)]
+    pub fare_per_km: Option<f64>,
+    /// Running speed between stops, excluding dwell. Default from mode.
+    #[serde(default)]
+    pub speed_kph: Option<f64>,
+    /// Hours of service per day. Default from mode.
+    #[serde(default)]
+    pub span_hours: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Stop {
+    pub lon: f64,
+    pub lat: f64,
+    #[serde(default)]
+    pub name: String,
+    /// Has a park-and-ride lot (enables drive-to-transit access).
+    #[serde(default)]
+    pub park_ride: bool,
+}
+
+fn default_zero_car_share() -> f64 {
+    0.06
+}
+fn default_income() -> f64 {
+    70_000.0
+}
+fn default_lanes() -> u8 {
+    1
+}

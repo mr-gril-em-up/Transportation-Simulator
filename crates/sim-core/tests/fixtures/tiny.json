@@ -1,0 +1,26 @@
+{
+  "zones": [
+    {"id": 1, "lon": -97.750, "lat": 30.270, "population": 2000, "jobs": 6000, "road_node": 10, "parking_cost": 12},
+    {"id": 2, "lon": -97.700, "lat": 30.300, "population": 3000, "jobs": 500, "road_node": 20, "zero_car_share": 0.12, "median_income": 52000},
+    {"id": 3, "lon": -97.680, "lat": 30.400, "population": 4000, "jobs": 3000, "road_node": 30, "area_km2": 6.5}
+  ],
+  "road_nodes": [
+    {"id": 10, "lon": -97.750, "lat": 30.270},
+    {"id": 20, "lon": -97.700, "lat": 30.300},
+    {"id": 30, "lon": -97.680, "lat": 30.400}
+  ],
+  "road_links": [
+    {"from": 10, "to": 20, "length_m": 6200, "speed_kph": 60, "lanes": 2},
+    {"from": 20, "to": 30, "length_m": 11500, "speed_kph": 100, "lanes": 3, "toll": 1.5},
+    {"from": 10, "to": 30, "length_m": 17000, "speed_kph": 50, "capacity_vph": 900, "oneway": true}
+  ],
+  "commutes": [
+    {"home": 2, "work": 1, "workers": 900},
+    {"home": 3, "work": 1, "workers": 1200},
+    {"home": 3, "work": 3, "workers": 400}
+  ],
+  "lines": [
+    {"name": "Red", "mode": "commuter_rail", "headway_min": 30,
+     "stops": [{"lon": -97.745, "lat": 30.268, "name": "Downtown"}, {"lon": -97.682, "lat": 30.398, "park_ride": true}]}
+  ]
+}
