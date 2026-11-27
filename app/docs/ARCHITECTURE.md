@@ -144,8 +144,10 @@ sim-core routes bus, trolleybus and BRT segments on the road graph and
 returns `LineResult.segment_shapes` (also inside `LinePreview.line`). The
 app never routes: one router means the drawn path is the one that is
 charged and timed. `routePath(stops, shape)` in `src/geo.ts` joins the
-segments and falls back to a straight segment where a shape entry is empty
-or the shape count no longer matches the stops (stale during an edit).
+segments and falls back to a straight segment where a shape entry is empty,
+where its ends no longer sit on its two stops (sim-core starts and ends
+every segment on the stops, so a moved stop makes the touching segments
+stale), or for every segment when the shape count no longer matches.
 `busPath` in `main.ts` picks the shape: none while the line is being
 edited; the last build preview's shape (`drawnShape`) while the line is
 pending, because sim-core's result then describes the running version or
