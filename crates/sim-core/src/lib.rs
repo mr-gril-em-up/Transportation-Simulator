@@ -4,6 +4,7 @@
 #![warn(missing_docs)]
 
 pub mod clock;
+pub mod economy;
 mod geo;
 mod graph;
 pub mod model;
@@ -13,7 +14,10 @@ pub mod synth;
 mod transit;
 
 pub use clock::Clock;
-pub use model::{DesireLine, LineId, LineResult, LinkFlow, ModeSplit, Results, Sim, ZoneResult};
+pub use economy::{Ledger, MonthStatement};
+pub use model::{
+    DesireLine, LineId, LinePreview, LineResult, LinkFlow, ModeSplit, Results, Sim, ZoneResult,
+};
 pub use params::Params;
 pub use schema::*;
 use std::collections::HashSet;

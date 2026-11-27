@@ -3,6 +3,7 @@
 //! behind each simplification.
 
 use crate::clock::Clock;
+use crate::economy::{self, Ledger};
 use crate::geo::dist_km;
 use crate::graph::{RoadGraph, Tree};
 use crate::params::*;
@@ -251,6 +252,22 @@ pub struct Sim {
     transit_od: Vec<f64>,
     zone_trips: Vec<f64>,
     results: Results,
+    ledger: Ledger,
+    /// Capital already paid per line slot, so an extension pays only the difference.
+    capital_paid: Vec<f64>,
+}
+
+/// What a line would cost and carry, from `Sim::preview_line`. Nothing is charged.
+#[derive(Debug, Clone, Serialize)]
+pub struct LinePreview {
+    /// Ridership and operating economics as if the line were built today.
+    pub line: LineResult,
+    /// Capital cost: guideway per km plus vehicles (see `economy::capital_cost`).
+    pub capital_cost: f64,
+    /// Federal grant it would receive (0 if it fails the cost-per-rider gate).
+    pub federal_grant: f64,
+    /// Capital cost per forecast daily boarding, the grant gate's measure.
+    pub capital_per_daily_boarding: f64,
 }
 
 impl Sim {
@@ -348,11 +365,18 @@ impl Sim {
             transit_od: vec![0.0; nz * nz],
             zone_trips: vec![0.0; nz],
             results: Results::default(),
+            ledger: Ledger::new(0.0, 0),
+            capital_paid: vec![],
         };
+        sim.ledger = Ledger::new(sim.params.starting_cash, sim.clock.month());
         sim.car_free = sim.skim_car(&sim.link_time.clone());
         sim.hbo = sim.gravity_other();
         sim.rebuild_transit();
         sim.equilibrate();
+        // Lines present at start are already paid for.
+        sim.capital_paid = (0..sim.lines.len())
+            .map(|i| sim.line_capital(i as LineId).unwrap_or(0.0))
+            .collect();
         Ok(sim)
     }
 
@@ -386,8 +410,96 @@ impl Sim {
     pub fn add_line(&mut self, line: TransitLine) -> Result<LineId, SimError> {
         line.validate()?;
         self.lines.push(Some(line));
+        self.capital_paid.push(0.0);
         self.on_lines_changed();
-        Ok((self.lines.len() - 1) as LineId)
+        let id = (self.lines.len() - 1) as LineId;
+        self.charge_capital(id);
+        Ok(id)
+    }
+
+    /// Cost and ridership of `line` without building it: evaluates it as a new
+    /// line, then removes it again (two line edits, ~40-80 ms). The ledger and
+    /// line ids are unchanged.
+    pub fn preview_line(&mut self, line: TransitLine) -> Result<LinePreview, SimError> {
+        line.validate()?;
+        self.lines.push(Some(line));
+        self.on_lines_changed();
+        let id = (self.lines.len() - 1) as LineId;
+        let r = self.line_result(id).cloned();
+        let capital = self.line_capital(id);
+        self.lines.pop();
+        self.on_lines_changed();
+        let (line, capital_cost) = r
+            .zip(capital)
+            .ok_or_else(|| SimError("preview failed".into()))?;
+        let federal_grant = economy::federal_grant(
+            capital_cost,
+            capital_cost,
+            line.daily_boardings,
+            &self.params,
+        );
+        Ok(LinePreview {
+            capital_per_daily_boarding: capital_cost / line.daily_boardings.max(1e-9),
+            line,
+            capital_cost,
+            federal_grant,
+        })
+    }
+
+    /// The transit authority's books: cash, the month in progress, settled months.
+    pub fn ledger(&self) -> &Ledger {
+        &self.ledger
+    }
+
+    fn line_result(&self, id: LineId) -> Option<&LineResult> {
+        self.results.lines.iter().find(|l| l.id == id)
+    }
+
+    fn line_capital(&self, id: LineId) -> Option<f64> {
+        let l = self.line_result(id)?;
+        Some(economy::capital_cost(l, &mode_defaults(l.mode)))
+    }
+
+    /// Charge the capital a line costs beyond what was already paid for it,
+    /// less any federal grant. Shrinking a line refunds nothing.
+    fn charge_capital(&mut self, id: LineId) {
+        let Some(total) = self.line_capital(id) else {
+            return;
+        };
+        let paid = &mut self.capital_paid[id as usize];
+        let spend = (total - *paid).max(0.0);
+        *paid = paid.max(total);
+        let boardings = self.line_result(id).map_or(0.0, |l| l.daily_boardings);
+        let grant = economy::federal_grant(spend, total, boardings, &self.params);
+        self.ledger.charge_capital(spend, grant);
+    }
+
+    /// Residents of zones within walking range of any stop: the transit tax base.
+    fn served_population(&self) -> f64 {
+        self.input
+            .zones
+            .iter()
+            .zip(&self.net.coverage)
+            .filter(|(_, c)| **c > 0.0)
+            .map(|(z, _)| z.population)
+            .sum()
+    }
+
+    /// Close the month on the ledger once per month boundary crossed.
+    fn settle_months(&mut self) {
+        while self.ledger.current.month < self.clock.month() {
+            let served = self.served_population();
+            self.ledger
+                .settle(&self.results.lines, served, &self.params);
+        }
+    }
+
+    /// Jump the clock to the start of next month, re-run the day and settle the month.
+    pub fn skip_to_next_month(&mut self) -> u64 {
+        let days = self.clock.skip_to_next_month();
+        self.equilibrate_warm();
+        self.settle_months();
+        days
     }
 
     /// Replace line `id` in place (same id) and re-evaluate. Errors if the id is unknown or removed.
@@ -398,6 +510,7 @@ impl Sim {
             _ => return Err(SimError(format!("no line {id}"))),
         }
         self.on_lines_changed();
+        self.charge_capital(id);
         Ok(())
     }
 
@@ -419,6 +532,7 @@ impl Sim {
         let days = self.clock.advance(real_dt);
         if days > 0 {
             self.equilibrate_warm();
+            self.settle_months();
         }
         days
     }
