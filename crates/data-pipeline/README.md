@@ -1,20 +1,30 @@
 # data-pipeline
 
-Turns public Census and OpenStreetMap data into the input files Transpo-Sim's simulation core loads: demand zones, home-to-work commute flows, the drivable road graph, and existing transit routes.
+Turns public Census and OpenStreetMap data into the input files Transpo-Sim's simulation core loads: demand zones, home-to-work commute flows, the drivable road graph, and existing transit routes. Delivers roadmap features F02 and F03, and holds the sourced reference figures that F23/F25 (costs, fares) will use.
 
 Travis County (Austin) is the M0/M1 test bench. The same binary builds all of Texas with `--area 48`; nothing in the code is Travis-specific except the default argument.
 
-## Quick start
+## Run
 
 ```sh
 cd crates/data-pipeline
 ./scripts/fetch.sh                                   # ~800 MB of raw inputs into data/raw (gitignored)
 cargo run --release                                  # Travis County -> data/out/travis
 cargo run --release -- --area 48 --out data/out/texas  # all of Texas
-cargo test                                           # synthetic Travis sample, no network needed
 ```
 
 No network where you are? Open the repo's **Actions** tab, pick the **data-pipeline** workflow, click **Run workflow** (area `48453`, year `2023`). It downloads the data, builds, and attaches the output files to the run as a downloadable artifact.
+
+## Test
+
+```sh
+cargo test -p data-pipeline --locked
+cargo clippy -p data-pipeline --all-targets --locked -- -D warnings
+```
+
+Covers a full build on a synthetic Travis County sample in the real file formats (generated in the test, no network or downloads), CenPop parsing, OSM speed and distance helpers, and the reference-figures CSV. Details and the checklist for a real build: [docs/TESTING.md](docs/TESTING.md).
+
+## Interfaces
 
 ### CLI
 
@@ -32,7 +42,7 @@ tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--mar
 
 The build prints `manifest.json` to stdout and the elapsed time to stderr.
 
-## What it produces
+### Output files
 
 | File | Consumer | Contents |
 |---|---|---|
@@ -44,6 +54,16 @@ The build prints `manifest.json` to stdout and the elapsed time to stderr.
 
 Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, and road node `id` is its index in `roads.json` `nodes`. Full field reference: [docs/OUTPUT_FORMAT.md](docs/OUTPUT_FORMAT.md).
 
+## Design and rationale
+
+- **Rust, not Python** (D14): builds `sim_core::ScenarioInput` directly, so a schema change breaks this compile instead of the game at load time.
+- **Block-group zones from Centers of Population** (D13): one small CSV gives population and a population-weighted centroid, with no geometry library.
+- **Zone connectors** (D19) go to the nearest local-road node (never motorway or trunk) in the largest connected component, so access is not free and clipping fragments cannot strand a zone.
+- **Lanes per direction in `scenario.json`**, because sim-core capacity is per direction; `roads.json` keeps OSM's total for drawing.
+- **No starting transit** in `scenario.json` (design doc "Starting map"); existing routes stay in `transit.json` for calibration.
+
+Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every default and its source: [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md).
+
 ## Documentation
 
 | Doc | Read it for |
@@ -53,6 +73,7 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 | [docs/OUTPUT_FORMAT.md](docs/OUTPUT_FORMAT.md) | Every output file and field, units, id rules, how it maps to sim-core's schema |
 | [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md) | Every default and simplification in the code, with the reason and the fix path |
 | [docs/TESTING.md](docs/TESTING.md) | What the tests cover, the synthetic fixture, and how to check a real build |
+| [docs/REFERENCE_FIGURES.md](docs/REFERENCE_FIGURES.md) | Sourced costs, fares, operating costs, ridership and zone counts that replace the design doc's placeholders ([`reference/figures.csv`](reference/figures.csv)) |
 
 ## Code map
 
@@ -66,11 +87,23 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 | `src/model.rs` | Serde types for the detail files (`zones.json`, `roads.json`, `transit.json`) |
 | `scripts/fetch.sh` | Downloads the raw inputs |
 | `tests/sample.rs` | End-to-end build on a synthetic Travis sample |
+| `tests/reference.rs` | Checks `reference/figures.csv` is well formed and cited |
+| `reference/figures.csv` | Sourced reference figures with citations |
 | `tests/support/pbf.rs` | Tiny OSM PBF writer so the OSM fixture is code, not a binary file |
 | `../../.github/workflows/data-pipeline.yml` | PR tests + manual real-data build |
 
+## Known gaps
+
+- ACS fields (`zero_car_share`, `median_income`) use sim-core defaults: planned with F04/F31.
+- No block-group polygons (TIGER): planned F31.
+- No synthetic population: F04. No non-work trips: F13.
+- No GTFS schedules for the Red Line replica: F19.
+- Out-of-state commuters (LODES `od_aux`) not loaded.
+- JSON output will be large statewide; binary package is F33.
+- Reference figures still missing: dollar value of travel time, toll per mile, DART local fare, Texas road costs, 2024-USD normalization ([docs/REFERENCE_FIGURES.md](docs/REFERENCE_FIGURES.md)).
+
 ## Status
 
-Done (M0 scope): zones, population, workers, jobs, block-group commute flows, road graph, existing transit routes, sim-core scenario output.
-
-Not yet: block-group polygons (TIGER), ACS fields (`zero_car_share`, `median_income` use sim-core defaults today), synthetic population (PUMS), non-work trips, GTFS schedules, out-of-state commuters, binary output for statewide size. See [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md) for the full list and planned order.
+- F02 done (#3). F03 done (#3).
+- Real-data Travis build: run through the Actions workflow; see [docs/TESTING.md](docs/TESTING.md) for the checks.
+- F04, F31, F32, F33 not started.

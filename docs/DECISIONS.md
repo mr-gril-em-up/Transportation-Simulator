@@ -6,6 +6,8 @@ Status values: **Decided** (by Collins), **Approved** (proposed in the design do
 
 | # | Date | Decision | Why | Status | Source |
 |---|---|---|---|---|---|
+| D19 | 2026-11-27 | Zones connect to the nearest motorway/trunk-free road node in the largest connected component | Freeway connectors make access free; clipping fragments would leave a zone with no paths while still passing `validate()` | As built | [pipeline ARCHITECTURE step 6](../crates/data-pipeline/docs/ARCHITECTURE.md) |
+| D18 | 2026-11-27 | Balance and calibration figures live in `crates/data-pipeline/reference/figures.csv`, one row per figure with source URL, dollar year and status (verified, derived, unverified) | Replaces the design doc's from-memory numbers with traceable ones; a test keeps every row cited | As built | [REFERENCE_FIGURES](../crates/data-pipeline/docs/REFERENCE_FIGURES.md) |
 | D17 | 2026-11-27 | Repo made public with no licence; root `LICENSE` file states copyright and all rights reserved, and excludes ODbL OSM data. Holder name pending (Collins); added in a follow-up PR | Public visibility is not permission to reuse; an explicit notice removes doubt | Decided | Collins |
 | D16 | 2026-11-27 | The repo stays closed: `UNLICENSED`, all rights reserved. All crates inherit the workspace licence | Not open source for now; revisit before any public release | Decided | Collins |
 | D15 | 2026-11-27 | The Texas MVP is a sandbox: no region unlocks, no scenario win conditions. Both move to post-MVP. Onboarding (F45) stays as a guided session without a win condition | Keeps MVP scope on the core question (is building against real statewide demand fun?) | Decided | Collins |

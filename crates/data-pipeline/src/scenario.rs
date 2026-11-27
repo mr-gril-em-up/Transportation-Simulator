@@ -25,13 +25,49 @@ fn lanes_per_direction(e: &RoadEdge) -> u8 {
 
 const CELL_DEG: f64 = 0.01; // about 1 km
 
-/// Nearest access-class node to each point, by grid search. Falls back to the
-/// nearest node of any class if no access node exists (tiny test graphs).
+/// Marks nodes in the largest weakly connected component. Clipping at the
+/// study-area margin leaves small road fragments; a zone loaded onto one
+/// would validate but have no paths to anywhere.
+pub fn largest_component(roads: &Roads) -> Vec<bool> {
+    let mut parent: Vec<u32> = (0..roads.nodes.len() as u32).collect();
+    fn find(p: &mut [u32], mut x: u32) -> u32 {
+        while p[x as usize] != x {
+            p[x as usize] = p[p[x as usize] as usize];
+            x = p[x as usize];
+        }
+        x
+    }
+    for e in &roads.edges {
+        let (a, b) = (find(&mut parent, e.from), find(&mut parent, e.to));
+        if a != b {
+            parent[a as usize] = b;
+        }
+    }
+    let roots: Vec<u32> = (0..parent.len() as u32)
+        .map(|i| find(&mut parent, i))
+        .collect();
+    let mut size: HashMap<u32, usize> = HashMap::new();
+    for &r in &roots {
+        *size.entry(r).or_default() += 1;
+    }
+    let Some((&big, _)) = size
+        .iter()
+        .max_by_key(|(r, n)| (**n, std::cmp::Reverse(**r)))
+    else {
+        return vec![];
+    };
+    roots.iter().map(|&r| r == big).collect()
+}
+
+/// Nearest access-class node in the largest connected component to each
+/// point, by grid search. Falls back to any node of that component if it has
+/// no access-class node (tiny test graphs).
 pub fn nearest_nodes(roads: &Roads, points: &[(f64, f64)]) -> Vec<Option<u32>> {
+    let main = largest_component(roads);
     let mut access = vec![false; roads.nodes.len()];
     for e in roads.edges.iter().filter(|e| is_access_class(&e.class)) {
-        access[e.from as usize] = true;
-        access[e.to as usize] = true;
+        access[e.from as usize] = main[e.from as usize];
+        access[e.to as usize] = main[e.to as usize];
     }
     let any_access = access.iter().any(|&a| a);
     let cell = |lon: f64, lat: f64| {
@@ -42,7 +78,7 @@ pub fn nearest_nodes(roads: &Roads, points: &[(f64, f64)]) -> Vec<Option<u32>> {
     };
     let mut grid: HashMap<(i32, i32), Vec<u32>> = HashMap::new();
     for (i, n) in roads.nodes.iter().enumerate() {
-        if access[i] || !any_access {
+        if access[i] || (!any_access && main[i]) {
             grid.entry(cell(n[0], n[1])).or_default().push(i as u32);
         }
     }
