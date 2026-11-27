@@ -287,6 +287,8 @@ pub struct Tree {
     settled: Vec<bool>,
     is_target: Vec<bool>,
     n_targets: usize,
+    /// Stop expanding past this cost (F34 strategic cutoff); infinite by default.
+    pub bound: f64,
 }
 
 impl Tree {
@@ -304,10 +306,12 @@ impl Tree {
             settled: vec![false; n],
             is_target,
             n_targets,
+            bound: f64::INFINITY,
         }
     }
 
-    /// Dijkstra from `src` on edge costs `times`. Stops once every target is settled.
+    /// Dijkstra from `src` on edge costs `times`. Stops once every target is
+    /// settled or the next node is costlier than `bound`.
     pub fn run(&mut self, g: &RoadGraph, times: &[f64], src: u32) {
         self.dist.fill(f64::INFINITY);
         self.pred.fill(NONE);
@@ -322,6 +326,11 @@ impl Tree {
             if self.settled[v] {
                 continue;
             }
+            // Use the exact f64 distance, not the f32 key, so costs do not drift.
+            let cost = self.dist[v];
+            if cost > self.bound {
+                break;
+            }
             self.settled[v] = true;
             self.order.push(v as u32);
             if self.is_target[v] {
@@ -330,8 +339,6 @@ impl Tree {
                     break;
                 }
             }
-            // Use the exact f64 distance, not the f32 key, so costs do not drift.
-            let cost = self.dist[v];
             let (lo, hi) = (g.offsets[v] as usize, g.offsets[v + 1] as usize);
             for ((ei, &to), &t) in (lo..hi).zip(&g.to[lo..hi]).zip(&times[lo..hi]) {
                 let to = to as usize;
@@ -343,6 +350,11 @@ impl Tree {
                 }
             }
         }
+    }
+
+    /// True if `v` was settled (its `dist` is final). Nodes past `bound` are not.
+    pub fn reached(&self, v: usize) -> bool {
+        self.settled[v]
     }
 
     /// Distance and toll along the tree to every settled node.

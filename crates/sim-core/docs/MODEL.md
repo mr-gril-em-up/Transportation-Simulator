@@ -106,9 +106,21 @@ minutes) in M3. The profile is already in place to feed it.
 Free-flow time = length / speed. Capacity per direction from the input, else
 lanes x per-lane capacity by speed: 1,900 veh/h at 80+ km/h (freeway), 900 at
 55+ (arterial), 600 below (local). Car skims (time, distance, tolls between
-every pair of zones) come from one Dijkstra tree per origin zone, stopped as
-soon as every zone's road node is reached. Same-zone or same-node trips use
+every kept pair of zones) come from one Dijkstra tree per origin zone, stopped as
+soon as every zone's road node is reached or, with a strategic cutoff, past
+it (below). Same-zone or same-node trips use
 the intrazonal distance x `detour_factor [1.3]` at 25 km/h.
+
+**Strategic cutoff (F34, SIM-13).** With `strategic_max_min` set (default
+none), the model keeps only zone pairs within that many free-flow car minutes
+of each other, in either direction; every per-pair skim, demand and flow
+exists only for those. The free-flow tree stops at the cutoff and congested
+trees at 3x it, so a kept pair whose congested time triples loses its car
+option. LODES commutes between pairs beyond the cutoff are not assigned and
+are reported as `beyond_cutoff_trips` (both directions); they still count
+against the home zone's non-work trip budget. Non-work trips are distributed
+by the gravity model over the kept destinations only. With a cutoff that
+covers every pair the results equal the dense model's (tested).
 
 **Transit graph.** One platform per (line, stop). Edges:
 - Ride: between consecutive stops in both directions. Time = segment km /
@@ -608,11 +620,12 @@ In rough priority for M1 tuning:
    CapMetro network that is 5,539 bus revenue hours a day, 2.0M a year,
    against NTD 2023's 1.31M, so operating cost ($387M a year) runs ~40% above
    CapMetro's ~$270M fixed-route cost. Weekend service levels would fix it.
-7. Statewide scale: Z x Z matrices are ~8 bytes per pair per matrix, fine for
-   700 zones, not for 6,900 tracts (M3 needs sparse or blocked storage and a
-   contracted highway graph).
-7. Park-and-ride car trips are not added to road volumes.
-8. Capital cost has no terrain or right-of-way multipliers; construction time
+7. With a strategic cutoff (SIM-13) commutes beyond it are dropped from this
+   tier and only counted; intercity travel needs its own model (F37). Non-work
+   trips are redistributed among the kept destinations, so they get slightly
+   shorter, not fewer.
+8. Park-and-ride car trips are not added to road volumes.
+9. Capital cost has no terrain or right-of-way multipliers; construction time
    ignores length and roads under works keep full capacity; bankruptcy only
    blocks new bonds (its consequence is a pending design call); bonds cannot
    be refinanced (F23, F24, F26). There is no state appropriation because Texas gives big-city transit

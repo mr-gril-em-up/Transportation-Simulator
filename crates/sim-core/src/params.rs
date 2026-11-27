@@ -74,6 +74,13 @@ pub struct Params {
     /// Minutes to park and walk to the platform.
     pub pnr_park_min: f64,
 
+    /// Strategic-tier cutoff (F34): keep only zone pairs within this many
+    /// free-flow car minutes. `None` keeps every pair (the dense model, used
+    /// for a county). Commutes beyond the cutoff are not modeled here and are
+    /// counted in `Results::beyond_cutoff_trips` (intercity travel is F37).
+    #[serde(default)]
+    pub strategic_max_min: Option<f64>,
+
     /// Share of workers commuting on a given day (absence + work from home).
     pub commute_presence: f64,
     /// Total person trips per resident per day, all purposes (2022 NHTS: 2.28).
@@ -185,6 +192,7 @@ impl Default for Params {
             transfer_walk_km: 0.4,
             pnr_max_drive_min: 25.0,
             pnr_park_min: 3.0,
+            strategic_max_min: None,
             commute_presence: 0.8,
             trips_per_person: 2.28,
             gravity_decay_per_min: 0.08,

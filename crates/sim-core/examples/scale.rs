@@ -1,5 +1,6 @@
 //! F34 groundwork: how `Sim::new` (one full equilibrium day) scales with zone
-//! count on a synthetic region. `cargo run --release -p sim-core --example scale -- 26 40 50`
+//! count on a synthetic region. `cargo run --release -p sim-core --example scale -- 26 40 56`
+//! Set `CUTOFF=<minutes>` to run with `Params::strategic_max_min`.
 use sim_core::synth::{generate, SynthConfig};
 use sim_core::{Params, Sim};
 use std::time::Instant;
@@ -20,7 +21,11 @@ fn main() {
         let input = generate(&cfg);
         let nodes = input.road_nodes.len();
         let t = Instant::now();
-        let sim = Sim::new(input, Params::default()).unwrap();
+        let params = Params {
+            strategic_max_min: std::env::var("CUTOFF").ok().and_then(|c| c.parse().ok()),
+            ..Params::default()
+        };
+        let sim = Sim::new(input, params).unwrap();
         let secs = t.elapsed().as_secs_f64();
         let rss = std::fs::read_to_string("/proc/self/status")
             .ok()
@@ -31,9 +36,10 @@ fn main() {
             })
             .unwrap_or(0.0);
         println!(
-            "zones {} nodes {nodes}: day {secs:.1} s, peak RSS {rss:.2} GB, trips {:.0}",
+            "zones {} nodes {nodes}: day {secs:.1} s, peak RSS {rss:.2} GB, trips {:.0}, beyond cutoff {:.0}",
             side * side,
-            sim.results().daily_trips.total()
+            sim.results().daily_trips.total(),
+            sim.results().beyond_cutoff_trips
         );
     }
 }

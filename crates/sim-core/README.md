@@ -115,6 +115,7 @@ let days_crossed = sim.tick(real_dt_seconds);
 | `daily_trips`, `work_trips`, `other_trips` | Person trips per day by choice (`ModeSplit`: drive, carpool, transit_walk, transit_drive, walk, bike) |
 | `mode_share` | `daily_trips` as shares |
 | `unserved_trips` | Trips with no available option (no car, no transit, too far to walk) |
+| `beyond_cutoff_trips` | Daily work trips between zones beyond `Params::strategic_max_min`, counted but not modeled (0 without a cutoff, SIM-13) |
 | `lines: Vec<LineResult>` | One per active line, in id order |
 | `peak_vehicle_km`, `peak_avg_speed_kph` | Road network health in the AM peak hour |
 | `work_peak_hour_share` | Share of commutes arriving in the busiest hour |
@@ -239,8 +240,10 @@ densely so Dijkstra's arrays shrink with the graph.
 Scaling with zone count (`cargo run --release -p sim-core --example scale --
 26 40 56`): 676 zones 0.5 s / 0.15 GB, 1,600 zones 2.6 s / 0.83 GB, 3,136
 zones 11.0 s / 3.1 GB per cold day. Dense zone-pair storage extrapolates to
-~60 s and ~15 GB at Texas's 6,900 tracts; the F34 plan is in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
+~60 s and ~15 GB at Texas's 6,900 tracts. With `Params::strategic_max_min`
+(SIM-13) only pairs within that free-flow car time are kept: `CUTOFF=30` runs
+3,136 zones in 3.5 s / 0.52 GB and 6,889 zones in 9.1 s / 1.05 GB. Plan and
+numbers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
 
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See

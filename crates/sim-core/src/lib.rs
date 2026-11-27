@@ -8,6 +8,7 @@ pub mod economy;
 mod geo;
 mod graph;
 pub mod model;
+mod pairs;
 pub mod params;
 mod roads;
 pub mod schema;

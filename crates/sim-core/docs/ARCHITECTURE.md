@@ -15,6 +15,7 @@ math is in [MODEL.md](MODEL.md); the API and schema are in the
 | `graph.rs` | Road graph (CSR), Dijkstra tree, distance/toll along the tree, all-or-nothing loading | params, schema |
 | `transit.rs` | Transit platforms and edges, stop coverage, path search (`Searcher`), passenger loading (`LineLoads`) | geo, params, schema, roads (`Route`) |
 | `roads.rs` | Road routing for bus, trolleybus and BRT: snap stops to the contracted graph, A* by distance, route cache, street shapes (SIM-8) | geo, graph, schema |
+| `pairs.rs` | `Pairs`: the kept zone pairs in compressed rows, with reverse-pair index (F34, SIM-13) | none |
 | `model.rs` | `Sim`: demand, skims, mode choice, feedback loop, results | everything above |
 | `clock.rs` | The one game clock | none |
 | `economy.rs` | Capital cost, federal grant gate, `Bond` amortization, `Ledger` with monthly settlement and the bankruptcy rule | model (`LineResult`), params |
@@ -27,18 +28,26 @@ search per origin, return per-destination components.
 
 ## Data held by `Sim`
 
-All zone-pair data is dense row-major `Z x Z` (`index = i * Z + j`).
+All zone-pair data is indexed by **pair** (`Pairs`, SIM-13): origin `i` owns
+pairs `pairs.row(i)`, pair `k` goes to zone `pairs.dest[k]`, and
+`pairs.rev[k]` is the reverse pair. Without `Params::strategic_max_min` every
+pair is kept, in row-major order, so pair `k = i * Z + j` and the model is
+the dense one. With a cutoff, only pairs within that many free-flow car
+minutes (both directions, intrazonal always) are kept. Per-origin rows
+(`Row`, `OriginOut`, `RowInputs`) are row-aligned: entry `q` is pair
+`row(i).start + q`. The transit search still sees dense per-origin car rows
+(`dense_row`), since park-and-ride legs need car times to any zone.
 
 | Field | Shape | Built | Rebuilt when |
 |---|---|---|---|
 | `graph` | CSR road graph | `new` | never (roads are fixed until road building lands) |
 | `zpts`, `intra_km`, `vot_min` | per zone | `new` | never |
-| `hbw` | Z x Z daily work trips | `new` | never |
-| `hbo` | Z x Z daily other trips | `new` (free-flow car times) | never |
-| `car_free` | Z x Z skim | `new` | never |
+| `hbw` | per pair: daily work trips | `new` | never |
+| `hbo` | per pair: daily other trips | `new` (free-flow car times) | never |
+| `car_free` | per-pair skim | `new` | never |
 | `car_peak`, `link_time`, `link_vol` | skim / per edge | `equilibrate` | each game day (`equilibrate_warm`) |
 | `net` (TransitNet) | platforms, edges, coverage | `new` | every line edit |
-| `tsk_walk`, `tsk_drive` | Z x Z transit components | every line edit and `equilibrate` | |
+| `tsk_walk`, `tsk_drive` | per-pair transit components | every line edit and `equilibrate` | |
 | `results`, `transit_od`, `zone_trips` | | every state change | |
 | `ledger`, `capital_paid` | books; capital paid per line slot | `new` | capital on `add_line`/`update_line`; settlement at month boundaries |
 | `lines`, `pending` | per line slot: version in service; version under construction and its opening day | `new` | line edits; `tick` moves finished `pending` into `lines` |
@@ -176,9 +185,25 @@ memory fail, so the strategic tier changes storage, not the model:
    plus zone connectors (pipeline), contracted at load as today (SIM-2).
 
 Order: (A) sparse OD and bounded trees behind the same `Sim` API, with a test
-that Travis results match the dense model when the cutoff covers every pair;
+that results match the dense model when the cutoff covers every pair;
 (B) transit rows only where transit reaches; (C) the statewide tract build
 and a CI bench against the 20 s target. The API does not change.
+
+**(A) is built (SIM-13).** `Params::strategic_max_min` (None by default, so
+Travis runs dense and unchanged) keeps pairs within that free-flow car time.
+Free-flow trees stop at the cutoff, congested trees at 3x it. Commutes
+beyond it are counted in `Results::beyond_cutoff_trips` and still reduce
+their home zone's non-work trip budget, so trips are conserved. Measured with
+`CUTOFF=30 examples/scale.rs`:
+
+| Zones | Dense | 30-min cutoff |
+|---|---|---|
+| 676 | 0.5 s, 0.18 GB | 0.4 s, 0.10 GB |
+| 3,136 | 12.3 s, 3.25 GB | 3.5 s, 0.52 GB |
+| 6,889 | ~60 s, ~15 GB (extrapolated) | 9.1 s, 1.05 GB |
+
+The synthetic region is 166 km across at 6,889 zones and 28k road nodes;
+the real statewide graph is larger, so the 20 s check waits for (C).
 
 ## Testing
 

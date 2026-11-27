@@ -6,6 +6,7 @@ use crate::clock::Clock;
 use crate::economy::{self, Ledger};
 use crate::geo::dist_km;
 use crate::graph::{RoadGraph, Tree, NONE};
+use crate::pairs::Pairs;
 use crate::params::*;
 use crate::roads::Router;
 use crate::schema::*;
@@ -134,6 +135,10 @@ pub struct Results {
     pub mode_share: ModeSplit,
     /// Trips with no available option (no car, no transit, too far to walk).
     pub unserved_trips: f64,
+    /// Daily work trips between zones beyond `Params::strategic_max_min`, not
+    /// modeled by this tier (0 without a cutoff). Intercity travel is F37.
+    #[serde(default)]
+    pub beyond_cutoff_trips: f64,
     /// One entry per active line, in id order.
     pub lines: Vec<LineResult>,
     /// Peak-hour vehicle-km on the road network.
@@ -254,7 +259,12 @@ pub struct Sim {
     zpts: Vec<ZonePt>,
     intra_km: Vec<f64>,
     vot_min: Vec<f64>,
-    /// Daily home->work trips (AM direction), presence applied. Row-major Z x Z.
+    /// Kept zone pairs (all of them without a strategic cutoff). Every
+    /// per-pair vector below is indexed by pair (F34).
+    pairs: Pairs,
+    /// Daily work trips (both directions) beyond the cutoff, by home zone.
+    beyond_cutoff: Vec<f64>,
+    /// Daily home->work trips (AM direction), presence applied, per pair.
     hbw: Vec<f64>,
     /// Daily non-work trips, origin->destination.
     hbo: Vec<f64>,
@@ -374,12 +384,41 @@ impl Sim {
             })
             .collect();
 
-        let mut hbw = vec![0.0; nz * nz];
+        let link_time = graph.free_flow_times();
+        let pairs = match params.strategic_max_min {
+            None => Pairs::dense(nz),
+            Some(cut) => {
+                let rows = (0..nz)
+                    .into_par_iter()
+                    .map_init(
+                        || {
+                            let mut t = Tree::new(graph.n_nodes, &zone_node);
+                            t.bound = cut;
+                            t
+                        },
+                        |tree, i| {
+                            tree.run(&graph, &link_time, zone_node[i]);
+                            (0..nz)
+                                .filter(|&j| tree.reached(zone_node[j] as usize))
+                                .map(|j| j as u32)
+                                .collect::<Vec<u32>>()
+                        },
+                    )
+                    .collect();
+                Pairs::from_rows(rows)
+            }
+        };
+        let mut hbw = vec![0.0; pairs.len()];
+        let mut beyond_cutoff = vec![0.0; nz];
         for c in &input.commutes {
-            hbw[zindex[&c.home] * nz + zindex[&c.work]] += c.workers * params.commute_presence;
+            let w = c.workers * params.commute_presence;
+            let h = zindex[&c.home];
+            match pairs.find(h, zindex[&c.work]) {
+                Some(k) => hbw[k] += w,
+                None => beyond_cutoff[h] += 2.0 * w,
+            }
         }
 
-        let link_time = graph.free_flow_times();
         let n_edges = graph.edges.len();
         let mut sim = Sim {
             params,
@@ -389,6 +428,7 @@ impl Sim {
             zpts,
             intra_km,
             vot_min,
+            beyond_cutoff,
             hbw,
             hbo: Vec::new(),
             link_vol: vec![0.0; n_edges],
@@ -414,7 +454,8 @@ impl Sim {
             tsk_drive: vec![],
             tsk_walk_off: vec![],
             tsk_drive_off: vec![],
-            transit_od: vec![0.0; nz * nz],
+            transit_od: vec![0.0; pairs.len()],
+            pairs,
             zone_trips: vec![0.0; nz],
             results: Results::default(),
             ledger: Ledger::new(0.0, 0),
@@ -970,7 +1011,7 @@ impl Sim {
     pub fn zone_results(&self) -> Vec<ZoneResult> {
         (0..self.nz)
             .map(|i| {
-                let tr: f64 = self.transit_od[i * self.nz..(i + 1) * self.nz].iter().sum();
+                let tr: f64 = self.transit_od[self.pairs.row(i)].iter().sum();
                 ZoneResult {
                     zone: self.input.zones[i].id,
                     trips: self.zone_trips[i],
@@ -1015,11 +1056,14 @@ impl Sim {
 
     /// Top `n` zone pairs by daily trips (both directions, all modes, excluding intrazonal).
     pub fn desire_lines(&self, n: usize) -> Vec<DesireLine> {
-        let z = self.nz;
         let mut out = Vec::new();
-        for i in 0..z {
-            for j in (i + 1)..z {
-                let (a, b) = (i * z + j, j * z + i);
+        for i in 0..self.nz {
+            for a in self.pairs.row(i) {
+                let j = self.pairs.dest[a] as usize;
+                if j <= i {
+                    continue;
+                }
+                let b = self.pairs.rev[a];
                 let trips = 2.0 * (self.hbw[a] + self.hbw[b]) + self.hbo[a] + self.hbo[b];
                 if trips > 0.0 {
                     out.push(DesireLine {
@@ -1067,7 +1111,7 @@ impl Sim {
     /// Mode choice on current skims, transit loading, and results.
     fn finish(&mut self, t0: Instant, stale: bool, rows: Option<Vec<Row>>) {
         let rows = rows.unwrap_or_else(|| self.choose_all());
-        let z = self.nz;
+        let np = self.pairs.len();
         let wt_work = Self::flatten(&rows, |r| &r.wt_work);
         let dt_work = Self::flatten(&rows, |r| &r.dt_work);
         let wt_other = Self::flatten(&rows, |r| &r.wt_other);
@@ -1077,30 +1121,27 @@ impl Sim {
         // Work trips ride peak paths; other trips ride off-peak paths, which
         // differ only when some line has its own off-peak headway.
         let off = !self.net.is_empty() && self.net.offpeak_differs();
-        let mut d_walk = vec![0.0; z * z];
-        let mut d_drive = vec![0.0; z * z];
+        let mut d_walk = vec![0.0; np];
+        let mut d_drive = vec![0.0; np];
         let (mut o_walk, mut o_drive) = if off {
-            (vec![0.0; z * z], vec![0.0; z * z])
+            (vec![0.0; np], vec![0.0; np])
         } else {
             (vec![], vec![])
         };
-        for i in 0..z {
-            for j in 0..z {
-                let k = i * z + j;
-                d_walk[k] = wt_work[k] + wt_work[j * z + i];
-                d_drive[k] = 2.0 * dt_work[k];
-                if off {
-                    o_walk[k] = wt_other[k];
-                    o_drive[k] = dt_other[k];
-                } else {
-                    d_walk[k] += wt_other[k];
-                    d_drive[k] += dt_other[k];
-                }
+        for k in 0..np {
+            d_walk[k] = wt_work[k] + wt_work[self.pairs.rev[k]];
+            d_drive[k] = 2.0 * dt_work[k];
+            if off {
+                o_walk[k] = wt_other[k];
+                o_drive[k] = dt_other[k];
+            } else {
+                d_walk[k] += wt_other[k];
+                d_drive[k] += dt_other[k];
             }
         }
         self.pnr_cars = vec![0.0; self.net.platforms.len()];
         if !self.net.pnr.is_empty() {
-            for k in 0..z * z {
+            for k in 0..np {
                 let w = self.tsk_drive[k].pnr_plat;
                 if w != NONE && dt_work[k] > 0.0 {
                     self.pnr_cars[w as usize] += dt_work[k];
@@ -1121,7 +1162,7 @@ impl Sim {
         if off {
             loads = loads.merge(self.load_transit(&o_walk, &o_drive, true));
         }
-        for k in 0..z * z {
+        for k in 0..np {
             self.transit_od[k] = d_walk[k] + d_drive[k];
             if off {
                 self.transit_od[k] += o_walk[k] + o_drive[k];
@@ -1169,6 +1210,7 @@ impl Sim {
             other_trips: other,
             mode_share: daily.shares(),
             unserved_trips: unserved,
+            beyond_cutoff_trips: self.beyond_cutoff.iter().sum(),
             lines,
             peak_vehicle_km: vkm,
             peak_avg_speed_kph: if vhr > 0.0 { vkm / vhr } else { 0.0 },
@@ -1235,7 +1277,7 @@ impl Sim {
     }
 
     fn flatten(rows: &[Row], f: impl Fn(&Row) -> &Vec<f64>) -> Vec<f64> {
-        let mut out = Vec::with_capacity(rows.len() * rows.len());
+        let mut out = Vec::with_capacity(rows.iter().map(|r| f(r).len()).sum());
         for r in rows {
             out.extend_from_slice(f(r));
         }
@@ -1250,20 +1292,25 @@ impl Sim {
         dist_km(a.lon, a.lat, b.lon, b.lat)
     }
 
-    /// Car skims for every origin on `times` (used once, for free-flow times).
+    /// A shortest-path tree buffer, bounded at the strategic cutoff
+    /// (`slack` x cutoff, so congested times above it still reach their pairs).
+    fn tree(&self, slack: f64) -> Tree {
+        let mut t = Tree::new(self.graph.n_nodes, &self.zone_node);
+        if let Some(cut) = self.params.strategic_max_min {
+            t.bound = cut * slack;
+        }
+        t
+    }
+
+    /// Car skims for every kept pair on `times` (used once, for free-flow times).
     fn skim_car(&self, times: &[f64]) -> CarSkim {
         let z = self.nz;
+        let np = self.pairs.len();
         let g = &self.graph;
         let rows: Vec<(Vec<f32>, Vec<f32>, Vec<f32>)> = (0..z)
             .into_par_iter()
             .map_init(
-                || {
-                    (
-                        Tree::new(g.n_nodes, &self.zone_node),
-                        vec![0.0; g.n_nodes],
-                        vec![0.0; g.n_nodes],
-                    )
-                },
+                || (self.tree(1.0), vec![0.0; g.n_nodes], vec![0.0; g.n_nodes]),
                 |(tree, km, toll), i| {
                     tree.run(g, times, self.zone_node[i]);
                     tree.km_and_toll(g, km, toll);
@@ -1272,9 +1319,9 @@ impl Sim {
             )
             .collect();
         let mut s = CarSkim {
-            time: Vec::with_capacity(z * z),
-            km: Vec::with_capacity(z * z),
-            toll: Vec::with_capacity(z * z),
+            time: Vec::with_capacity(np),
+            km: Vec::with_capacity(np),
+            toll: Vec::with_capacity(np),
         };
         for (t, k, tl) in rows {
             s.time.extend(t);
@@ -1300,11 +1347,16 @@ impl Sim {
             .into_par_iter()
             .map(|i| {
                 // Total trips minus this zone's work trips (both directions).
-                let work: f64 = self.hbw[i * z..(i + 1) * z].iter().sum::<f64>() * 2.0;
+                // Work trips beyond the cutoff still count against the budget.
+                let work: f64 =
+                    self.hbw[self.pairs.row(i)].iter().sum::<f64>() * 2.0 + self.beyond_cutoff[i];
                 let prod = (zones[i].population * p.trips_per_person - work).max(0.0);
-                let mut w: Vec<f64> = (0..z)
-                    .map(|j| {
-                        let t = self.car_free.time[i * z + j] as f64;
+                let mut w: Vec<f64> = self
+                    .pairs
+                    .row(i)
+                    .map(|k| {
+                        let j = self.pairs.dest[k] as usize;
+                        let t = self.car_free.time[k] as f64;
                         let attr = zones[j].jobs + 0.5 * zones[j].population;
                         if t.is_finite() {
                             attr * (-p.gravity_decay_per_min * t).exp()
@@ -1328,21 +1380,22 @@ impl Sim {
         self.tsk_walk_off.clear();
         self.tsk_drive_off.clear();
         if self.net.is_empty() {
-            self.tsk_walk = vec![TOd::NONE; z * z];
-            self.tsk_drive = vec![TOd::NONE; z * z];
+            self.tsk_walk = vec![TOd::NONE; self.pairs.len()];
+            self.tsk_drive = vec![TOd::NONE; self.pairs.len()];
             return;
         }
-        let (net, p, car) = (&self.net, &self.params, &self.car_peak);
+        let (net, p, car, pairs) = (&self.net, &self.params, &self.car_peak, &self.pairs);
         let off = net.offpeak_differs();
         let rows: Vec<[Vec<TOd>; 4]> = (0..z)
             .into_par_iter()
             .map_init(
                 || Searcher::new(net, p, z),
                 |s, i| {
-                    let (cm, ck) = (&car.time[i * z..(i + 1) * z], &car.km[i * z..(i + 1) * z]);
-                    let (w, d) = transit_row(s, i, cm, ck, false);
+                    let r = pairs.row(i);
+                    let (cm, ck) = dense_row(pairs.dests(i), &car.time[r.clone()], &car.km[r], z);
+                    let (w, d) = transit_row(s, i, &cm, &ck, false, pairs.dests(i));
                     let (wo, dofp) = if off {
-                        transit_row(s, i, cm, ck, true)
+                        transit_row(s, i, &cm, &ck, true, pairs.dests(i))
                     } else {
                         (vec![], vec![])
                     };
@@ -1367,7 +1420,7 @@ impl Sim {
         if net.is_empty() {
             return LineLoads::new(net);
         }
-        let (p, car) = (&self.params, &self.car_peak);
+        let (p, car, pairs) = (&self.params, &self.car_peak, &self.pairs);
         (0..z)
             .into_par_iter()
             .fold(
@@ -1377,13 +1430,18 @@ impl Sim {
                     (s, LineLoads::new(net))
                 },
                 |(mut s, mut acc), i| {
-                    let (cm, ck) = (&car.time[i * z..(i + 1) * z], &car.km[i * z..(i + 1) * z]);
+                    let r = pairs.row(i);
+                    let dests = pairs.dests(i);
+                    let mut car_rows = None;
                     for (access, d) in [(Access::Walk, d_walk), (Access::Drive, d_drive)] {
-                        let row = &d[i * z..(i + 1) * z];
+                        let row = &d[r.clone()];
                         if row.iter().any(|&x| x > 0.0) {
+                            let (cm, ck) = car_rows.get_or_insert_with(|| {
+                                dense_row(dests, &car.time[r.clone()], &car.km[r.clone()], z)
+                            });
                             s.run(i, access, cm, ck);
-                            for (j, &x) in row.iter().enumerate() {
-                                s.load(j, x, &mut acc);
+                            for (&j, &x) in dests.iter().zip(row) {
+                                s.load(j as usize, x, &mut acc);
                             }
                         }
                     }
@@ -1399,7 +1457,7 @@ impl Sim {
         (0..z)
             .into_par_iter()
             .map(|i| {
-                let r = i * z..(i + 1) * z;
+                let r = self.pairs.row(i);
                 let inp = RowInputs {
                     peak_t: &self.car_peak.time[r.clone()],
                     peak_km: &self.car_peak.km[r.clone()],
@@ -1443,7 +1501,7 @@ impl Sim {
                     let (mut tree, mut km, mut toll, mut srch, mut nd, mut outs) = acc
                         .unwrap_or_else(|| {
                             (
-                                Tree::new(g.n_nodes, &self.zone_node),
+                                self.tree(3.0),
                                 vec![0.0; g.n_nodes],
                                 vec![0.0; g.n_nodes],
                                 Searcher::new(net, p, z),
@@ -1454,13 +1512,18 @@ impl Sim {
                     tree.run(g, times, self.zone_node[i]);
                     tree.km_and_toll(g, &mut km, &mut toll);
                     let (t, k, tl) = self.car_row(i, &tree, &km, &toll);
-                    let (w, d) = if has_transit {
-                        transit_row(&mut srch, i, &t, &k, false)
+                    let dests = self.pairs.dests(i);
+                    let dense = if has_transit {
+                        Some(dense_row(dests, &t, &k, z))
                     } else {
-                        (vec![TOd::NONE; z], vec![TOd::NONE; z])
+                        None
                     };
-                    let (w_off, d_off) = if off {
-                        transit_row(&mut srch, i, &t, &k, true)
+                    let (w, d) = match &dense {
+                        Some((cm, ck)) => transit_row(&mut srch, i, cm, ck, false, dests),
+                        None => (vec![TOd::NONE; dests.len()], vec![TOd::NONE; dests.len()]),
+                    };
+                    let (w_off, d_off) = if let (true, Some((cm, ck))) = (off, &dense) {
+                        transit_row(&mut srch, i, cm, ck, true, dests)
                     } else {
                         (vec![], vec![])
                     };
@@ -1475,8 +1538,8 @@ impl Sim {
                     };
                     let row = self.choose_row(i, &inp);
                     if assign {
-                        for (j, &dm) in row.car_peak.iter().enumerate() {
-                            nd[self.zone_node[j] as usize] += dm;
+                        for (&j, &dm) in dests.iter().zip(&row.car_peak) {
+                            nd[self.zone_node[j as usize] as usize] += dm;
                         }
                         nd[self.zone_node[i] as usize] = 0.0; // same-node trips stay off the network
                         tree.load(g, &mut nd, &mut vol);
@@ -1538,33 +1601,37 @@ impl Sim {
         km: &[f64],
         toll: &[f64],
     ) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
-        let z = self.nz;
-        let mut t = vec![f32::INFINITY; z];
-        let mut k = vec![0f32; z];
-        let mut tl = vec![0f32; z];
-        for j in 0..z {
+        let dests = self.pairs.dests(i);
+        let n_d = dests.len();
+        let mut t = vec![f32::INFINITY; n_d];
+        let mut k = vec![0f32; n_d];
+        let mut tl = vec![0f32; n_d];
+        for (q, &j) in dests.iter().enumerate() {
+            let j = j as usize;
             let n = self.zone_node[j] as usize;
             if i == j || n == self.zone_node[i] as usize {
                 // Same zone or same loading node: local streets at ~25 km/h.
                 let d = self.crow_km(i, j).max(self.intra_km[i]) * self.params.detour_factor;
-                t[j] = (d / 25.0 * 60.0) as f32;
-                k[j] = d as f32;
-            } else if tree.dist[n].is_finite() {
-                t[j] = tree.dist[n] as f32;
-                k[j] = km[n] as f32;
-                tl[j] = toll[n] as f32;
+                t[q] = (d / 25.0 * 60.0) as f32;
+                k[q] = d as f32;
+            } else if tree.reached(n) {
+                t[q] = tree.dist[n] as f32;
+                k[q] = km[n] as f32;
+                tl[q] = toll[n] as f32;
             }
         }
         (t, k, tl)
     }
 
-    /// Generalized cost (minutes) of each choice for one OD pair, or None if unavailable.
-    fn costs(&self, i: usize, j: usize, work: bool, inp: &RowInputs) -> [Option<f64>; N_CHOICES] {
+    /// Generalized cost (minutes) of each choice for origin `i`'s `q`-th kept
+    /// pair, or None if unavailable.
+    fn costs(&self, i: usize, q: usize, work: bool, inp: &RowInputs) -> [Option<f64>; N_CHOICES] {
         let p = &self.params;
-        let k = i * self.nz + j;
+        let k = self.pairs.row(i).start + q;
+        let j = self.pairs.dest[k] as usize;
         let vot = self.vot_min[i];
         let (t, km, toll) = if work {
-            (inp.peak_t[j], inp.peak_km[j], inp.peak_toll[j])
+            (inp.peak_t[q], inp.peak_km[q], inp.peak_toll[q])
         } else {
             (
                 self.car_free.time[k],
@@ -1603,11 +1670,11 @@ impl Sim {
                 + o.pnr_penalty as f64
                 + sd
         };
-        let tw = if work { &inp.tw[j] } else { &inp.tw_off[j] };
+        let tw = if work { &inp.tw[q] } else { &inp.tw_off[q] };
         if tw.ok() {
             c[TRANSIT_WALK] = Some(transit(tw));
         }
-        let td = if work { &inp.td[j] } else { &inp.td_off[j] };
+        let td = if work { &inp.td[q] } else { &inp.td_off[q] };
         if td.ok() {
             c[TRANSIT_DRIVE] = Some(transit(td));
         }
@@ -1622,14 +1689,15 @@ impl Sim {
     }
 
     fn choose_row(&self, i: usize, inp: &RowInputs) -> Row {
-        let z = self.nz;
         let p = &self.params;
+        let row = self.pairs.row(i);
+        let n_d = row.len();
         let mut r = Row {
-            car_peak: vec![0.0; z],
-            wt_work: vec![0.0; z],
-            dt_work: vec![0.0; z],
-            wt_other: vec![0.0; z],
-            dt_other: vec![0.0; z],
+            car_peak: vec![0.0; n_d],
+            wt_work: vec![0.0; n_d],
+            dt_work: vec![0.0; n_d],
+            wt_other: vec![0.0; n_d],
+            dt_other: vec![0.0; n_d],
             work: [0.0; N_CHOICES],
             other: [0.0; N_CHOICES],
             unserved: 0.0,
@@ -1637,17 +1705,14 @@ impl Sim {
         let zc = self.input.zones[i].zero_car_share;
         let cov_i = self.net.coverage[i];
         let wph = p.work_peak_hour_share();
-        for j in 0..z {
+        for (q, k) in row.enumerate() {
+            let j = self.pairs.dest[k] as usize;
             for work in [true, false] {
-                let trips = if work {
-                    self.hbw[i * z + j]
-                } else {
-                    self.hbo[i * z + j]
-                };
+                let trips = if work { self.hbw[k] } else { self.hbo[k] };
                 if trips <= 0.0 {
                     continue;
                 }
-                let c = self.costs(i, j, work, inp);
+                let c = self.costs(i, q, work, inp);
                 let near = cov_i * self.net.coverage[j];
                 let mut prob = [0.0; N_CHOICES];
                 // Four segments: car / no car x origin+destination near a stop or not.
@@ -1677,14 +1742,14 @@ impl Sim {
                 let veh = prob[DRIVE] + prob[CARPOOL] / p.carpool_occupancy;
                 if work {
                     (0..N_CHOICES).for_each(|m| r.work[m] += trips * prob[m]);
-                    r.wt_work[j] = trips * prob[TRANSIT_WALK];
-                    r.dt_work[j] = trips * prob[TRANSIT_DRIVE];
-                    r.car_peak[j] += trips * veh * wph;
+                    r.wt_work[q] = trips * prob[TRANSIT_WALK];
+                    r.dt_work[q] = trips * prob[TRANSIT_DRIVE];
+                    r.car_peak[q] += trips * veh * wph;
                 } else {
                     (0..N_CHOICES).for_each(|m| r.other[m] += trips * prob[m]);
-                    r.wt_other[j] = trips * prob[TRANSIT_WALK];
-                    r.dt_other[j] = trips * prob[TRANSIT_DRIVE];
-                    r.car_peak[j] += trips * veh * p.other_peak_hour_share;
+                    r.wt_other[q] = trips * prob[TRANSIT_WALK];
+                    r.dt_other[q] = trips * prob[TRANSIT_DRIVE];
+                    r.car_peak[q] += trips * veh * p.other_peak_hour_share;
                 }
             }
         }
@@ -1729,20 +1794,36 @@ fn transit_row(
     car_min: &[f32],
     car_km: &[f32],
     offpeak: bool,
+    dests: &[u32],
 ) -> (Vec<TOd>, Vec<TOd>) {
-    let z = s.best.len();
     s.offpeak = offpeak;
-    let mut w = vec![TOd::NONE; z];
-    let mut d = vec![TOd::NONE; z];
+    let mut w = vec![TOd::NONE; dests.len()];
+    let mut d = vec![TOd::NONE; dests.len()];
     if !s.net.walk_access[i].is_empty() {
         s.run(i, Access::Walk, car_min, car_km);
-        (0..z).for_each(|j| w[j] = s.od(j));
+        w.iter_mut()
+            .zip(dests)
+            .for_each(|(o, &j)| *o = s.od(j as usize));
     }
     if !s.net.pnr.is_empty() {
         s.run(i, Access::Drive, car_min, car_km);
-        (0..z).for_each(|j| d[j] = s.od(j));
+        d.iter_mut()
+            .zip(dests)
+            .for_each(|(o, &j)| *o = s.od(j as usize));
     }
     (w, d)
+}
+
+/// One origin's sparse car row spread over all `z` zones (unkept pairs are
+/// unreachable), for the transit search's park-and-ride drive legs.
+fn dense_row(dests: &[u32], time: &[f32], km: &[f32], z: usize) -> (Vec<f32>, Vec<f32>) {
+    let mut t = vec![f32::INFINITY; z];
+    let mut k = vec![0f32; z];
+    for ((&j, &a), &b) in dests.iter().zip(time).zip(km) {
+        t[j as usize] = a;
+        k[j as usize] = b;
+    }
+    (t, k)
 }
 
 /// Row `r` of the off-peak skim, or of the peak skim when there is no separate one.
