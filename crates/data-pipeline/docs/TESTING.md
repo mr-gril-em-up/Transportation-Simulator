@@ -55,6 +55,8 @@ Actions run [45932728431](https://github.com/mr-gril-em-up/Transportation-Simula
 | `commute_out` / `commute_in` | 197,805 / 498,758 | Large inflow from Williamson, Hays and Bastrop |
 | `flows` | 148,257 block-group pairs | |
 | `road_nodes` / `road_edges` / `road_km` | 93,461 / 121,367 / 18,530 km | The rectangular clip box includes parts of neighboring counties, so road km exceeds Travis alone |
-| `transit_routes` | 158 | Red Line presence not yet checked (artifact not inspected) |
+| `transit_routes` | 158 | Red Line present: OSM route `550` (CapMetro), both directions, 10 stops each; also four Amtrak Texas Eagle variants |
 
 Largest flow: 183 workers from block group 484530003081 to 484530004013 (downtown). Not yet done: comparing the top 20 against OnTheMap independently (F07).
+
+Second run (Actions run 45935018791, from the release-publishing branch) produced the same totals and published release `data-48453-2023`. Loading its `scenario.json` into `sim_core::Sim::from_json` with default `Params` gave a baseline in 23 s on a 4-core cloud container (93k road nodes); drive 76%, carpool 21%, walk and bike 3.5%. That is far above the 2-second line-edit target, mostly from the size of the road graph (see ASSUMPTIONS: residential streets are kept).
