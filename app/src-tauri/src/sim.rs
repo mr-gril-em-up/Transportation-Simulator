@@ -5,7 +5,9 @@
 //! string ids; this module maps them to sim-core's LineId.
 
 use serde::Serialize;
-use sim_core::{synth, LineId, LineResult, Params, ScenarioInput, Sim, TransitLine};
+use sim_core::{
+    synth, Ledger, LineId, LinePreview, LineResult, Params, ScenarioInput, Sim, TransitLine,
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -102,6 +104,27 @@ impl SimState {
             }
             Ok(all_results(inner))
         })
+    }
+}
+
+impl SimState {
+    /// What `line` would cost and carry if built now. Nothing is charged and no
+    /// line is kept. Runs under the same lock as every other call because
+    /// sim-core adds and removes the line while it evaluates.
+    pub fn preview(&self, line: TransitLine) -> Result<LinePreview, String> {
+        self.with(|inner| {
+            inner
+                .sim
+                .as_mut()
+                .unwrap()
+                .preview_line(line)
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    /// The transit authority's books (cash, month in progress, settled months).
+    pub fn ledger(&self) -> Result<Ledger, String> {
+        self.with(|inner| Ok(inner.sim.as_ref().unwrap().ledger().clone()))
     }
 }
 
@@ -234,6 +257,23 @@ pub async fn desire_lines(
     blocking(move || s.desire_lines(n)).await
 }
 
+/// Cost and ridership of a line before it is built (F16 build cost preview).
+#[tauri::command]
+pub async fn preview_route(
+    state: tauri::State<'_, SimState>,
+    line: TransitLine,
+) -> Result<LinePreview, String> {
+    let s = state.inner().clone();
+    blocking(move || s.preview(line)).await
+}
+
+/// The ledger: cash and this month's capital spend and grants.
+#[tauri::command]
+pub async fn ledger(state: tauri::State<'_, SimState>) -> Result<Ledger, String> {
+    let s = state.inner().clone();
+    blocking(move || s.ledger()).await
+}
+
 /// Run a closure that may wait on the Condvar or the Sim lock on Tauri's blocking
 /// pool, so async runtime workers are never parked (review follow-up on #9).
 async fn blocking<T: Send + 'static>(
@@ -273,6 +313,28 @@ mod tests {
         let out = state.remove("r1").unwrap();
         assert!(out.is_empty());
         assert!(state.remove("missing").unwrap().is_empty());
+    }
+
+    #[test]
+    fn preview_charges_nothing_and_build_does() {
+        let state = SimState::start_with(|| Ok(synth::generate(&synth::SynthConfig::small())));
+        let rail = line(
+            r#"{"name":"R","mode":"light_rail","headway_min":10,
+            "stops":[{"lon":-97.76,"lat":30.25},{"lon":-97.743,"lat":30.268},{"lon":-97.73,"lat":30.29}]}"#,
+        );
+        let cash0 = state.ledger().unwrap().cash;
+        let p = state.preview(rail.clone()).unwrap();
+        assert!(p.capital_cost > 0.0 && p.line.daily_boardings > 0.0);
+        assert_eq!(state.ledger().unwrap().cash, cash0, "preview is free");
+        assert!(
+            state.remove("none").unwrap().is_empty(),
+            "preview kept no line"
+        );
+
+        state.upsert("r1".into(), rail).unwrap();
+        let l = state.ledger().unwrap();
+        assert!((l.current.capital_spent - p.capital_cost).abs() < 1.0);
+        assert!((cash0 - l.cash - (p.capital_cost - p.federal_grant)).abs() < 1.0);
     }
 
     #[test]

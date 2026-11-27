@@ -15,7 +15,9 @@ doc.
   region; cost and farebox in the panel (#9)
 - Desire-line layer (F06) from `desire_lines`; sim calls serialized; blocking
   waits moved to the blocking pool (#9 review follow-ups) (#12)
-- Stop editing (drag, insert, delete) and line rename (F16)
+- Stop editing (drag, insert, delete) and line rename (F16) (#15, #19)
+- Build cost preview while drawing (capital, grant, riders, operating cost) and
+  a cash/budget line from sim-core's ledger (F16, F23, F26)
 
 ## Next, M0/M1 (blocked items say on what)
 
@@ -29,7 +31,7 @@ doc.
 
 ## M2 (money, clock, agents)
 
-- Budget HUD: capital cost preview while drawing, operating cost, monthly settlement
+- Budget panel: monthly statements from `Ledger.history`, settlement as the sim clock crosses months
 - Skip-to-next-month in the clock; clock driven by sim-core
 - Local-tier agents near the camera via deck.gl; above 10x draw flow animations
 

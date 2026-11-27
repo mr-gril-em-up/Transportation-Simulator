@@ -13,6 +13,8 @@ export class LineDrawer {
     private map: maplibregl.Map,
     private onFinish: (mode: Mode, pts: LngLat[]) => void,
     private onStateChange: (drawing: boolean) => void,
+    /** Called with the draft after every placed stop (and with [] on finish or cancel). */
+    private onDraft: (mode: Mode, pts: LngLat[]) => void = () => {},
   ) {
     map.on("click", (e) => this.click(e));
     map.on("dblclick", (e) => {
@@ -41,6 +43,7 @@ export class LineDrawer {
   }
 
   cancel(): void {
+    if (this.mode) this.onDraft(this.mode, []);
     this.mode = null;
     this.pts = [];
     this.map.doubleClickZoom.enable();
@@ -66,6 +69,7 @@ export class LineDrawer {
     if (last && last[0] === p[0] && last[1] === p[1]) return;
     this.pts.push(p);
     this.render();
+    this.onDraft(this.mode, [...this.pts]);
   }
 
   private finish(): void {

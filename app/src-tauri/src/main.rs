@@ -12,7 +12,9 @@ fn main() {
             sim::sim_status,
             sim::upsert_route,
             sim::remove_route,
-            sim::desire_lines
+            sim::desire_lines,
+            sim::preview_route,
+            sim::ledger
         ])
         .run(tauri::generate_context!())
         .expect("error while running Transpo-Sim");

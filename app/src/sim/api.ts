@@ -51,6 +51,21 @@ export interface DesireLine {
   transitTrips: number; // daily transit trips, both directions
 }
 
+/** What a line would cost and carry if built now (F16 build cost preview). Nothing is charged. */
+export interface RoutePreview {
+  dailyRiders: number;
+  capitalCost: number; // USD: guideway per km plus vehicles
+  federalGrant: number; // USD back from the federal government; 0 if it fails the cost-per-rider gate
+  operatingCostPerDay?: number;
+}
+
+/** The transit authority's books, as the HUD shows them. */
+export interface Budget {
+  cash: number; // USD on hand; negative until bonds exist (F26)
+  capitalSpentThisMonth: number;
+  grantsThisMonth: number; // federal capital grants received this month
+}
+
 export interface SimClient {
   /** Shown in the ridership panel so it is obvious which backend produced the numbers. */
   readonly label: string;
@@ -61,4 +76,7 @@ export interface SimClient {
   removeRoute(id: string): Promise<RouteResult[]>;
   /** Top `n` zone pairs by daily trips, largest first. */
   desireLines(n: number): Promise<DesireLine[]>;
+  /** Cost and ridership of `route` without building it. */
+  previewRoute(route: RouteSpec): Promise<RoutePreview>;
+  budget(): Promise<Budget>;
 }

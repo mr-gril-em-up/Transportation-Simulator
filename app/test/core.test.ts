@@ -144,3 +144,45 @@ describe("stop editing", () => {
     expect(bestInsertIndex(line, [-97.75, 30.4])).toBe(3); // after the last stop
   });
 });
+
+describe("build cost (F16)", () => {
+  it("previews without charging, charges on build, and charges only the extra on extension", async () => {
+    const s = new MockSim();
+    const short = { ...redLine(), stops: redLine().stops.slice(0, 4) };
+    const p = await s.previewRoute(short);
+    expect(p.capitalCost).toBeGreaterThan(0);
+    expect((await s.budget()).cash).toBe(0);
+
+    await s.upsertRoute(short);
+    const b1 = await s.budget();
+    expect(b1.capitalSpentThisMonth).toBeCloseTo(p.capitalCost);
+    expect(b1.cash).toBeCloseTo(p.federalGrant - p.capitalCost);
+
+    const full = redLine();
+    const pf = await s.previewRoute(full);
+    await s.upsertRoute(full);
+    expect((await s.budget()).capitalSpentThisMonth).toBeCloseTo(pf.capitalCost);
+
+    await s.upsertRoute(short); // shrinking refunds nothing
+    expect((await s.budget()).capitalSpentThisMonth).toBeCloseTo(pf.capitalCost);
+  });
+
+  it("maps sim-core's LinePreview and Ledger", async () => {
+    const { fromPreview, fromLedger } = await import("../src/sim/tauri");
+    expect(
+      fromPreview({ line: { daily_boardings: 1234.6, operating_cost_per_day: 900 }, capital_cost: 5e6, federal_grant: 2.5e6 }),
+    ).toEqual({ dailyRiders: 1235, capitalCost: 5e6, federalGrant: 2.5e6, operatingCostPerDay: 900 });
+    expect(fromLedger({ cash: -1, current: { capital_spent: 2, federal_capital_grants: 1 } })).toEqual({
+      cash: -1,
+      capitalSpentThisMonth: 2,
+      grantsThisMonth: 1,
+    });
+  });
+
+  it("formats money for the HUD", async () => {
+    const { money } = await import("../src/format");
+    expect(money(820_400)).toBe("$820k");
+    expect(money(34_520_000)).toBe("$34.5M");
+    expect(money(-1.2e9)).toBe("-$1.20B");
+  });
+});

@@ -15,7 +15,7 @@ flowchart LR
         clock["clock.ts<br/>rAF loop"] --> main
     end
     subgraph shell["Tauri shell (Rust, src-tauri/)"]
-        cmds["commands<br/>upsert_route, remove_route, sim_status"] --> state["SimState<br/>Mutex + Condvar<br/>client id to LineId"]
+        cmds["commands<br/>upsert_route, remove_route, preview_route,<br/>ledger, desire_lines, sim_status"] --> state["SimState<br/>Mutex + Condvar<br/>client id to LineId"]
         state --> core["sim_core::Sim"]
     end
     tauri -->|"invoke (JSON IPC)"| cmds
@@ -103,6 +103,9 @@ interface SimClient {
   ready(): Promise<void>; // TauriSim polls sim_status every 500 ms; panel shows "loading…" until then
   upsertRoute(route: RouteSpec): Promise<RouteResult[]>; // add or replace, re-run, all results
   removeRoute(id: string): Promise<RouteResult[]>;
+  desireLines(n: number): Promise<DesireLine[]>;
+  previewRoute(route: RouteSpec): Promise<RoutePreview>; // preview_route: nothing charged
+  budget(): Promise<Budget>;                             // ledger
 }
 interface RouteSpec { id; name; mode: Mode; color; stops: Stop[]; headwayMin; fare }
 interface RouteResult { routeId; dailyRiders; boardingsByStop: Record<stopId, number>;
@@ -132,6 +135,22 @@ And back (`fromLineResult`): `daily_boardings` becomes `dailyRiders`,
 `LineResult` fields (segment loads, peak load against capacity, vehicles
 required) already cross the IPC boundary and are ignored until the UI renders
 them.
+
+### Build cost preview and budget (F16, F23, F26)
+
+`LineDrawer` reports the draft after every placed stop. `main.ts` turns it
+into a throwaway `RouteSpec` (id `draft`) and calls `previewRoute` through the
+same serial queue as edits, so a preview never interleaves with an
+`upsert_route` (sim-core's `preview_line` adds and removes the line while it
+runs). A generation counter drops previews for drafts that have since changed:
+a queued preview whose draft is stale skips the sim call entirely. After every
+committed edit, `applyNow` also fetches `budget()` and shows cash and the
+change since the last call, which is what that edit cost.
+
+The money rules live in sim-core (`Sim::add_line`/`update_line` charge capital
+less grant; an extension pays only the difference; nothing is refunded). The
+mock copies them in a few lines (`mockCapital`, docs/MOCK-SIM.md) so the HUD
+behaves the same in the browser.
 
 ### Clock ownership
 
