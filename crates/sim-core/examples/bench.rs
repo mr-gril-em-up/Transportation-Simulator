@@ -1,19 +1,26 @@
 //! Times the baseline and a line edit on a synthetic Travis-County-sized region.
-//! `cargo run --release -p sim-core --example bench [road_spacing_km]`
+//! `cargo run --release -p sim-core --example bench [road_spacing_km | scenario.json]`
+//! A `.json` argument loads a real pipeline build instead (see the data-pipeline
+//! README, `scripts/download-build.sh`); test lines are placed around `synth::CENTER`.
 use sim_core::synth::{generate, straight_line, SynthConfig};
 use sim_core::{Mode, ModeSplit, Params, Sim};
 use std::time::Instant;
 
 fn main() {
-    let spacing: f64 = std::env::args()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0.5);
-    let cfg = SynthConfig {
-        road_spacing_km: spacing,
-        ..Default::default()
+    let arg = std::env::args().nth(1).unwrap_or_default();
+    let t = Instant::now();
+    let input = if arg.ends_with(".json") {
+        let text = std::fs::read_to_string(&arg).expect("read scenario");
+        let input = sim_core::ScenarioInput::from_json(&text).expect("parse scenario");
+        println!("read and parse: {:.2} s", t.elapsed().as_secs_f64());
+        input
+    } else {
+        let cfg = SynthConfig {
+            road_spacing_km: arg.parse().unwrap_or(0.5),
+            ..Default::default()
+        };
+        generate(&cfg)
     };
-    let input = generate(&cfg);
     println!(
         "zones {}  road nodes {}  links {}  commute pairs {}  threads {}",
         input.zones.len(),

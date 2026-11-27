@@ -782,21 +782,31 @@ impl Sim {
             .collect()
     }
 
-    /// Peak-hour flows on every directed road edge.
+    /// Peak-hour flows on every directed traversal of every input road link
+    /// (a contracted chain reports each of its links; pruned dead ends report
+    /// zero volume at free-flow speed).
     pub fn link_flows(&self) -> Vec<LinkFlow> {
-        self.graph
-            .edges
-            .iter()
-            .enumerate()
-            .map(|(e, ed)| LinkFlow {
-                link: ed.link,
-                from: self.input.road_nodes[ed.from as usize].id,
-                to: self.input.road_nodes[ed.to as usize].id,
-                volume_vph: self.link_vol[e],
-                vc: self.link_vol[e] / ed.cap_vph,
-                speed_kph: ed.len_km / (self.link_time[e] / 60.0),
+        let (a, b) = (self.params.bpr_alpha, self.params.bpr_beta);
+        let node = |v: u32| self.input.road_nodes[v as usize].id;
+        let flow = |m: &crate::graph::Member, vol: f64| {
+            let t = m.t0_min * (1.0 + a * (vol / m.cap_vph).powf(b));
+            LinkFlow {
+                link: m.link,
+                from: node(m.from),
+                to: node(m.to),
+                volume_vph: vol,
+                vc: vol / m.cap_vph,
+                speed_kph: m.len_km / (t / 60.0),
+            }
+        };
+        let mut out: Vec<LinkFlow> = (0..self.graph.edges.len())
+            .flat_map(|e| {
+                let vol = self.link_vol[e];
+                self.graph.members_of(e).iter().map(move |m| flow(m, vol))
             })
-            .collect()
+            .collect();
+        out.extend(self.graph.dead.iter().map(|m| flow(m, 0.0)));
+        out
     }
 
     /// Top `n` zone pairs by daily trips (both directions, all modes, excluding intrazonal).
@@ -1011,9 +1021,8 @@ impl Sim {
 
     fn update_link_times(&mut self) {
         let (a, b) = (self.params.bpr_alpha, self.params.bpr_beta);
-        for (e, ed) in self.graph.edges.iter().enumerate() {
-            let vc = self.link_vol[e] / ed.cap_vph;
-            self.link_time[e] = ed.t0_min * (1.0 + a * vc.powf(b));
+        for e in 0..self.graph.edges.len() {
+            self.link_time[e] = self.graph.bpr_time(e, self.link_vol[e], a, b);
         }
     }
 

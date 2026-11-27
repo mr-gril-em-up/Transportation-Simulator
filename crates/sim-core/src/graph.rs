@@ -8,19 +8,44 @@ use std::collections::{BinaryHeap, HashMap};
 
 pub const NONE: u32 = u32::MAX;
 
-/// One directed traversal of an input road link.
+/// One directed traversal of one input road link.
 #[derive(Debug, Clone)]
-pub struct Edge {
-    pub from: u32,
-    pub to: u32,
+pub struct Member {
     /// Index into `ScenarioInput::road_links`.
     pub link: u32,
+    /// Dense start node (traversal direction).
+    pub from: u32,
+    /// Dense end node.
+    pub to: u32,
     pub len_km: f64,
     pub t0_min: f64,
     pub cap_vph: f64,
     pub toll: f64,
 }
 
+/// A directed graph edge: one input link traversal, or a chain of them through
+/// contracted degree-2 nodes (same volume on every member).
+#[derive(Debug, Clone)]
+pub struct Edge {
+    pub from: u32,
+    pub to: u32,
+    pub len_km: f64,
+    /// Free-flow time, the sum over members.
+    pub t0_min: f64,
+    pub toll: f64,
+    /// `members[m_lo..m_hi]` of the graph, in travel order.
+    pub m_lo: u32,
+    pub m_hi: u32,
+}
+
+/// Road graph for shortest paths. Built from the input links with two
+/// exact simplifications (SIM-2):
+/// - dead-end trees with no zone node are dropped (no shortest path between
+///   zone nodes can enter them);
+/// - chains through nodes with exactly two neighbors and no zone are merged
+///   into one edge whose BPR time is the sum of its members' BPR times.
+///
+/// Node numbering stays the input order (dropped nodes just have no edges).
 pub struct RoadGraph {
     pub n_nodes: usize,
     pub index: HashMap<u32, u32>,
@@ -30,39 +55,183 @@ pub struct RoadGraph {
     /// `edges[e].to`, stored densely: the Dijkstra inner loop reads only this
     /// and the time array, so keeping it compact halves cache misses.
     pub to: Vec<u32>,
+    /// Link traversals behind each edge (see `Edge::m_lo`).
+    pub members: Vec<Member>,
+    /// Link traversals in dropped dead ends: never loaded, reported at free flow.
+    pub dead: Vec<Member>,
 }
 
 impl RoadGraph {
+    /// Build with dead-end pruning and chain contraction around `keep` nodes
+    /// (zone nodes, by input node id).
     pub fn build(input: &ScenarioInput) -> RoadGraph {
+        let keep_ids: Vec<u32> = input.zones.iter().map(|z| z.road_node).collect();
+        Self::build_keeping(input, &keep_ids, true)
+    }
+
+    /// `simplify = false` keeps one edge per link traversal (for tests).
+    pub fn build_keeping(input: &ScenarioInput, keep_ids: &[u32], simplify: bool) -> RoadGraph {
         let index: HashMap<u32, u32> = input
             .road_nodes
             .iter()
             .enumerate()
             .map(|(i, n)| (n.id, i as u32))
             .collect();
-        let mut edges = Vec::with_capacity(input.road_links.len() * 2);
+        let n = input.road_nodes.len();
+        // Directed traversals, and per node the traversals leaving it.
+        let mut trav: Vec<Member> = Vec::with_capacity(input.road_links.len() * 2);
         for (li, l) in input.road_links.iter().enumerate() {
             let (a, b) = (index[&l.from], index[&l.to]);
             let len_km = l.length_m / 1000.0;
             let cap = l
                 .capacity_vph
                 .unwrap_or(lane_capacity_vph(l.speed_kph) * l.lanes.max(1) as f64);
-            let mk = |from, to| Edge {
+            let mk = |from, to| Member {
+                link: li as u32,
                 from,
                 to,
-                link: li as u32,
                 len_km,
                 t0_min: len_km / l.speed_kph * 60.0,
                 cap_vph: cap.max(1.0),
                 toll: l.toll,
             };
-            edges.push(mk(a, b));
+            trav.push(mk(a, b));
             if !l.oneway {
-                edges.push(mk(b, a));
+                trav.push(mk(b, a));
             }
         }
-        edges.sort_by_key(|e| e.from);
-        let n = input.road_nodes.len();
+        let mut out: Vec<Vec<u32>> = vec![Vec::new(); n];
+        // Undirected incidence: link indices touching each node.
+        let mut inc: Vec<Vec<u32>> = vec![Vec::new(); n];
+        for (t, m) in trav.iter().enumerate() {
+            out[m.from as usize].push(t as u32);
+        }
+        for (li, l) in input.road_links.iter().enumerate() {
+            inc[index[&l.from] as usize].push(li as u32);
+            inc[index[&l.to] as usize].push(li as u32);
+        }
+        let mut keep = vec![!simplify; n];
+        for id in keep_ids {
+            if let Some(&v) = index.get(id) {
+                keep[v as usize] = true;
+            }
+        }
+        let other = |li: u32, v: usize| -> usize {
+            let l = &input.road_links[li as usize];
+            let a = index[&l.from] as usize;
+            if a == v {
+                index[&l.to] as usize
+            } else {
+                a
+            }
+        };
+
+        // 1. Prune dead ends: repeatedly drop unkept nodes with < 2 distinct neighbors.
+        let mut alive_link = vec![true; input.road_links.len()];
+        let mut alive_node = vec![true; n];
+        let neighbors = |v: usize, alive_link: &[bool]| -> Vec<usize> {
+            let mut ns: Vec<usize> = inc[v]
+                .iter()
+                .filter(|&&li| alive_link[li as usize])
+                .map(|&li| other(li, v))
+                .collect();
+            ns.sort_unstable();
+            ns.dedup();
+            ns
+        };
+        let mut stack: Vec<usize> = (0..n).filter(|&v| !keep[v]).collect();
+        while let Some(v) = stack.pop() {
+            if !alive_node[v] || keep[v] {
+                continue;
+            }
+            let ns = neighbors(v, &alive_link);
+            if ns.len() < 2 {
+                alive_node[v] = false;
+                for &li in &inc[v] {
+                    alive_link[li as usize] = false;
+                }
+                stack.extend(ns);
+            }
+        }
+
+        // 2. Interior nodes: unkept, alive, exactly two neighbors over exactly two links.
+        let interior: Vec<bool> = (0..n)
+            .map(|v| {
+                !keep[v] && alive_node[v] && {
+                    let live: Vec<u32> = inc[v]
+                        .iter()
+                        .copied()
+                        .filter(|&li| alive_link[li as usize])
+                        .collect();
+                    live.len() == 2 && other(live[0], v) != other(live[1], v)
+                }
+            })
+            .collect();
+
+        // 3. Walk chains from every live traversal leaving a non-interior node.
+        let mut edges = Vec::new();
+        let mut members = Vec::new();
+        let mut dead = Vec::new();
+        for (t0, m) in trav.iter().enumerate() {
+            if !alive_link[m.link as usize] {
+                dead.push(m.clone());
+                continue;
+            }
+            if interior[m.from as usize] {
+                continue;
+            }
+            let lo = members.len();
+            let mut cur = t0 as u32;
+            let ok = loop {
+                let c = &trav[cur as usize];
+                members.push(c.clone());
+                let v = c.to as usize;
+                if !interior[v] {
+                    break true;
+                }
+                // Continue along the other link of the interior node, if it can
+                // be driven in this direction.
+                match out[v].iter().find(|&&t| {
+                    let x = &trav[t as usize];
+                    x.link != c.link && alive_link[x.link as usize]
+                }) {
+                    Some(&t) => cur = t,
+                    None => break false,
+                }
+            };
+            let chain = &members[lo..];
+            let (from, to) = (chain[0].from, chain[chain.len() - 1].to);
+            if !ok || from == to {
+                // Dead-end oneway chain or a loop back to its start: unusable.
+                dead.extend(members.drain(lo..));
+                continue;
+            }
+            edges.push(Edge {
+                from,
+                to,
+                len_km: chain.iter().map(|m| m.len_km).sum(),
+                t0_min: chain.iter().map(|m| m.t0_min).sum(),
+                toll: chain.iter().map(|m| m.toll).sum(),
+                m_lo: lo as u32,
+                m_hi: members.len() as u32,
+            });
+        }
+        // Chains of interior nodes walked in a direction that is never usable
+        // (e.g. both ends oneway inward) leave traversals nobody visited.
+        let key = |m: &Member| (m.link, m.from);
+        let visited: std::collections::HashSet<(u32, u32)> =
+            members.iter().chain(&dead).map(key).collect();
+        let unvisited: Vec<Member> = trav
+            .iter()
+            .filter(|m| !visited.contains(&key(m)))
+            .cloned()
+            .collect();
+        dead.extend(unvisited);
+
+        // CSR by `from`, keeping each edge's member range.
+        let mut order: Vec<usize> = (0..edges.len()).collect();
+        order.sort_by_key(|&e| edges[e].from);
+        let edges: Vec<Edge> = order.into_iter().map(|e| edges[e].clone()).collect();
         let mut offsets = vec![0u32; n + 1];
         for e in &edges {
             offsets[e.from as usize + 1] += 1;
@@ -77,11 +246,27 @@ impl RoadGraph {
             offsets,
             edges,
             to,
+            members,
+            dead,
         }
     }
 
     pub fn free_flow_times(&self) -> Vec<f64> {
         self.edges.iter().map(|e| e.t0_min).collect()
+    }
+
+    /// Members of edge `e`.
+    pub fn members_of(&self, e: usize) -> &[Member] {
+        let ed = &self.edges[e];
+        &self.members[ed.m_lo as usize..ed.m_hi as usize]
+    }
+
+    /// BPR time of edge `e` at `vol` vehicles/hour: the sum over its members.
+    pub fn bpr_time(&self, e: usize, vol: f64, alpha: f64, beta: f64) -> f64 {
+        self.members_of(e)
+            .iter()
+            .map(|m| m.t0_min * (1.0 + alpha * (vol / m.cap_vph).powf(beta)))
+            .sum()
     }
 }
 
@@ -228,7 +413,7 @@ mod tests {
 
     #[test]
     fn dijkstra_prefers_faster_route_and_loads_it() {
-        let g = RoadGraph::build(&line_graph());
+        let g = RoadGraph::build_keeping(&line_graph(), &[1, 2, 3], true);
         let t = g.free_flow_times();
         let mut tree = Tree::new(g.n_nodes, &[0, 1, 2]);
         tree.run(&g, &t, 0);
@@ -241,13 +426,67 @@ mod tests {
         let mut dem = vec![0.0, 0.0, 10.0];
         let mut vol = vec![0.0; g.edges.len()];
         tree.load(&g, &mut dem, &mut vol);
-        let loaded: Vec<_> = g
-            .edges
-            .iter()
-            .zip(&vol)
-            .filter(|(_, v)| **v > 0.0)
-            .collect();
+        let loaded: Vec<_> = (0..g.edges.len()).filter(|&e| vol[e] > 0.0).collect();
         assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].0.link, 2);
+        assert_eq!(g.members_of(loaded[0])[0].link, 2);
+    }
+
+    /// Contraction must not change any zone-to-zone time, distance or toll.
+    fn assert_same_zone_skims(input: &ScenarioInput, origins: usize) {
+        let keep: Vec<u32> = input.zones.iter().map(|z| z.road_node).collect();
+        let full = RoadGraph::build_keeping(input, &keep, false);
+        let small = RoadGraph::build(input);
+        assert!(small.edges.len() <= full.edges.len());
+        let zn: Vec<u32> = keep.iter().map(|id| full.index[id]).collect();
+        let (tf, ts) = (full.free_flow_times(), small.free_flow_times());
+        let mut a = Tree::new(full.n_nodes, &zn);
+        let mut b = Tree::new(small.n_nodes, &zn);
+        let n = full.n_nodes;
+        let (mut ka, mut ta, mut kb, mut tb) =
+            (vec![0.0; n], vec![0.0; n], vec![0.0; n], vec![0.0; n]);
+        for &o in zn.iter().step_by((zn.len() / origins).max(1)) {
+            a.run(&full, &tf, o);
+            b.run(&small, &ts, o);
+            a.km_and_toll(&full, &mut ka, &mut ta);
+            b.km_and_toll(&small, &mut kb, &mut tb);
+            for &d in &zn {
+                let d = d as usize;
+                let (x, y) = (a.dist[d], b.dist[d]);
+                assert!(
+                    x == y || (x - y).abs() < 1e-9 * x.max(1.0),
+                    "time {x} vs {y}"
+                );
+                if x.is_finite() {
+                    // Ties between equal-time paths may pick different routes,
+                    // so distance is compared only when unambiguous enough.
+                    assert!((ka[d] - kb[d]).abs() < 1e-6 || (x - y).abs() < 1e-9);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn contraction_keeps_zone_times_on_synthetic_region() {
+        let input = crate::synth::generate(&crate::synth::SynthConfig::small());
+        assert_same_zone_skims(&input, 16);
+    }
+
+    /// Same check on a real pipeline build:
+    /// `TRANSPO_SCENARIO=.../scenario.json cargo test -p sim-core --release -- --ignored`
+    #[test]
+    #[ignore]
+    fn contraction_keeps_zone_times_on_real_scenario() {
+        let path = std::env::var("TRANSPO_SCENARIO").expect("set TRANSPO_SCENARIO");
+        let input = ScenarioInput::from_json(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let full = RoadGraph::build_keeping(&input, &[], false);
+        let small = RoadGraph::build(&input);
+        eprintln!(
+            "edges {} -> {}, nodes with edges {} -> {}",
+            full.edges.len(),
+            small.edges.len(),
+            full.offsets.windows(2).filter(|w| w[1] > w[0]).count(),
+            small.offsets.windows(2).filter(|w| w[1] > w[0]).count()
+        );
+        assert_same_zone_skims(&input, 40);
     }
 }

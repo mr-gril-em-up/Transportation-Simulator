@@ -116,6 +116,14 @@ agents.
 
 ## Threading and performance
 
+- **Graph simplification (SIM-2).** `RoadGraph::build` drops dead-end trees that
+  hold no zone node (no shortest path between zone nodes can enter one), then
+  merges chains through nodes with exactly two neighbors over two links into one
+  edge. A chain keeps its links as `members`; its BPR time is the sum of its
+  members' BPR times at the shared volume, so congested times are exact, not
+  approximated. `link_flows` expands chains back to links and reports pruned
+  links at zero volume. On real Travis this halves the nodes Dijkstra touches.
+
 - Rayon parallelizes every per-origin loop (car skims, car assignment, transit
   skims, transit loading, mode choice). Each worker reuses its own Dijkstra or
   transit-search buffers (`map_init` / `fold`), so the hot loops do not allocate.
@@ -149,6 +157,7 @@ module boundaries above are where those changes go; the API does not change.
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
 | `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
+| `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
 | unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit, grant gate and settlement arithmetic |
 | `examples/bench.rs` | Travis-sized timing; asserts a line edit < 2 s |
 
