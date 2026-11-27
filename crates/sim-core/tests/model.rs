@@ -540,3 +540,47 @@ fn full_park_and_ride_lots_price_drivers_out() {
     }
     assert!(l.daily_boardings < free_riders);
 }
+
+fn cutoff_sim(cut: Option<f64>) -> Sim {
+    let p = Params {
+        instant_build: true,
+        strategic_max_min: cut,
+        ..Params::default()
+    };
+    let mut s = Sim::new(generate(&SynthConfig::small()), p).unwrap();
+    s.add_line(rail()).unwrap();
+    s
+}
+
+#[test]
+fn strategic_cutoff_covering_every_pair_matches_the_dense_model() {
+    let (dense, cut) = (cutoff_sim(None), cutoff_sim(Some(1e6)));
+    let (a, b) = (dense.results(), cut.results());
+    assert_eq!(b.beyond_cutoff_trips, 0.0);
+    for (x, y) in a
+        .daily_trips
+        .to_array()
+        .iter()
+        .zip(b.daily_trips.to_array())
+    {
+        assert!((x - y).abs() < 1e-6 * x.max(1.0), "{a:?} vs {b:?}");
+    }
+    let (la, lb) = (&a.lines[0], &b.lines[0]);
+    assert!((la.daily_boardings - lb.daily_boardings).abs() < 1e-6 * la.daily_boardings);
+}
+
+#[test]
+fn short_strategic_cutoff_drops_far_pairs_but_conserves_trips() {
+    let dense = cutoff_sim(None);
+    let s = cutoff_sim(Some(8.0));
+    let r = s.results();
+    assert!(r.beyond_cutoff_trips > 0.0);
+    // Every generated trip is modeled, unserved or beyond the cutoff.
+    let total =
+        |r: &sim_core::Results| r.daily_trips.total() + r.unserved_trips + r.beyond_cutoff_trips;
+    let (t0, t1) = (total(dense.results()), total(r));
+    assert!((t0 - t1).abs() / t0 < 1e-6, "{t0} vs {t1}");
+    // Non-work trips are redistributed within the cutoff, not lost.
+    assert!(r.other_trips.total() > 0.99 * dense.results().other_trips.total());
+    assert!(r.lines[0].daily_boardings > 0.0);
+}
