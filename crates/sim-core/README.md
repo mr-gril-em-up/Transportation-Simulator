@@ -248,23 +248,43 @@ commute shares and reports the fit, bus and Red Line boardings:
 ```
 cargo run --release -p sim-core --example calibrate -- \
   ../data-pipeline/data/out/48453-2023/scenario.json \
-  ../data-pipeline/data/out/48453-2023/transit.json [bus_peak] [bus_offpeak]
+  ../data-pipeline/data/out/48453-2023/existing_lines.json
 ```
 
 | | Commute drive / carpool / transit / walk / bike | Buses/day | Red Line/day |
 |---|---|---|---|
 | Old defaults | 76.0 / 18.5 / 1.2 / 2.0 / 2.3 | 28,292 | 6,373 |
 | Fitted, SIM-10 (all 10 stations park-and-ride) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,518 | 1,917 |
-| Fitted, SIM-11 (now the defaults; 3 real lots with spaces) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,953 | 1,471 |
+| Fitted, SIM-11 (3 real lots with spaces) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,953 | 1,471 |
+| Fitted on `existing_lines.json` with GTFS headways (now the defaults) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 77,802 | 1,367 |
 | Target / count | ACS 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | ~69-70k (NTD weekday) | 1,500 (APTA weekday) |
 
 Shares are % of commuters who travel (ACS less work from home and other).
 Park-and-ride runs only at the Red Line's three real lots (Leander 619,
 Lakeline 935, Howard 301 spaces); they hold 277 / 37 / 3 cars, so the space
-limit does not bind today. The drive-access constant (4.16 below walk access,
+limit does not bind today. The drive-access constant (3.76 below walk access,
 inherited from SIM-10's tuned 3% split) is still unsourced and sets the Red
 Line figure; see [MODEL.md section 6](docs/MODEL.md#6-mode-choice).
 It takes about 22 s (7 s load, 11 s fit).
+
+### Starting with today's network
+
+`ScenarioInput.lines` are existing service: open on day 0, no capital
+charge, counted in the tax area. The pipeline writes today's CapMetro network
+to `existing_lines.json` (DATA-7), and the shell puts it into `lines` when the
+game starts with it. Its budget on real Travis, per year at the defaults:
+
+| In | | Out | |
+|---|---|---|---|
+| Local sales tax (977,834 residents within 3 km x $39,100 x 1%, SIM-12) | $382M | Bus operating cost (5,539 revenue hours a weekday at $182) | $368M |
+| Fares | $37M | Red Line operating cost | $19M |
+| Operating assistance (14.3%) | $55M | | |
+| **Total** | **$475M** | **Total** | **$387M** |
+
+That is an $88M a year surplus, and $2.8B of borrowing capacity. Real CapMetro collected $382M of
+sales tax in FY2023, which is what the tax rate is calibrated to; operating
+cost runs ~40% high because weekday service is billed every day (MODEL.md
+known gap 6).
 
 ### Calibration probe: CapMetro Red Line (F19)
 

@@ -159,9 +159,10 @@ impl Default for Params {
             // to ACS 2019-2023 B08301 commute shares excluding work-from-home.
             // Transit is fitted as one share; the drive-access gap (-3.76)
             // was tuned in SIM-10 and is not sourced. Red Line park-and-ride
-            // is limited to its three lots and their spaces (SIM-11).
-            // Reproduce with `examples/calibrate.rs`.
-            asc: [0.0, -2.44, -0.40, -4.16, -0.41, -3.89],
+            // is limited to its three lots and their spaces (SIM-11). Network:
+            // the build's `existing_lines.json` (DATA-7, 61 lines, GTFS
+            // weekday headways). Reproduce with `examples/calibrate.rs`.
+            asc: [0.0, -2.44, -0.43, -4.19, -0.40, -3.89],
             wait_weight: 2.0,
             walk_weight: 2.0,
             transfer_penalty_min: 5.0,

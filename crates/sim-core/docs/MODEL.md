@@ -249,7 +249,13 @@ Travis by `examples/calibrate.rs`:
   tuned (-3.76 vs walk access). Probe: with no gap the full lots alone put
   about 4,800 a day on the Red Line, and with a gap of -1 about 4,200, so lot
   capacity cannot replace the tuned constant; real lots are not full either.
-  The constants are now `[0, -2.44, -0.40, -4.16, -0.41, -3.89]`.
+  The constants were then `[0, -2.44, -0.40, -4.16, -0.41, -3.89]`.
+- **GTFS refit (SIM-12 PR):** the network is now the build's
+  `existing_lines.json` (DATA-7): the 61 CapMetro-operated routes with GTFS
+  weekday peak and midday headways and span (DATA-6), the Red Line at its
+  32/51 timetable over 15.1 h. Constants `[0, -2.44, -0.43, -4.19, -0.40,
+  -3.89]`. Buses carry 77.8k a day against ~69-70k weekday (NTD), 11% high;
+  the Red Line 1,367 against 1,500, 9% low.
 - SIM-10 (superseded split): park-and-ride share of transit commuters 3%. **Tuned, not sourced**: ACS
   has no access mode and no CapMetro on-board survey split was found. It
   decides the Red Line: with walk and drive access fitted together, modeled
@@ -598,7 +604,11 @@ In rough priority for M1 tuning:
 3. Transit crowding in path and mode choice.
 4. Frequency-based transit assignment for shared corridors.
 5. Time-sliced assignment and departure-time choice (regional tier, M3).
-6. Statewide scale: Z x Z matrices are ~8 bytes per pair per matrix, fine for
+6. Line economics bill weekday service every day of the year. On today's
+   CapMetro network that is 5,539 bus revenue hours a day, 2.0M a year,
+   against NTD 2023's 1.31M, so operating cost ($387M a year) runs ~40% above
+   CapMetro's ~$270M fixed-route cost. Weekend service levels would fix it.
+7. Statewide scale: Z x Z matrices are ~8 bytes per pair per matrix, fine for
    700 zones, not for 6,900 tracts (M3 needs sparse or blocked storage and a
    contracted highway graph).
 7. Park-and-ride car trips are not added to road volumes.
