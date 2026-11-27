@@ -61,6 +61,7 @@ if [[ -z "${SKIP_OSM:-}" ]]; then
   while IFS=, read -r id agency url fallback _; do
     dir="$RAW/gtfs/$id"
     if [[ -s "$dir/routes.txt" ]]; then echo "have $dir"; continue; fi
+    mkdir -p "$dir"
     if get "gtfs_$id.zip" "$url" ${fallback:+"$fallback"} \
        && { unzip -o -q -j "$RAW/gtfs_$id.zip" '*routes.txt' '*trips.txt' '*stop_times.txt' '*stops.txt' '*calendar*.txt' -d "$dir" \
             || [[ -s "$dir/routes.txt" && -s "$dir/stop_times.txt" ]]; }; then

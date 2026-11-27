@@ -76,8 +76,8 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 - **Block-group zones from Centers of Population** (D13): one small CSV gives population and a population-weighted centroid, with no geometry library.
 - **Routing simplification** (DATA-2): `scenario.json` drops road fragments, prunes dead ends without a zone and merges identical pass-through links. Paths between zones are unchanged; on Travis it cuts road nodes 44%. `roads.json` keeps full detail for drawing.
 - **ACS income and zero-car share at block-group level** (DATA-4): B19013 and B25044 from the ACS table-based summary files (no API key); suppressed estimates take the tract, then county, household-weighted mean. Land area from TIGER `ALAND`. Both inputs are optional.
-- **Today's network as existing lines** (DATA-7): `existing_lines.json` holds one sim-core line per GTFS-matched route, so calibration and a later "start with today's network" setting use the same network. `--existing-lines` also puts them in `scenario.json` `lines`; it is off by default because sim-core loads `lines` with no switch.
-- **GTFS headways** (DATA-6): CapMetro routes in `transit.json` carry weekday peak and midday headways and span from the GTFS feed, matched by route number.
+- **Today's network as existing lines** (DATA-7, DATA-9): `existing_lines.json` holds one sim-core line per GTFS route of every agency feed in `reference/gtfs_feeds.csv` (CapMetro, DART, Houston METRO, Trinity Metro, DCTA, VIA, CCRTA, El Paso County), stops and frequencies from GTFS, so calibration and a later "start with today's network" setting use the same network. `--existing-lines` also puts them in `scenario.json` `lines`; it is off by default because sim-core loads `lines` with no switch.
+- **GTFS headways** (DATA-6): each feed is reduced to weekday peak and midday headway, span and the longest trip's stops per route. CapMetro routes in `transit.json` also carry weekday peak and midday headways and span from the GTFS feed, matched by route number.
 - **Commute mode shares** from ACS B08301, summed over the area, go in the manifest for mode-choice calibration (F14).
 - **Highway-only roads** (DATA-8): `--roads highway` drops roads below secondary, so a statewide tract build has a road graph small enough for the strategic tier (F34).
 - **Tract and county zone levels** (DATA-5): `--level tract|county` merges block groups by GEOID prefix after the block-group build. Counts add; centroid, income and zero-car share are population-weighted; flows inside one coarse zone become intrazonal. The statewide scenario at block-group level is far too large for a sub-20 s day, so coarser levels come first.
@@ -107,8 +107,8 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 | `src/aggregate.rs` | Merges block-group zones and flows into tracts or counties (`--level`) |
 | `src/acs.rs` | Reads ACS summary-file tables (pipe-delimited) and TIGER `ALAND` (dBASE), fills zone income, zero-car share and area with tract/county fallback |
 | `src/census.rs` | Reads Centers of Population (zones) and LODES RAC/WAC/OD, aggregates blocks to block groups |
-| `src/lines.rs` | Turns GTFS-matched transit routes into sim-core `TransitLine`s (existing service), with timetable overrides and park-and-ride stops from `figures.csv` |
-| `src/gtfs.rs` | Reduces the CapMetro GTFS timetable to weekday peak and midday headway and span per route, and attaches them to OSM routes by `ref` |
+| `src/lines.rs` | Turns every feed's GTFS routes into sim-core `TransitLine`s (existing service), with timetable overrides and park-and-ride stops from `figures.csv` |
+| `src/gtfs.rs` | Lists the agency feeds (`reference/gtfs_feeds.csv`), reduces each timetable to weekday peak and midday headway, span and stop sequence per route, and attaches CapMetro's to OSM routes by `ref` |
 | `src/osm.rs` | Two-pass OSM PBF reader: road graph and transit routes, clipped to a bbox |
 | `src/scenario.rs` | Converts the layers to `sim_core::ScenarioInput`, picks each zone's road node |
 | `src/model.rs` | Serde types for the detail files (`zones.json`, `roads.json`, `transit.json`) |
