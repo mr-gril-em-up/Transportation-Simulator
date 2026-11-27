@@ -14,6 +14,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
 ![Editing a line: stops ringed in black can be dragged, added or deleted](docs/img/stop-editing.png)
 ![Budget after a bond: debt, payments and the distress count toward bankruptcy](docs/img/bonds.png)
+![Line inspector: boardings by stop, segment loads both ways, peak load against capacity](docs/img/inspector.png)
 ![Monthly statements: two closed months of fares, costs, tax, debt and capital](docs/img/statements.png)
 ![A line under construction: faded on the map, opening day in the panel](docs/img/under-construction.png)
 ![Sim-driven clock after Skip to next month: Day 31, budget settled, ridership re-run](docs/img/sim-clock.png)
@@ -73,6 +74,12 @@ then waits for the build. The terminal prints
   interchange stop moves the other lines' stop with it, so the interchange stays connected. **Esc** or
   **Done** finishes. Each finished edit re-runs the sim; drags preview without a sim call until
   you release.
+- **Inspect line** (per line, under its buttons, sim-core only): route length, one-way run time,
+  vehicles needed, passenger-km per day, and the busiest segment's peak-hour riders against the
+  places the headway provides (red with a hint above 100%). Two charts: daily boardings at each
+  stop, and the daily load on each segment in both directions (outbound solid, inbound dashed).
+  Hover a bar or segment for its numbers. Hidden while a line is under construction or rebuilding,
+  because sim-core's per-stop figures follow the running version's stops then (F17).
 - **Rename a line**: double-click its name in the panel, type, then **Enter** (or click away).
   **Esc** cancels.
 - **Desire lines**: toggles the top 300 zone pairs by daily trips (F06). Width scales with the
@@ -184,8 +191,10 @@ interface SimClient {
   `isRegional(mode)` is false for `bus`, `trolleybus` and `brt`, and true for everything else. It
   decides schematic versus geographic drawing.
 - `RouteResult`: `routeId`, `dailyRiders` (weekday boardings, rounded), `boardingsByStop` (keyed by
-  stop id), plus optional `operatingCostPerDay` (USD) and `fareboxRecovery` (fare revenue over
-  operating cost). The mock leaves the optional fields out.
+  stop id), plus optional `operatingCostPerDay` (USD), `fareboxRecovery` (fare revenue over
+  operating cost) and `detail` (`LineDetail`: `lengthKm`, `runMin`, `vehicles`, `passengerKm`,
+  `segmentLoads` as `[outbound, inbound]` per segment, `peakHourLoad`, `peakHourCapacity`). The
+  mock leaves the optional fields out, so it has no inspector.
 
 `createSim()` ([src/sim/index.ts](src/sim/index.ts)) returns `TauriSim` when
 `"__TAURI_INTERNALS__" in window`, and `MockSim` otherwise.

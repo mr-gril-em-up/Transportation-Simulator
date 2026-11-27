@@ -5,7 +5,7 @@ mod support {
     pub mod pbf;
 }
 
-use data_pipeline::{build, census::Area, model::*, Config};
+use data_pipeline::{aggregate::Level, build, census::Area, model::*, Config};
 
 use flate2::{write::GzEncoder, Compression};
 use std::io::Write;
@@ -198,6 +198,7 @@ fn builds_travis_sample() {
         },
         year: 2022,
         margin_deg: 0.05,
+        level: Level::BlockGroup,
     };
     let m = build(&cfg).unwrap();
 
@@ -362,6 +363,7 @@ fn whole_state_area_keeps_both_counties() {
         },
         year: 2022,
         margin_deg: 0.05,
+        level: Level::BlockGroup,
     };
     let m = build(&cfg).unwrap();
     assert_eq!(m.zones, 5);
@@ -369,5 +371,34 @@ fn whole_state_area_keeps_both_counties() {
     assert_eq!(m.internal_commuters, 1210);
     assert_eq!(m.commute_out, 999);
     assert!(m.road_edges.is_none());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn county_level_merges_block_groups() {
+    let root = tmp("county");
+    let (raw, out) = (root.join("raw"), root.join("out"));
+    write_sample(&raw);
+    std::fs::remove_file(raw.join("texas-latest.osm.pbf")).unwrap();
+    let cfg = Config {
+        raw,
+        out: out.clone(),
+        area: Area {
+            prefixes: vec!["48".into()],
+        },
+        year: 2022,
+        margin_deg: 0.05,
+        level: Level::County,
+    };
+    let m = build(&cfg).unwrap();
+    assert_eq!((m.zones, m.block_groups, m.zone_level), (2, 5, "county"));
+    // Totals do not change with the level.
+    assert_eq!((m.population, m.internal_commuters), (9100, 1210));
+    let zones: Zones = read(&out, "zones.json");
+    let geoids: Vec<&str> = zones.zones.iter().map(|z| z.geoid.as_str()).collect();
+    assert_eq!(geoids, ["48453", "48491"]);
+    assert_eq!(zones.zones[0].population, 6600);
+    let s: sim_core::ScenarioInput = read(&out, "scenario.json");
+    assert_eq!(s.zones.len(), 2);
     let _ = std::fs::remove_dir_all(root);
 }

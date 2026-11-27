@@ -4,7 +4,8 @@
 //!   Bureau's table-based summary files (pipe-delimited, one file per table,
 //!   no API key needed): median household income (B19013) and households
 //!   with no vehicle (B25044, tenure by vehicles available). `fetch.sh` keeps
-//!   only Texas block-group rows.
+//!   only Texas block-group rows. Means of transportation to work (B08301)
+//!   is summed over the area into commute mode shares for calibration.
 //! - TIGER/Line 2020 block-group `ALAND` (land area, m²), read from the
 //!   shapefile's `.dbf` attribute table. Polygons are not read yet.
 //!
@@ -12,6 +13,7 @@
 
 use crate::model::Zone;
 use anyhow::{bail, Context, Result};
+use serde::Serialize;
 use std::collections::HashMap;
 
 /// ACS values for one block group. `None` where the Census suppresses the
@@ -29,6 +31,75 @@ pub struct AcsRow {
 fn bg_geoid(geo_id: &str) -> Option<&str> {
     let g = geo_id.strip_prefix("1500000US")?;
     (g.len() == 12).then_some(g)
+}
+
+/// Area-wide commute mode shares from ACS B08301 (workers 16 and over),
+/// summed over the study area's block groups. Shares are of all workers,
+/// including those who work from home, and add up to 1.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct CommuteShares {
+    /// Block groups with a B08301 row.
+    pub block_groups: usize,
+    /// Workers 16 and over (`B08301_E001`), summed.
+    pub workers: f64,
+    pub drove_alone: f64,
+    pub carpool: f64,
+    /// Public transportation excluding taxicab (`_E010`).
+    pub transit: f64,
+    pub walk: f64,
+    pub bike: f64,
+    /// Worked from home (`_E021`).
+    pub wfh: f64,
+    /// Taxicab, motorcycle and other means (`_E016`, `_E017`, `_E020`).
+    pub taxi_motorcycle_other: f64,
+}
+
+/// Sums B08301 over `geoids` (12-digit block groups) into mode shares.
+/// Block-group estimates are summed, which equals the published area total
+/// up to rounding. `None` if no listed block group has workers.
+pub fn commute_shares<'a>(
+    b08301: &str,
+    geoids: impl Iterator<Item = &'a str>,
+) -> Result<Option<CommuteShares>> {
+    const COLS: [&str; 10] = [
+        "B08301_E001",
+        "B08301_E003",
+        "B08301_E004",
+        "B08301_E010",
+        "B08301_E019",
+        "B08301_E018",
+        "B08301_E021",
+        "B08301_E016",
+        "B08301_E017",
+        "B08301_E020",
+    ];
+    let t = read_table(b08301, &COLS)?;
+    let mut sum = [0.0; 10];
+    let mut n = 0;
+    for g in geoids {
+        if let Some(v) = t.get(g) {
+            n += 1;
+            for (s, x) in sum.iter_mut().zip(v) {
+                *s += x.unwrap_or(0.0);
+            }
+        }
+    }
+    let w = sum[0];
+    if w <= 0.0 {
+        return Ok(None);
+    }
+    let r = |x: f64| (x / w * 10_000.0).round() / 10_000.0;
+    Ok(Some(CommuteShares {
+        block_groups: n,
+        workers: w,
+        drove_alone: r(sum[1]),
+        carpool: r(sum[2]),
+        transit: r(sum[3]),
+        walk: r(sum[4]),
+        bike: r(sum[5]),
+        wfh: r(sum[6]),
+        taxi_motorcycle_other: r(sum[7] + sum[8] + sum[9]),
+    }))
 }
 
 /// Reads one pipe-delimited table: header row, then one row per geography.
@@ -216,5 +287,28 @@ mod tests {
         assert_eq!((b.median_income, b.zero_car_share), (None, None));
         assert_eq!(m["484530011021"].median_income, None);
         assert!((m["484530011021"].zero_car_share.unwrap() - 0.1).abs() < 1e-12);
+    }
+
+    #[test]
+    fn commute_shares_sum_listed_block_groups() {
+        let head = "GEO_ID|B08301_E001|B08301_E003|B08301_E004|B08301_E010|B08301_E016|B08301_E017|B08301_E018|B08301_E019|B08301_E020|B08301_E021";
+        let text = format!(
+            "{head}\n0500000US48453|999|0|0|0|0|0|0|0|0|0\n\
+             1500000US484530011001|100|60|10|5|1|1|2|3|2|16\n\
+             1500000US484530011002|100|80|5|5|0|0|0|5|0|5\n\
+             1500000US484910203011|500|500|0|0|0|0|0|0|0|0\n"
+        );
+        let c = commute_shares(
+            &text,
+            ["484530011001", "484530011002", "484530099991"].into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!((c.block_groups, c.workers), (2, 200.0));
+        assert_eq!((c.drove_alone, c.carpool, c.transit), (0.7, 0.075, 0.05));
+        assert_eq!(
+            (c.walk, c.bike, c.wfh, c.taxi_motorcycle_other),
+            (0.04, 0.01, 0.105, 0.02)
+        );
     }
 }

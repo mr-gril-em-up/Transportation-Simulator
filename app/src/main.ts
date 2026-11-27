@@ -7,13 +7,13 @@ import { StopEditor } from "./edit";
 import { createMap, GEO_FULL, SCHEMATIC_FULL, setData, zoomBand } from "./map";
 import { layoutSchematic, morph } from "./schematic";
 import { km } from "./geo";
-import { money } from "./format";
+import { money, escapeHtml } from "./format";
+import { inspectorHtml } from "./inspector";
 import { isRegional, type PendingRoute, type Budget, type Statement, type ClockState, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
 import { createSim } from "./sim";
 import { serialQueue } from "./sim/queue";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 // CapMetro fares (sim-core figures fare_capmetro_*): MetroRail $3.50, local bus $1.25.
 const DEFAULT_FARE: Partial<Record<Mode, number>> = { commuter_rail: 3.5 };
 const COLORS = ["#dc241f", "#0098d4", "#00782a", "#9b0056", "#f3a9bb", "#ee7c0e", "#6950a1", "#b36305"];
@@ -207,6 +207,9 @@ function stopFeature(
   };
 }
 
+/** Routes whose inspector is open (survives the panel's re-renders). */
+const inspecting = new Set<string>();
+
 function renderPanel(): void {
   const list = $("route-list");
   if (!routes.length) {
@@ -233,12 +236,22 @@ function renderPanel(): void {
         ? `<div class="econ building">${p.replacesOpenLine ? "Rebuild opens" : "Under construction, opens"} ${openingLabel(p.opensDay)}${p.replacesOpenLine ? "; current version keeps running" : ""}</div>`
         : "";
       const editing = editor.route?.id === r.id;
+      // During a rebuild sim-core's per-stop figures follow the running version's stops, not the drawn ones.
+      const canInspect = res?.detail !== undefined && !pending.has(r.id) && riders > 0;
+      const inspect =
+        canInspect && inspecting.has(r.id)
+          ? inspectorHtml(
+              r.stops.map((s) => ({ name: s.name, boardings: res.boardingsByStop[s.id] ?? 0 })),
+              res.detail!,
+            )
+          : "";
       return `<div class="route${editing ? " editing" : ""}" data-id="${r.id}">
         <span class="swatch" style="background:${r.color}"></span>
         <b class="name" data-act="rename" title="Double-click to rename">${escapeHtml(r.name)}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day${econ}${build}${offpeak}
         <div class="row"><select data-act="headway">${opts}</select>
         <button data-act="edit">${editing ? "Done" : "Edit stops"}</button>
-        <button data-act="del" title="Delete line">✕</button></div></div>`;
+        <button data-act="del" title="Delete line">✕</button></div>
+        ${canInspect ? `<div class="toggle" data-act="inspect" title="Boardings, loads and capacity">${inspecting.has(r.id) ? "▼" : "▶"} Inspect line</div>` : ""}${inspect}</div>`;
     })
     .join("");
 }
@@ -395,7 +408,13 @@ $("route-list").addEventListener("click", (e) => {
     }
     return;
   }
+  if (id && el.dataset.act === "inspect") {
+    if (!inspecting.delete(id)) inspecting.add(id);
+    renderPanel();
+    return;
+  }
   if (id && el.dataset.act === "del") {
+    inspecting.delete(id);
     if (editor.route?.id === id) editor.stop();
     routes.splice(routes.findIndex((x) => x.id === id), 1);
     void apply(() => sim.removeRoute(id));

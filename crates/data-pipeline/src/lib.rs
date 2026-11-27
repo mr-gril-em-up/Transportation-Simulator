@@ -2,6 +2,7 @@
 //! game-ready zone, demand and network files out.
 
 pub mod acs;
+pub mod aggregate;
 pub mod census;
 pub mod model;
 pub mod osm;
@@ -25,6 +26,8 @@ pub struct Config {
     pub year: u32,
     /// Degrees added around the zones' bbox when clipping OSM.
     pub margin_deg: f64,
+    /// Zone level of the outputs: block group (default), tract or county.
+    pub level: aggregate::Level,
 }
 
 /// Summary written next to the data: counts, totals and the M0 exit-test
@@ -62,6 +65,13 @@ pub struct Manifest {
     pub acs_income_zones: Option<usize>,
     pub acs_zero_car_zones: Option<usize>,
     pub area_zones: Option<usize>,
+    /// Area-wide ACS commute mode shares (B08301), for calibration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commute_mode_shares: Option<acs::CommuteShares>,
+    /// `block_group`, `tract` or `county`.
+    pub zone_level: &'static str,
+    /// Block groups merged into `zones` (equals `zones` at block group level).
+    pub block_groups: usize,
 }
 
 #[derive(Serialize)]
@@ -118,8 +128,6 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
 
     std::fs::create_dir_all(&cfg.out)?;
     let sum = |f: fn(&Zone) -> u32| zones.iter().map(|z| f(z) as u64).sum::<u64>();
-    let mut top: Vec<&Flow> = flows.iter().collect();
-    top.sort_by_key(|f| (std::cmp::Reverse(f.workers), f.home, f.work));
     let mut m = Manifest {
         area: cfg.area.prefixes.clone(),
         lodes_year: y,
@@ -136,15 +144,7 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         internal_commuters: flows.iter().map(|f| f.workers as u64).sum(),
         commute_out: sum(|z| z.commute_out),
         commute_in: sum(|z| z.commute_in),
-        top_flows: top
-            .iter()
-            .take(20)
-            .map(|f| TopFlow {
-                home: zones[f.home as usize].geoid.clone(),
-                work: zones[f.work as usize].geoid.clone(),
-                workers: f.workers,
-            })
-            .collect(),
+        top_flows: top_flows(&zones, &flows),
         bbox: None,
         road_nodes: None,
         road_edges: None,
@@ -156,6 +156,9 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         acs_income_zones: None,
         acs_zero_car_zones: None,
         area_zones: None,
+        commute_mode_shares: None,
+        zone_level: cfg.level.name(),
+        block_groups: zones.len(),
     };
 
     // ACS 5-year ending in the LODES year, and TIGER 2020 land area.
@@ -197,6 +200,23 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
     }
     if aland.is_some() {
         m.area_zones = Some(ar);
+    }
+    let b08301 = raw.join(format!("acs5_bg48_{y}_b08301.dat"));
+    if b08301.exists() {
+        m.commute_mode_shares = acs::commute_shares(
+            &std::fs::read_to_string(&b08301)?,
+            zones.iter().map(|z| z.geoid.as_str()),
+        )?;
+        if m.commute_mode_shares.is_some() {
+            m.sources
+                .push("US Census Bureau, American Community Survey 5-year estimates (B08301)");
+        }
+    }
+    let (zones, flows) = aggregate::aggregate(&zones, &flows, cfg.level);
+    if cfg.level != aggregate::Level::BlockGroup {
+        m.zones = zones.len();
+        m.flows = flows.len();
+        m.top_flows = top_flows(&zones, &flows);
     }
 
     let pbf = raw.join("texas-latest.osm.pbf");
@@ -242,6 +262,20 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
     let w = BufWriter::new(File::create(cfg.out.join("manifest.json"))?);
     serde_json::to_writer_pretty(w, &m)?;
     Ok(m)
+}
+
+/// The 20 largest home-to-work flows, for the manifest's exit-test table.
+fn top_flows(zones: &[Zone], flows: &[Flow]) -> Vec<TopFlow> {
+    let mut top: Vec<&Flow> = flows.iter().collect();
+    top.sort_by_key(|f| (std::cmp::Reverse(f.workers), f.home, f.work));
+    top.iter()
+        .take(20)
+        .map(|f| TopFlow {
+            home: zones[f.home as usize].geoid.clone(),
+            work: zones[f.work as usize].geoid.clone(),
+            workers: f.workers,
+        })
+        .collect()
 }
 
 fn rail_summary(t: &Transit) -> Vec<String> {
