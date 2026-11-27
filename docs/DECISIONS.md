@@ -42,6 +42,7 @@ Detailed app decisions also live in [app/docs/DECISIONS.md](../app/docs/DECISION
 
 | # | Date | Decision | Why | Status | Source |
 |---|---|---|---|---|---|
+| APP-1 | 2026-11-27 | sim-core owns the game clock: a worker thread in the desktop shell calls `Sim::tick` every 100 ms under the Sim lock; the client polls `clock` and interpolates | One clock for every tier; polling needs no event plumbing and the day number tells the client when to re-read results | As built | [app A23](../app/docs/DECISIONS.md) |
 
 ## Project and docs (DOC)
 

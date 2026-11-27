@@ -2,6 +2,8 @@
 // Two backends: TauriSim (tauri.ts) calls sim-core through Tauri commands in
 // the desktop app; MockSim (mock.ts) runs in a plain browser (`npm run dev`).
 // createSim() in index.ts picks one.
+import type { ClockState } from "../clock";
+export type { ClockState };
 
 /** WGS84 [longitude, latitude] in degrees. */
 export type LngLat = [number, number];
@@ -79,4 +81,12 @@ export interface SimClient {
   /** Cost and ridership of `route` without building it. */
   previewRoute(route: RouteSpec): Promise<RoutePreview>;
   budget(): Promise<Budget>;
+  /** Results for every route without changing anything (re-read after the day re-runs). */
+  results(): Promise<RouteResult[]>;
+  /** The simulation's clock (F21): the client polls it and interpolates in between. */
+  clock(): Promise<ClockState>;
+  /** Pause/resume and/or set time-lapse; omitted fields stay as they are. */
+  setClock(c: { paused?: boolean; timelapse?: number }): Promise<ClockState>;
+  /** Jump to the first day of next month; settles the month's budget. */
+  skipToNextMonth(): Promise<ClockState>;
 }

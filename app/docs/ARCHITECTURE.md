@@ -15,7 +15,7 @@ flowchart LR
         clock["clock.ts<br/>rAF loop"] --> main
     end
     subgraph shell["Tauri shell (Rust, src-tauri/)"]
-        cmds["commands<br/>upsert_route, remove_route, preview_route,<br/>ledger, desire_lines, sim_status"] --> state["SimState<br/>Mutex + Condvar<br/>client id to LineId"]
+        cmds["commands<br/>upsert_route, remove_route, preview_route, ledger,<br/>desire_lines, clock, set_clock, skip_to_next_month,<br/>results, sim_status"] --> state["SimState<br/>Mutex + Condvar<br/>client id to LineId"]
         state --> core["sim_core::Sim"]
     end
     tauri -->|"invoke (JSON IPC)"| cmds
@@ -43,7 +43,7 @@ millisecond, so there is no diffing or caching.
 | `src/geo.ts` | `km()` distance helper (no app or sim dependencies) | api types |
 | `src/edit.ts` | `StopEditor`: one line at a time; drag (moves interchange partners within `LINK_KM` too) (preview via `render`, sim on release), click to insert at `bestInsertIndex`, right-click to delete; forces geographic drawing while active | map, api |
 | `src/draw.ts` | Drawing state machine: click adds a stop, Enter/double-click finishes, Esc cancels, snaps to existing stops | map |
-| `src/clock.ts` | `GameClock`: game minutes, pause, time-lapse steps | nothing |
+| `src/clock.ts` | `GameClock`: display copy of the sim clock (interpolate, `sync`), time-lapse steps | nothing |
 | `src/main.ts` | Wires everything: route list, sim round trips, render, HUD events, keyboard, clock loop | all of the above |
 | `src-tauri/src/main.rs` | Tauri builder: manages `SimState`, registers commands | sim |
 | `src-tauri/src/sim.rs` | `SimState` (build on a background thread, wait, map ids), the three commands, Rust tests | sim-core, tauri |
@@ -152,15 +152,40 @@ less grant; an extension pays only the difference; nothing is refunded). The
 mock copies them in a few lines (`mockCapital`, docs/MOCK-SIM.md) so the HUD
 behaves the same in the browser.
 
-### Clock ownership
+### Clock ownership (F21)
 
-The clock still lives in the client (decision A9). sim-core's `Sim::tick`
-advances its own `Clock` and re-equilibrates once per game day crossed, which
-takes seconds. Wiring it means a worker loop in the shell, plus events back to
-the client when results change. That is F21's move into sim-core. The UI
-contract (pause, time-lapse button, zoom-independent speed) will not change.
-Until then, line edits refresh results directly, and car congestion is as
-computed at startup (`results().car_times_stale` turns true after an edit).
+sim-core owns time. `SimState::spawn_clock` starts a worker thread that
+sleeps 100 ms, measures real elapsed time, takes the Sim lock and calls
+`Sim::tick(dt)`. `tick` advances sim-core's `Clock` (1 game minute per real
+second times time-lapse) and, at each day boundary, re-runs the day
+(`equilibrate_warm`, which also refreshes car congestion) and settles any
+month crossed. All of that happens under the lock, so a line edit made at
+midnight waits for it.
+
+```mermaid
+sequenceDiagram
+    participant W as clock worker (shell)
+    participant S as Sim (Mutex)
+    participant C as client
+    loop every 100 ms
+        W->>S: tick(dt)
+    end
+    loop every 500 ms
+        C->>S: clock
+        S-->>C: game_seconds, timelapse, paused, day
+        Note over C: day changed? apply(results)
+    end
+    C->>S: set_clock / skip_to_next_month (buttons)
+```
+
+The client's `GameClock` is a display copy. It advances every animation
+frame from real time (so minutes tick smoothly) and is overwritten by each
+poll's answer (`sync`). Pause and time-lapse apply locally at once, then go to
+the sim with `set_clock`. A change of `day` between polls means the day
+re-ran, so the client queues `results()` through the serial sim queue, which
+also refreshes the budget line. Skip to next month goes through the same
+queue. Before the Sim is built, the display clock runs locally; on ready,
+the client hands the sim whatever pause and speed the player set meanwhile.
 
 ## Map layers (`map.ts`)
 
@@ -194,15 +219,15 @@ OSM data is ODbL: MapLibre's attribution control is on (compact) and must stay.
 
 ## The clock (`clock.ts`)
 
-`GameClock.minutes` counts game minutes since Day 1 00:00 (starts at 06:00).
-`main.ts` runs a `requestAnimationFrame` loop that calls
-`tick(realSecondsSinceLastFrame)`. `tick` adds `realSeconds * speed` unless
+`GameClock.minutes` counts game minutes since sim-core's day 0 00:00 (starts
+at 05:00, as sim-core does); `label()` shows days from 1. `main.ts` runs a
+`requestAnimationFrame` loop that calls `tick(realSecondsSinceLastFrame)`,
+and `sync(state)` replaces minutes, pause and speed with the sim's on every
+poll (see "Clock ownership"). `tick` adds `realSeconds * speed` unless
 paused. Speed comes only from the time-lapse steps `[1, 2, 10, 60]`. Nothing
 in the zoom path touches the clock: `map.on("zoom")` only calls `render()`.
 This is the "zoom never changes the timescale" rule, and the unit test
 `clock > runs 1 game minute per real second...` pins the arithmetic.
-
-Skip-to-next-month and monthly budget settlement are M2 work.
 
 ## Desktop shell (`src-tauri/`)
 

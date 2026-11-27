@@ -48,7 +48,7 @@ The minimum station spacing is in screen pixels, so the layout depends on
 zoom. Recomputing is sub-millisecond at M1 sizes. If statewide networks
 make it slow, cache layouts per integer zoom and per network revision.
 
-### A9. Client owns the clock for now
+### A9. Client owns the clock for now (superseded by A23)
 sim-core exposes `Sim::tick`, but it re-equilibrates at each game-day boundary
 (seconds), which needs a worker loop in the shell and result events back to
 the client. That is F21's move; until then `GameClock` keeps time in the
@@ -146,3 +146,13 @@ counter keeps a burst of clicks from queueing stale previews. Stop edits are
 charged on release without a preview: a drag already shows ridership after
 release, and the budget line shows the cost change. If players get surprised
 by edit costs, add a preview on drag (F16 follow-up).
+
+### A23. The sim owns the clock; the client polls it
+A shell worker calls `Sim::tick` every 100 ms; the client polls `clock` every
+500 ms and interpolates in between. Polling over Tauri events: the only thing
+pushed would be "the day changed", which the client sees within half a second
+from the polled `day`, and polling needs no `AppHandle` in `SimState`, so the
+state stays testable without a running app. Ticking under the same lock as
+edits keeps the one-`Sim`, one-writer model; the cost is that an edit at
+midnight waits for the day re-run. sim-core's start time (day 0 05:00) is
+adopted; the client's old 06:00 start is gone.

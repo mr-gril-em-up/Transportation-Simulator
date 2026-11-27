@@ -2,7 +2,7 @@
 // app/src-tauri/src/sim.rs. Converts the app's RouteSpec to sim-core's
 // TransitLine and LineResult back to RouteResult.
 import { invoke } from "@tauri-apps/api/core";
-import { isRegional, type Budget, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
+import { isRegional, type Budget, type ClockState, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 /** sim-core TransitLine (crates/sim-core/src/schema.rs). Omitted fields take mode defaults. */
 interface TransitLine {
@@ -46,6 +46,21 @@ export const fromLedger = (l: Ledger): Budget => ({
   cash: l.cash,
   capitalSpentThisMonth: l.current.capital_spent,
   grantsThisMonth: l.current.federal_capital_grants,
+});
+
+/** sim-core Clock (crates/sim-core/src/clock.rs) plus `day`, from the shell's ClockOut. */
+interface ClockOut {
+  game_seconds: number;
+  timelapse: number;
+  paused: boolean;
+  day: number;
+}
+
+export const fromClock = (c: ClockOut): ClockState => ({
+  gameSeconds: c.game_seconds,
+  timelapse: c.timelapse,
+  paused: c.paused,
+  day: c.day,
 });
 
 /** RouteSpec to sim-core TransitLine (field mapping in docs/ARCHITECTURE.md). */
@@ -111,6 +126,22 @@ export class TauriSim implements SimClient {
 
   async budget(): Promise<Budget> {
     return fromLedger(await invoke<Ledger>("ledger"));
+  }
+
+  async results(): Promise<RouteResult[]> {
+    return this.convert(await invoke<LineResultOut[]>("results"));
+  }
+
+  async clock(): Promise<ClockState> {
+    return fromClock(await invoke<ClockOut>("clock"));
+  }
+
+  async setClock(c: { paused?: boolean; timelapse?: number }): Promise<ClockState> {
+    return fromClock(await invoke<ClockOut>("set_clock", { paused: c.paused ?? null, timelapse: c.timelapse ?? null }));
+  }
+
+  async skipToNextMonth(): Promise<ClockState> {
+    return fromClock(await invoke<ClockOut>("skip_to_next_month"));
   }
 
   private convert(out: LineResultOut[]): RouteResult[] {

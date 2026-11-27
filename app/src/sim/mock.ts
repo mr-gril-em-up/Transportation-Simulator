@@ -2,7 +2,7 @@
 // Travis County zones. Deterministic, responds to stop placement, headway and
 // fare, and runs in a few ms. Numbers are plausible, not calibrated.
 import { km } from "../geo";
-import { isRegional, type Budget, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
+import { isRegional, type Budget, type ClockState, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 interface Zone {
   lngLat: LngLat;
@@ -161,6 +161,36 @@ export class MockSim implements SimClient {
 
   async budget(): Promise<Budget> {
     return { ...this.ledger };
+  }
+
+  async results(): Promise<RouteResult[]> {
+    return this.run();
+  }
+
+  // Same rules as sim-core's Clock: starts day 0 05:00, 60 game s per real s
+  // at 1x, 30-day months. Advanced from wall time on each call. The mock has
+  // no daily re-run or monthly settlement.
+  private clk = { gameSeconds: 5 * 3600, timelapse: 1, paused: false };
+  private wall = Date.now();
+
+  async clock(): Promise<ClockState> {
+    const now = Date.now();
+    if (!this.clk.paused) this.clk.gameSeconds += ((now - this.wall) / 1000) * 60 * this.clk.timelapse;
+    this.wall = now;
+    return { ...this.clk, day: Math.floor(this.clk.gameSeconds / 86400) };
+  }
+
+  async setClock(c: { paused?: boolean; timelapse?: number }): Promise<ClockState> {
+    await this.clock(); // bank time at the old speed first
+    if (c.paused !== undefined) this.clk.paused = c.paused;
+    if (c.timelapse !== undefined && c.timelapse > 0) this.clk.timelapse = c.timelapse;
+    return this.clock();
+  }
+
+  async skipToNextMonth(): Promise<ClockState> {
+    const day = Math.floor((await this.clock()).day / 30 + 1) * 30;
+    this.clk.gameSeconds = day * 86400;
+    return this.clock();
   }
 
   async removeRoute(id: string): Promise<RouteResult[]> {

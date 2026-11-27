@@ -7,14 +7,18 @@ mod sim;
 
 fn main() {
     tauri::Builder::default()
-        .manage(sim::SimState::start())
+        .manage(sim::SimState::start().spawn_clock())
         .invoke_handler(tauri::generate_handler![
             sim::sim_status,
             sim::upsert_route,
             sim::remove_route,
             sim::desire_lines,
             sim::preview_route,
-            sim::ledger
+            sim::ledger,
+            sim::clock,
+            sim::set_clock,
+            sim::skip_to_next_month,
+            sim::results
         ])
         .run(tauri::generate_context!())
         .expect("error while running Transpo-Sim");

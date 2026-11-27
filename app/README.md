@@ -13,6 +13,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Browser client (mock sim): Red Line demo and a drawn bus line](docs/img/city-view.png)
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
 ![Editing a line: stops ringed in black can be dragged, added or deleted](docs/img/stop-editing.png)
+![Sim-driven clock after Skip to next month: Day 31, budget settled, ridership re-run](docs/img/sim-clock.png)
 ![Drawing a rail line: the hint box previews capital cost, grant and riders before you build](docs/img/cost-preview.png)
 ![Desire lines from sim-core with the Red Line; pairs along the line turn green as transit share rises](docs/img/desire-lines.png)
 
@@ -75,7 +76,10 @@ the build. The terminal prints
   the sim.
 - **Clock** (top center): pause with the button or **Space**. Space is ignored while a button or
   dropdown has focus, so it never toggles twice. **Time-lapse** (or **T**) cycles 1x, 2x, 10x and
-  60x. At 1x, one real second is one game minute.
+  60x. At 1x, one real second is one game minute. **Skip to next month** jumps to the first day
+  of next month and settles the budget. The simulation owns the clock (F21): sim-core starts at
+  Day 1 05:00 (day 0 inside sim-core), re-runs the day at each midnight (ridership refreshes in
+  the panel) and settles the budget each 30-day month.
 - **Zoom badge** (bottom left): the current zoom band (State, Region, City, Neighborhood), whether
   lines are drawn schematic or geographic, and jump buttons for Texas and Travis County.
 
@@ -116,6 +120,10 @@ interface SimClient {
   removeRoute(id: string): Promise<RouteResult[]>;
   previewRoute(route: RouteSpec): Promise<RoutePreview>; // cost + forecast, nothing charged
   budget(): Promise<Budget>;                             // cash and this month's capital/grants
+  results(): Promise<RouteResult[]>;                     // re-read after the daily re-run
+  clock(): Promise<ClockState>;                          // { gameSeconds, timelapse, paused, day }
+  setClock(c: { paused?; timelapse? }): Promise<ClockState>;
+  skipToNextMonth(): Promise<ClockState>;
 }
 ```
 
@@ -145,6 +153,10 @@ interface SimClient {
 | `desire_lines` | `n: number` | Top `n` zone pairs by daily trips: `{ from: [lon,lat], to: [lon,lat], trips, transit_trips }[]`, largest first |
 | `preview_route` | `line: TransitLine` | sim-core `LinePreview`: `{ line: LineResult, capital_cost, federal_grant, capital_per_daily_boarding }`. Runs under the Sim lock (sim-core adds and removes the line while it evaluates, 40 to 80 ms) |
 | `ledger` | none | sim-core `Ledger`: `{ cash, current: MonthStatement, history: MonthStatement[], served_population }` |
+| `clock` | none | `{ game_seconds, timelapse, paused, day }` (sim-core `Clock` plus whole days) |
+| `set_clock` | `paused?: boolean`, `timelapse?: number` | Same as `clock`; omitted fields unchanged, non-positive time-lapse ignored |
+| `skip_to_next_month` | none | Same as `clock`, after re-running the day and settling the month |
+| `results` | none | `RouteResultOut[]` for every route, no change |
 | `sim_status` | none | `{ ready, error, source }`; `source` is the scenario path or `"synthetic"` |
 
 `RouteResultOut` is sim-core's `LineResult` with `route_id` (the client id) flattened into it.
@@ -176,9 +188,11 @@ The full rationale is in [docs/DECISIONS.md](docs/DECISIONS.md) (A1 to A13). In 
 - **Sim built off the main thread; commands are async.** `Sim::new` takes seconds. Async Tauri
   commands run on the async runtime's worker threads, so waiting for the build never freezes the
   window.
-- **The client still owns the clock.** sim-core's `tick()` re-equilibrates at day boundaries,
-  which takes seconds and needs a worker loop. That lands with F21's move into sim-core. Until
-  then, line edits refresh results directly.
+- **The simulation owns the clock.** A worker thread in the shell calls `Sim::tick` every
+  100 ms with real elapsed time. The client polls `clock` every 500 ms, interpolates between
+  polls so the display moves every frame, and re-reads `results` when the day number changes.
+  Polling instead of push events keeps the shell free of `AppHandle` plumbing for one number
+  (app decision A23).
 - **Schematic computed in the client.** It is a pure function of the line geometry and zoom
   ([docs/SCHEMATIC.md](docs/SCHEMATIC.md)), not simulation state.
 - **`src-tauri` is its own Cargo workspace** (empty `[workspace]` table). The root workspace
@@ -193,7 +207,8 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | Lines are straight from stop to stop, not snapped to roads | Road graph from the pipeline plus a router (F16 follow-up) |
 | Desire lines are straight zone-to-zone chords capped at 300 pairs; no filtering by purpose or mode | F06 follow-up if playtests want it |
 | Cost preview only while drawing; a stop edit is charged on release with no preview first (the budget shows what it cost) | F16 follow-up if it matters in play |
-| No monthly statement view, skip-to-next-month or settlement in the HUD | F21 (sim-driven clock), then the budget panel (M2) |
+| No monthly statement view; settlement shows only as the cash change | Budget panel (M2) |
+| A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (well under a second on the synthetic region) | Fine for M1; revisit with the statewide scenario (M3) |
 | Mode picker is two buttons (bus, light rail); fare fixed at $1.25 | F16 |
 | `park_ride` is all-or-nothing per line | Per-stop properties in the stop editor (F16) |
 | Clock is client-side; `Sim::tick` is not called, so car congestion only updates at sim build | F21 |
@@ -210,7 +225,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | F15 Tauri command interface | Done (app side): `upsert_route`, `remove_route`, `sim_status`. Clock advance not wired |
 | F16 Line drawing | Partial: draw with capital cost, grant and ridership preview; edit stops (move, insert, delete), rename, headway, delete line. Missing: mode and fare pickers |
 | F17 Ridership readout | Done for line totals and per-stop boardings, plus cost and farebox from sim-core |
-| F21 Clock and time-lapse | Prototype: client clock at 1/2/10/60x, no skip-to-month |
+| F21 Clock and time-lapse | Done (app): sim-core's clock driven by a shell worker; pause, 1/2/10/60x, skip to next month; daily re-run refreshes ridership |
 | F41 / F42 Schematic and morph | Prototype: heuristic layout, no pins |
 | F06 Desire lines | Done (app): layer from `Sim::desire_lines`; the M0 exit check (F07) is the pipeline's |
 
@@ -227,7 +242,7 @@ app/
 │   ├── geo.ts            km(): distance helper shared by the editor, schematic and mock
 │   ├── edit.ts           Stop editor: drag, insert (least added length), delete; bestInsertIndex()
 │   ├── schematic.ts      Tube-map layout + geo/schematic morph
-│   ├── clock.ts          Game clock and time-lapse
+│   ├── clock.ts          Display clock: interpolates and syncs to the sim's clock
 │   ├── style.css         HUD styling
 │   ├── data/geo.ts       Texas/Travis outlines, bounds, Red Line preset
 │   └── sim/
