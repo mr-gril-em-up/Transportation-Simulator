@@ -259,3 +259,13 @@ badge names the county. The shell does not swap to the county's block-group
 build, because the architecture's invariant is that the camera never changes
 the score: two models would give two answers for the same line. A detailed
 local model under the camera is the local and regional tiers (F28, F35).
+
+### A35. A waiting command goes before the next day slice
+With the day computed in slices (SIM-18), the clock worker and the commands
+take turns on one Mutex, which is not fair: a worker that sleeps 100 ms and
+then grabs the lock can keep landing ahead of an edit. A static counter of
+waiting commands makes the worker skip its slice while any wait. It costs no
+game time (the next step carries the elapsed time) and needs no change to
+the lock or to sim-core. Measured statewide with 415 lines, the edit was
+still about 16 s, the same as with no day running, so the remaining cost is
+the edit itself, not the lock.

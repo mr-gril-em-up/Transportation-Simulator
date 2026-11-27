@@ -53,3 +53,4 @@ button.on { background: #1b1d22; color: #fff; border-color: #1b1d22; }
 #route-list details.ref li { list-style: none; display: flex; gap: 6px; align-items: center; }
 #route-list details.ref ul { padding: 0; margin: 4px 0; }
 #loading[hidden] { display: none; }
+#day-computing { color: #5a606a; font-variant-numeric: tabular-nums; }

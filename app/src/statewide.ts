@@ -1,6 +1,7 @@
 // Statewide view helpers (F34 in the app): the loading screen text, real rail
 // and intercity lines drawn for reference, and the county under the camera.
-import type { LngLat, LoadProgress, Mode, RouteSpec } from "./sim/api";
+import { km } from "./geo";
+import { isRegional, type LngLat, type LoadProgress, type Mode, type RouteSpec } from "./sim/api";
 
 /** A real line from the pipeline's transit.json that sim-core does not run (shell `RefLine`). */
 export interface RefLineOut {
@@ -29,6 +30,36 @@ export function refColor(l: Pick<RefLineOut, "ref" | "operator" | "mode">): stri
   const r = l.ref.toLowerCase();
   if (l.operator === "Amtrak") return AMTRAK;
   return NAMED[r] ?? BY_REF[r] ?? (l.mode === "tram" ? TRAM : "#555");
+}
+
+/**
+ * Color for a line of today's network from its GTFS name (DATA-9 names carry the agency and often
+ * the line color: "DART DART LIGHT RAIL - BLUE LINE", "METRO 700 METRORAIL RED LINE"). Buses gray.
+ */
+export function existingColor(name: string, regional: boolean): string {
+  if (!regional) return "#8a8a8a";
+  const n = name.toLowerCase();
+  const named = Object.keys(NAMED).find((c) => new RegExp(`\\b${c} line\\b`).test(n));
+  if (named) return NAMED[named];
+  if (n.includes("silver line")) return "#8a8d91";
+  if (n.includes("trinity railway") || /\btre\b/.test(n)) return BY_REF.tre;
+  if (n.includes("texrail")) return BY_REF.tex;
+  if (n.includes("a-train")) return BY_REF.a;
+  if (n.includes("trolley") || n.includes("streetcar")) return TRAM;
+  return "#dc241f";
+}
+
+/**
+ * Reference lines that today's network does not already run: a reference line is dropped when
+ * more than half its stops are within 300 m of a stop of a running regional line (an Amtrak
+ * route sharing a terminal with TRE stays) (DATA-9 brought
+ * DART, METRORail, TRE, TEXRail and the A-train into existing_lines.json; Amtrak and a few
+ * streetcars remain reference only).
+ */
+export function notRunning(reference: RouteSpec[], running: RouteSpec[]): RouteSpec[] {
+  const stops = running.filter((r) => isRegional(r.mode)).flatMap((r) => r.stops.map((s) => s.lngLat));
+  const near = (p: LngLat) => stops.some((q) => km(p, q) < 0.3);
+  return reference.filter((r) => r.stops.filter((s) => near(s.lngLat)).length * 2 <= r.stops.length);
 }
 
 /** A reference line as a client route, for the schematic layout and the stops layer. */
