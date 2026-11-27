@@ -42,7 +42,11 @@ fn sourced_defaults_match_figures_csv() {
     check(&f, "walk_wait_time_multiplier", p.wait_weight);
     check(&f, "walk_wait_time_multiplier", p.walk_weight);
     check(&f, "transit_sales_tax_rate", p.local_sales_tax_rate);
-    check(&f, "taxable_sales_per_capita", p.taxable_sales_per_capita);
+    check(
+        &f,
+        "taxable_sales_per_served_resident_calibrated",
+        p.taxable_sales_per_capita,
+    );
     check(
         &f,
         "operating_assistance_share",

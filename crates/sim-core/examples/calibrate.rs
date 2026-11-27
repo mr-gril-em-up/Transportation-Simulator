@@ -2,12 +2,11 @@
 //! shares with today's CapMetro network loaded, then report the fit, the
 //! fitted constants and Red Line ridership (F19).
 //!
-//! `cargo run --release -p sim-core --example calibrate -- <scenario.json> <transit.json> [bus_peak_headway] [bus_offpeak_headway]`
+//! `cargo run --release -p sim-core --example calibrate -- <scenario.json> <existing_lines.json | transit.json> [bus_peak_headway] [bus_offpeak_headway]`
 //!
-//! A scenario that already carries today's network in `lines` (DATA-7) is used
-//! as is and `transit.json` is not read.
-//!
-//! The network comes from the build's `transit.json` (OSM route relations):
+//! Today's network comes from, in order: the scenario's `lines`, the build's
+//! `existing_lines.json` (DATA-7, the same lines the game can start with), or
+//! the build's `transit.json` (OSM route relations, built here):
 //! one line per route ref (OSM keeps each direction as its own relation),
 //! the Red Line (ref 550) as commuter rail at 32/51 min over 15.1 h, buses at
 //! GTFS weekday headways and span where the ref matched (DATA-6), else the
@@ -52,11 +51,19 @@ fn main() {
         ScenarioInput::from_json(&std::fs::read_to_string(&a[1]).expect("scenario.json")).unwrap();
     let bus_peak: f64 = a.get(3).and_then(|h| h.parse().ok()).unwrap_or(20.0);
     let bus_off: f64 = a.get(4).and_then(|h| h.parse().ok()).unwrap_or(30.0);
-    // A build with today's network in `lines` (DATA-7) is used as is.
+    // Today's network: scenario `lines` if the build put it there, else the
+    // second file, either `existing_lines.json` (DATA-7, an array of
+    // TransitLine) or `transit.json` (OSM routes with GTFS headways).
     if input.lines.is_empty() {
-        let transit: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&a[2]).expect("transit.json")).unwrap();
-        input.lines = lines_from_transit(&transit, bus_peak, bus_off);
+        let file: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&a[2]).expect("existing_lines.json or transit.json"),
+        )
+        .unwrap();
+        input.lines = if file.is_array() {
+            serde_json::from_value(file).expect("existing_lines.json: TransitLine array")
+        } else {
+            lines_from_transit(&file, bus_peak, bus_off)
+        };
     }
     let n_lines = input.lines.len();
     let t = Instant::now();
@@ -93,8 +100,10 @@ fn lines_from_transit(
     bus_off: f64,
 ) -> Vec<TransitLine> {
     let mut lines = Vec::new();
+    let routes = transit["routes"].as_array().unwrap();
+    let gtfs_attached = routes.iter().any(|r| r["peak_headway_min"].is_number());
     let mut seen = HashSet::new();
-    for r in transit["routes"].as_array().unwrap() {
+    for r in routes {
         let reference = r["ref"].as_str().unwrap_or("").to_string();
         let stops: Vec<Stop> = r["stops"]
             .as_array()
@@ -108,10 +117,13 @@ fn lines_from_transit(
                 park_ride_spaces: None,
             })
             .collect();
-        if stops.len() < 2 || !seen.insert(reference.clone()) {
+        let rail = reference == "550";
+        // With GTFS attached, a route without a CapMetro match is another
+        // operator's (Amtrak's Texas Eagle, intercity coaches): skip it.
+        let unmatched = gtfs_attached && r["peak_headway_min"].is_null() && !rail;
+        if stops.len() < 2 || unmatched || !seen.insert(reference.clone()) {
             continue;
         }
-        let rail = reference == "550";
         // GTFS weekday headways (DATA-6) where the ref matched, else the
         // placeholder. The Red Line keeps its timetable rows (figures.csv).
         let gtfs = |k: &str, dflt: f64| r[k].as_f64().unwrap_or(dflt);
