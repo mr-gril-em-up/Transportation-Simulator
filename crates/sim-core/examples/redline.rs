@@ -25,6 +25,7 @@ fn main() {
             lat: s["lat"].as_f64().unwrap(),
             name: s["name"].as_str().unwrap_or("").into(),
             park_ride: true,
+            park_ride_spaces: None,
         })
         .collect();
     // The real line exists today, so it opens at once.
