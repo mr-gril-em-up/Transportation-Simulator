@@ -181,3 +181,12 @@ than it is worth. Rebuilds draw normally: a line the player can ride should not
 look unbuilt. Their per-stop boardings are hidden until the rebuild opens,
 because sim-core's `boardings_by_stop` is aligned with the running
 version's stops, not the drawn ones; the line total still shows. The mock stays instant; it exists for UI work without Rust.
+
+### A26. Bonds from a menu of sizes, deficit cover first
+A free-form amount field invites typos worth billions; a short menu (cover
+the deficit, $100M, $500M, $1B) covers what a player needs and the first
+option is the usual answer. Rate and term are shown, not chosen: sim-core
+fixes them from sourced figures. Bankruptcy is a banner, not a modal: the
+sim keeps running (sim-core's choice) and the player should be able to look
+at why. The shell computes debt and payment totals so the client never
+re-implements bond math for sim-core's numbers.

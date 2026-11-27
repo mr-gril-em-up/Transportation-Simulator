@@ -75,9 +75,16 @@ export interface PendingRoute {
 
 /** The transit authority's books, as the HUD shows them. */
 export interface Budget {
-  cash: number; // USD on hand; negative until bonds exist (F26)
+  cash: number; // USD on hand; can go negative (12 distressed months in a row is bankruptcy)
   capitalSpentThisMonth: number;
   grantsThisMonth: number; // federal capital grants received this month
+  debt: number; // principal still owed on bonds
+  debtServicePerMonth: number; // monthly payments on outstanding bonds
+  distressedMonths: number; // months in a row with cash < 0 or debt service > operating surplus
+  bankruptcyMonths: number; // distressed months that end the game
+  bankruptMonth: number | null; // game month the authority went bankrupt
+  bondRate: number; // annual rate a new bond gets (0.0543 = 5.43%)
+  bondTermMonths: number;
 }
 
 export interface SimClient {
@@ -93,6 +100,8 @@ export interface SimClient {
   /** Cost and ridership of `route` without building it. */
   previewRoute(route: RouteSpec): Promise<RoutePreview>;
   budget(): Promise<Budget>;
+  /** Borrow `principal` USD as a bond (cash now, monthly payments from next month). Rejects once bankrupt. */
+  issueBond(principal: number): Promise<Budget>;
   /** Routes under construction and their opening days. */
   pendingRoutes(): Promise<PendingRoute[]>;
   /** Results for every route without changing anything (re-read after the day re-runs). */

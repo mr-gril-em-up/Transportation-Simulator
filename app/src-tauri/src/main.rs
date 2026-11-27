@@ -15,6 +15,7 @@ fn main() {
             sim::desire_lines,
             sim::preview_route,
             sim::ledger,
+            sim::issue_bond,
             sim::clock,
             sim::set_clock,
             sim::skip_to_next_month,

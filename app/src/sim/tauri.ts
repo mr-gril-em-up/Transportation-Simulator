@@ -35,6 +35,14 @@ interface LinePreview {
 interface Ledger {
   cash: number;
   current: { capital_spent: number; federal_capital_grants: number };
+  distressed_months: number;
+  bankrupt_month: number | null;
+  // Added by the shell (LedgerOut):
+  debt: number;
+  debt_service_per_month: number;
+  bankruptcy_months: number;
+  bond_rate: number;
+  bond_term_months: number;
 }
 
 export const fromPreview = (p: LinePreview): RoutePreview => ({
@@ -49,6 +57,13 @@ export const fromLedger = (l: Ledger): Budget => ({
   cash: l.cash,
   capitalSpentThisMonth: l.current.capital_spent,
   grantsThisMonth: l.current.federal_capital_grants,
+  debt: l.debt,
+  debtServicePerMonth: l.debt_service_per_month,
+  distressedMonths: l.distressed_months,
+  bankruptcyMonths: l.bankruptcy_months,
+  bankruptMonth: l.bankrupt_month,
+  bondRate: l.bond_rate,
+  bondTermMonths: l.bond_term_months,
 });
 
 /** sim-core Clock (crates/sim-core/src/clock.rs) plus `day`, from the shell's ClockOut. */
@@ -143,6 +158,10 @@ export class TauriSim implements SimClient {
 
   async budget(): Promise<Budget> {
     return fromLedger(await invoke<Ledger>("ledger"));
+  }
+
+  async issueBond(principal: number): Promise<Budget> {
+    return fromLedger(await invoke<Ledger>("issue_bond", { principal }));
   }
 
   async results(): Promise<RouteResult[]> {

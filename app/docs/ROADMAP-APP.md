@@ -25,7 +25,9 @@ doc.
 - Construction period on: lines under construction draw faded with their
   opening day in the panel and the drawing hint (F24) (#27)
 - Real Red Line preset: OSM route 550 stations, $3.50 fare, 32/51-minute
-  peak/off-peak headways (`offpeakHeadwayMin`); about 1,860 riders/day vs APTA 1,500 (#31)
+  peak/off-peak headways (`offpeakHeadwayMin`); about 1,860 riders/day vs APTA 1,500 (#31, #38)
+- Bonds (issue from the budget panel), debt and payments, distress count and
+  bankruptcy banner (F26)
 
 ## Next, M0/M1 (blocked items say on what)
 
@@ -37,7 +39,7 @@ doc.
 
 ## M2 (money, clock, agents)
 
-- Budget panel: monthly statements from `Ledger.history`, settlement as the sim clock crosses months
+- Budget panel: monthly statements from `Ledger.history` (the totals and the distress count already show)
 - Local-tier agents near the camera via deck.gl; above 10x draw flow animations
 
 ## M3 (statewide)
