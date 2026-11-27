@@ -125,6 +125,20 @@ The feed list is `reference/gtfs_feeds.csv` (`id,agency,url,fallback_url,source`
 
 **Citation:** each agency's GTFS static feed as listed above; Mobility Database (MobilityData) for fallback copies.
 
+## 7. TxDOT AADT Annuals (traffic count stations)
+
+| | |
+|---|---|
+| Publisher | Texas Department of Transportation, Transportation Planning and Programming (TPP), on TxDOT's ArcGIS Online open data |
+| Service | https://services.arcgis.com/KTcxiTD9dsQw4r7Z/arcgis/rest/services/TxDOT_AADT_Annuals_(Public_View)/FeatureServer/0 (layer `TMB_RPT_SHORT_AADT_HIST`, one point per station, 41,922 stations) |
+| Download | `scripts/txdot_aadt.py`, called by `fetch.sh`: pages the query 2,000 rows at a time, keeps stations with AADT > 0, writes `raw/txdot_aadt.csv` |
+| Columns used | `TRFC_STATN_ID`, `AADT_RPT_YEAR`, `AADT_RPT_QTY` (latest annual AADT), `ON_ROAD`, `LONGITUDE`, `LATITUDE` (`CNTY_NM` and `ACTIVE` kept in the CSV) |
+| Not in the layer | K factor, D factor, truck share (TxDOT publishes truck percent as a separate segment layer, not read) |
+| Gives the game | Observed daily volumes on major roads for car-assignment calibration (F38), in `counts.json` |
+| Not reachable | From the cloud sandbox (proxy); the Actions runner downloads it |
+
+**Citation:** Texas Department of Transportation, TxDOT AADT Annuals, TxDOT Open Data Portal.
+
 ## Planned sources (not read yet)
 
 From the overview doc's data table, in the order the pipeline will likely add them:

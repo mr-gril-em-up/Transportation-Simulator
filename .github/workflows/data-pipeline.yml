@@ -75,7 +75,12 @@ jobs:
           TAG="data-$AREA-$YEAR$SUFFIX"
           tar -czf "tsim-data-$AREA-$YEAR$SUFFIX.tar.gz" -C data/out/area .
           cp data/out/area/manifest.json "manifest-$AREA-$YEAR$SUFFIX.json"
+          EXTRA=()
+          if [[ -s data/out/area/counts.json ]]; then
+            cp data/out/area/counts.json "counts-$AREA-$YEAR$SUFFIX.json"
+            EXTRA+=("counts-$AREA-$YEAR$SUFFIX.json")
+          fi
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "$GITHUB_SHA" \
             --title "Pipeline build: area $AREA, LODES $YEAR, zones $LEVEL" \
-            --notes "Built by the data-pipeline workflow. Contents: scenario.json (sim-core input), existing_lines.json (today's transit network), zones.json, roads.json, transit.json, manifest.json. Data: US Census Bureau (public domain); OpenStreetMap contributors (ODbL)."
-          gh release upload "$TAG" "tsim-data-$AREA-$YEAR$SUFFIX.tar.gz" "manifest-$AREA-$YEAR$SUFFIX.json" --clobber
+            --notes "Built by the data-pipeline workflow. Contents: scenario.json (sim-core input), existing_lines.json (today's transit network), zones.json, roads.json, transit.json, counts.json (TxDOT count stations on scenario links), manifest.json. Data: US Census Bureau (public domain); OpenStreetMap contributors (ODbL); TxDOT; agency GTFS feeds."
+          gh release upload "$TAG" "tsim-data-$AREA-$YEAR$SUFFIX.tar.gz" "manifest-$AREA-$YEAR$SUFFIX.json" "${EXTRA[@]}" --clobber

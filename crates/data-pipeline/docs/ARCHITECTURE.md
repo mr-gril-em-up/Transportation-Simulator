@@ -127,6 +127,16 @@ Converts the layers into `sim_core::ScenarioInput`:
 
 `ScenarioInput::validate()` runs before anything is written to `scenario.json`; a failure aborts the build.
 
+### 6a. Traffic counts (`counts::snap`, DATA-10)
+
+When `raw/txdot_aadt.csv` exists (TxDOT AADT Annuals, see DATA_SOURCES section 7), each count station is snapped to a scenario link for car-assignment calibration (F38) and written to `counts.json`:
+
+- `scenario::to_scenario_mapped` records, for every `roads.json` edge, the scenario link it ended up in after simplification (contraction merges edges, and the merged link's members are tracked).
+- Candidates are `roads.json` edge segments, shape points included, within 100 m of the station, on a 0.01° grid.
+- The station's `ON_ROAD` must match the edge. Route numbers compare as system and number against the OSM `ref` (`IH0035` = `I 35`; `SH0071` = `TX 71` or `SH 71`; `FM` and `RM` share one numbering; `SL`/`LP` = `Loop`; `SS` = `Spur`). Anything else compares as a street name against OSM `name`, with suffixes (`BOULEVARD` = `BLVD` ...) and directions normalized; every word of the shorter name must appear in the longer in order.
+- The nearest matching edge gives `from`/`to`. If that edge is one-way (a divided road), the nearest matching one-way edge heading the opposite way (direction dot product below −0.5) gives `from2`/`to2`, because AADT counts both directions.
+- Stations with no matching edge in range are dropped. On a highway-only build most `FM` and city-street stations drop, because those roads are not in the graph.
+
 ### Manifest
 
 `manifest.json` records the area, LODES year, sources, counts, totals and the top 20 flows by GEOID. The M0 exit test is "top 20 commute flows match LODES totals": compare that table against LODES directly (see [TESTING.md](TESTING.md)).
