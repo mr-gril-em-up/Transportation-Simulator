@@ -187,6 +187,23 @@ pub struct LinkFlow {
     pub speed_kph: f64,
 }
 
+/// Transit skims per origin, aligned to `Pairs::row`. An empty row means no
+/// transit to any destination (most statewide tracts), so it costs nothing
+/// to store or to re-evaluate (SIM-17). An empty outer vector for the
+/// off-peak skims means "same as peak".
+type TSkim = Vec<Vec<TOd>>;
+
+/// Transit-side state a line evaluation replaces (see `Sim::on_lines_changed`).
+struct TransitState {
+    net: TransitNet,
+    tsk: [TSkim; 4],
+    transit_od: Vec<f64>,
+    zone_trips: Vec<f64>,
+    results: Results,
+    pnr_cars: Vec<f64>,
+    pnr_penalty: HashMap<(LineId, usize), f64>,
+}
+
 /// Congested shortest-path trees stop at this multiple of the strategic
 /// cutoff (SIM-14). A kept pair past it keeps its car option at the guard time
 /// (SIM-15).
@@ -236,7 +253,12 @@ struct OriginOut {
     row: Row,
 }
 
-/// One origin's mode-choice output.
+/// Per-origin mode totals (work, other, unserved) of an origin with no
+/// transit, whose choices depend only on car times and params.
+type IdleRow = ([f64; N_CHOICES], [f64; N_CHOICES], f64);
+
+/// One origin's mode-choice output. The per-pair vectors are empty for an
+/// origin reused from `Sim::idle_rows` (no transit, nothing to load).
 struct Row {
     car_peak: Vec<f64>,
     wt_work: Vec<f64>,
@@ -279,11 +301,13 @@ pub struct Sim {
     car_peak: CarSkim,
     lines: Vec<Option<TransitLine>>,
     net: TransitNet,
-    tsk_walk: Vec<TOd>,
-    tsk_drive: Vec<TOd>,
+    tsk_walk: TSkim,
+    tsk_drive: TSkim,
     /// Off-peak transit skims; empty when no line has its own off-peak headway.
-    tsk_walk_off: Vec<TOd>,
-    tsk_drive_off: Vec<TOd>,
+    tsk_walk_off: TSkim,
+    tsk_drive_off: TSkim,
+    /// `TOd::NONE` x the longest row: what an origin with no transit row reads.
+    none_row: Vec<TOd>,
     /// Daily transit trips i->j (walk + drive access), for desire lines and zone stats.
     transit_od: Vec<f64>,
     zone_trips: Vec<f64>,
@@ -302,6 +326,11 @@ pub struct Sim {
     /// Cars parked per platform on the last loading (drive-access commuters
     /// plus half the drive-access other trips).
     pnr_cars: Vec<f64>,
+    /// Mode-choice totals of origins no transit reaches, reused by line
+    /// edits while car times and params are unchanged (SIM-17). Keyed by
+    /// the params as JSON; `pass` clears the key when car times move.
+    idle_rows: Vec<Option<IdleRow>>,
+    idle_key: Option<String>,
 }
 
 /// A line (or a new version of one) under construction.
@@ -455,10 +484,13 @@ impl Sim {
             router: Router::default(),
             pnr_penalty: HashMap::new(),
             pnr_cars: vec![],
+            idle_rows: vec![],
+            idle_key: None,
             tsk_walk: vec![],
             tsk_drive: vec![],
             tsk_walk_off: vec![],
             tsk_drive_off: vec![],
+            none_row: vec![TOd::NONE; (0..nz).map(|i| pairs.row(i).len()).max().unwrap_or(0)],
             transit_od: vec![0.0; pairs.len()],
             pairs,
             zone_trips: vec![0.0; nz],
@@ -575,15 +607,14 @@ impl Sim {
         id: LineId,
         line: &TransitLine,
     ) -> Result<(LineResult, f64), SimError> {
-        let stale = self.results.car_times_stale;
         let old = self.lines[id as usize].replace(line.clone());
-        self.on_lines_changed();
+        let saved = self.on_lines_changed();
         let r = self.line_result(id).cloned();
         let capital = self.line_capital(id);
         self.lines[id as usize] = old;
-        self.on_lines_changed();
-        // Same lines and car times as before, so the flag is too.
-        self.results.car_times_stale = stale;
+        // Same lines and car times as before: put the previous transit state
+        // back instead of re-evaluating it (half the cost of an edit).
+        self.restore_transit(saved);
         r.zip(capital)
             .ok_or_else(|| SimError("line evaluation failed".into()))
     }
@@ -1156,15 +1187,50 @@ impl Sim {
 
     // ----------------------------------------------------------- internals
 
-    fn on_lines_changed(&mut self) {
+    /// Re-evaluate transit after a line change. Returns the state it
+    /// replaced, which `restore_transit` puts back; callers that keep the
+    /// change just drop it. Everything is moved, not copied, except the
+    /// results and park-and-ride prices, which are small.
+    fn on_lines_changed(&mut self) -> TransitState {
         let t0 = Instant::now();
-        self.rebuild_transit();
+        let saved = TransitState {
+            net: self.rebuild_transit(),
+            tsk: [
+                std::mem::take(&mut self.tsk_walk),
+                std::mem::take(&mut self.tsk_drive),
+                std::mem::take(&mut self.tsk_walk_off),
+                std::mem::take(&mut self.tsk_drive_off),
+            ],
+            transit_od: std::mem::take(&mut self.transit_od),
+            zone_trips: std::mem::take(&mut self.zone_trips),
+            results: self.results.clone(),
+            pnr_cars: std::mem::take(&mut self.pnr_cars),
+            pnr_penalty: self.pnr_penalty.clone(),
+        };
         self.transit_skims();
         self.finish(t0, true, None);
         self.fit_park_and_ride(t0);
+        saved
     }
 
-    fn rebuild_transit(&mut self) {
+    /// Put back the transit state `on_lines_changed` replaced.
+    fn restore_transit(&mut self, s: TransitState) {
+        self.net = s.net;
+        [
+            self.tsk_walk,
+            self.tsk_drive,
+            self.tsk_walk_off,
+            self.tsk_drive_off,
+        ] = s.tsk;
+        self.transit_od = s.transit_od;
+        self.zone_trips = s.zone_trips;
+        self.results = s.results;
+        self.pnr_cars = s.pnr_cars;
+        self.pnr_penalty = s.pnr_penalty;
+    }
+
+    /// Rebuild the transit network from the active lines; returns the old one.
+    fn rebuild_transit(&mut self) -> TransitNet {
         let active: Vec<(u32, &TransitLine)> = self
             .lines
             .iter()
@@ -1172,24 +1238,31 @@ impl Sim {
             .filter_map(|(i, l)| l.as_ref().map(|l| (i as u32, l)))
             .collect();
         let (router, graph) = (&mut self.router, &self.graph);
-        self.net = TransitNet::build(&active, &self.zpts, &self.params, &mut |a, b| {
+        let net = TransitNet::build(&active, &self.zpts, &self.params, &mut |a, b| {
             router.route(graph, a, b)
         });
+        let old = std::mem::replace(&mut self.net, net);
         for (pi, pl) in self.net.platforms.iter().enumerate() {
             let line = &self.net.lines[pl.line as usize];
             let key = (line.id, pi - line.first_platform as usize);
             self.net.pnr_penalty[pi] = self.pnr_penalty.get(&key).copied().unwrap_or(0.0);
         }
+        old
     }
 
     /// Mode choice on current skims, transit loading, and results.
     fn finish(&mut self, t0: Instant, stale: bool, rows: Option<Vec<Row>>) {
-        let rows = rows.unwrap_or_else(|| self.choose_all());
+        let idle = self.transit_idle();
+        let rows = match rows {
+            Some(r) => r,
+            None => self.choose_all_reusing(&idle),
+        };
+        self.store_idle(&rows, &idle);
         let np = self.pairs.len();
-        let wt_work = Self::flatten(&rows, |r| &r.wt_work);
-        let dt_work = Self::flatten(&rows, |r| &r.dt_work);
-        let wt_other = Self::flatten(&rows, |r| &r.wt_other);
-        let dt_other = Self::flatten(&rows, |r| &r.dt_other);
+        let wt_work = self.flatten(&rows, |r| &r.wt_work);
+        let dt_work = self.flatten(&rows, |r| &r.dt_work);
+        let wt_other = self.flatten(&rows, |r| &r.wt_other);
+        let dt_other = self.flatten(&rows, |r| &r.dt_other);
         // Daily transit trips: AM commute i->j, PM return j->i, plus other trips.
         // Park-and-ride returns are loaded on the AM path (see MODEL.md).
         // Work trips ride peak paths; other trips ride off-peak paths, which
@@ -1215,20 +1288,25 @@ impl Sim {
         }
         self.pnr_cars = vec![0.0; self.net.platforms.len()];
         if !self.net.pnr.is_empty() {
-            for k in 0..np {
-                let w = self.tsk_drive[k].pnr_plat;
-                if w != NONE && dt_work[k] > 0.0 {
-                    self.pnr_cars[w as usize] += dt_work[k];
+            let tsk_other = if off {
+                &self.tsk_drive_off
+            } else {
+                &self.tsk_drive
+            };
+            for (i, (peak, other)) in self.tsk_drive.iter().zip(tsk_other).enumerate() {
+                let r = self.pairs.row(i);
+                for (q, w) in peak.iter().enumerate() {
+                    let k = r.start + q;
+                    if w.pnr_plat != NONE && dt_work[k] > 0.0 {
+                        self.pnr_cars[w.pnr_plat as usize] += dt_work[k];
+                    }
                 }
-                let tsk = if off {
-                    &self.tsk_drive_off
-                } else {
-                    &self.tsk_drive
-                };
-                let o = tsk[k].pnr_plat;
-                if o != NONE && dt_other[k] > 0.0 {
-                    // A round trip of two one-way other trips parks one car.
-                    self.pnr_cars[o as usize] += 0.5 * dt_other[k];
+                for (q, o) in other.iter().enumerate() {
+                    let k = r.start + q;
+                    if o.pnr_plat != NONE && dt_other[k] > 0.0 {
+                        // A round trip of two one-way other trips parks one car.
+                        self.pnr_cars[o.pnr_plat as usize] += 0.5 * dt_other[k];
+                    }
                 }
             }
         }
@@ -1236,26 +1314,27 @@ impl Sim {
         if off {
             loads = loads.merge(self.load_transit(&o_walk, &o_drive, true));
         }
-        for k in 0..np {
-            self.transit_od[k] = d_walk[k] + d_drive[k];
-            if off {
-                self.transit_od[k] += o_walk[k] + o_drive[k];
-            }
-        }
+        // Built fresh (not written in place) so `evaluate_in_slot` can move
+        // the previous vector aside and back.
+        self.transit_od = (0..np)
+            .map(|k| d_walk[k] + d_drive[k] + if off { o_walk[k] + o_drive[k] } else { 0.0 })
+            .collect();
 
         let mut work = [0.0; N_CHOICES];
         let mut other = [0.0; N_CHOICES];
         let mut unserved = 0.0;
-        for (i, r) in rows.iter().enumerate() {
+        let mut zone_trips = Vec::with_capacity(rows.len());
+        for r in &rows {
             let mut zt = 0.0;
             for m in 0..N_CHOICES {
                 work[m] += 2.0 * r.work[m];
                 other[m] += r.other[m];
                 zt += 2.0 * r.work[m] + r.other[m];
             }
-            self.zone_trips[i] = zt;
+            zone_trips.push(zt);
             unserved += r.unserved;
         }
+        self.zone_trips = zone_trips;
         let work = ModeSplit::from_array(work);
         let other = ModeSplit::from_array(other);
         let daily = ModeSplit::from_array(std::array::from_fn(|m| {
@@ -1350,12 +1429,78 @@ impl Sim {
             .collect()
     }
 
-    fn flatten(rows: &[Row], f: impl Fn(&Row) -> &Vec<f64>) -> Vec<f64> {
-        let mut out = Vec::with_capacity(rows.iter().map(|r| f(r).len()).sum());
-        for r in rows {
-            out.extend_from_slice(f(r));
+    /// Per-pair vector over all rows; a reused idle row contributes zeros.
+    fn flatten(&self, rows: &[Row], f: impl Fn(&Row) -> &Vec<f64>) -> Vec<f64> {
+        let mut out = Vec::with_capacity(self.pairs.len());
+        for (i, r) in rows.iter().enumerate() {
+            let v = f(r);
+            if v.is_empty() {
+                out.resize(out.len() + self.pairs.row(i).len(), 0.0);
+            } else {
+                out.extend_from_slice(v);
+            }
         }
         out
+    }
+
+    /// Origins with no transit option to any kept destination, peak or
+    /// off-peak, walk or drive access.
+    fn transit_idle(&self) -> Vec<bool> {
+        let none = |v: &TSkim, i: usize| v.is_empty() || v[i].is_empty();
+        (0..self.nz)
+            .into_par_iter()
+            .map(|i| {
+                none(&self.tsk_walk, i)
+                    && none(&self.tsk_drive, i)
+                    && none(&self.tsk_walk_off, i)
+                    && none(&self.tsk_drive_off, i)
+            })
+            .collect()
+    }
+
+    fn params_key(&self) -> Option<String> {
+        serde_json::to_string(&self.params).ok()
+    }
+
+    /// `choose_all`, but origins with no transit reuse their stored totals
+    /// when car times and params have not changed since they were stored.
+    /// On a statewide build most tracts have no transit, so a line edit
+    /// re-chooses only the few that do.
+    fn choose_all_reusing(&self, idle: &[bool]) -> Vec<Row> {
+        let valid = self.idle_key.is_some() && self.idle_key == self.params_key();
+        (0..self.nz)
+            .into_par_iter()
+            .map(|i| match (valid && idle[i], self.idle_rows.get(i)) {
+                (true, Some(Some((work, other, unserved)))) => Row {
+                    car_peak: vec![],
+                    wt_work: vec![],
+                    dt_work: vec![],
+                    wt_other: vec![],
+                    dt_other: vec![],
+                    work: *work,
+                    other: *other,
+                    unserved: *unserved,
+                },
+                _ => self.choose_row(i, &self.row_inputs(i)),
+            })
+            .collect()
+    }
+
+    /// Store the totals of idle origins chosen in full; start a new store
+    /// if params or car times changed.
+    fn store_idle(&mut self, rows: &[Row], idle: &[bool]) {
+        let key = self.params_key();
+        if self.idle_key.is_none() || self.idle_key != key {
+            self.idle_rows = vec![None; self.nz];
+            self.idle_key = key;
+        }
+        for (i, r) in rows.iter().enumerate() {
+            if !idle[i] {
+                self.idle_rows[i] = None;
+            } else if !self.pairs.row(i).is_empty() && r.wt_work.len() == self.pairs.row(i).len() {
+                self.idle_rows[i] = Some((r.work, r.other, r.unserved));
+            }
+        }
     }
 
     fn crow_km(&self, i: usize, j: usize) -> f64 {
@@ -1472,8 +1617,8 @@ impl Sim {
         self.tsk_walk_off.clear();
         self.tsk_drive_off.clear();
         if self.net.is_empty() {
-            self.tsk_walk = vec![TOd::NONE; self.pairs.len()];
-            self.tsk_drive = vec![TOd::NONE; self.pairs.len()];
+            self.tsk_walk = vec![vec![]; z];
+            self.tsk_drive = vec![vec![]; z];
             return;
         }
         let (net, p, car, pairs) = (&self.net, &self.params, &self.car_peak, &self.pairs);
@@ -1498,10 +1643,12 @@ impl Sim {
         self.tsk_walk.clear();
         self.tsk_drive.clear();
         for [w, d, wo, dofp] in rows {
-            self.tsk_walk.extend(w);
-            self.tsk_drive.extend(d);
-            self.tsk_walk_off.extend(wo);
-            self.tsk_drive_off.extend(dofp);
+            self.tsk_walk.push(w);
+            self.tsk_drive.push(d);
+            if off {
+                self.tsk_walk_off.push(wo);
+                self.tsk_drive_off.push(dofp);
+            }
         }
     }
 
@@ -1531,7 +1678,9 @@ impl Sim {
                             let (cm, ck) = car_rows.get_or_insert_with(|| {
                                 dense_row(dests, &car.time[r.clone()], &car.km[r.clone()], z)
                             });
-                            s.run(i, access, cm, ck);
+                            if !s.run(i, access, cm, ck) {
+                                continue;
+                            }
                             for (&j, &x) in dests.iter().zip(row) {
                                 s.load(j as usize, x, &mut acc);
                             }
@@ -1548,20 +1697,33 @@ impl Sim {
         let z = self.nz;
         (0..z)
             .into_par_iter()
-            .map(|i| {
-                let r = self.pairs.row(i);
-                let inp = RowInputs {
-                    peak_t: &self.car_peak.time[r.clone()],
-                    peak_km: &self.car_peak.km[r.clone()],
-                    peak_toll: &self.car_peak.toll[r.clone()],
-                    tw: &self.tsk_walk[r.clone()],
-                    td: &self.tsk_drive[r.clone()],
-                    tw_off: off_row(&self.tsk_walk_off, &self.tsk_walk, r.clone()),
-                    td_off: off_row(&self.tsk_drive_off, &self.tsk_drive, r),
-                };
-                self.choose_row(i, &inp)
-            })
+            .map(|i| self.choose_row(i, &self.row_inputs(i)))
             .collect()
+    }
+
+    /// Origin `i`'s transit row from `v` (or from `peak` when `v` is an
+    /// empty off-peak skim), padded with `TOd::NONE` when it has none.
+    fn trow<'a>(&'a self, v: &'a TSkim, peak: &'a TSkim, i: usize) -> &'a [TOd] {
+        let row = if v.is_empty() { &peak[i] } else { &v[i] };
+        if row.is_empty() {
+            &self.none_row[..self.pairs.row(i).len()]
+        } else {
+            row
+        }
+    }
+
+    /// Current skims for origin `i`'s row.
+    fn row_inputs(&self, i: usize) -> RowInputs<'_> {
+        let r = self.pairs.row(i);
+        RowInputs {
+            peak_t: &self.car_peak.time[r.clone()],
+            peak_km: &self.car_peak.km[r.clone()],
+            peak_toll: &self.car_peak.toll[r.clone()],
+            tw: self.trow(&self.tsk_walk, &self.tsk_walk, i),
+            td: self.trow(&self.tsk_drive, &self.tsk_drive, i),
+            tw_off: self.trow(&self.tsk_walk_off, &self.tsk_walk, i),
+            td_off: self.trow(&self.tsk_drive_off, &self.tsk_drive, i),
+        }
     }
 
     /// One parallel pass over origins: shortest-path tree on current link
@@ -1570,6 +1732,8 @@ impl Sim {
     /// Updates `car_peak`, `tsk_walk`, `tsk_drive`. One tree per origin
     /// instead of two (skim, then assign).
     fn pass(&mut self, assign: bool) -> (Vec<Row>, Vec<f64>) {
+        // Car times change: stored idle-origin totals no longer hold.
+        self.idle_key = None;
         let z = self.nz;
         let g = &self.graph;
         let ne = if assign { g.edges.len() } else { 0 };
@@ -1612,21 +1776,22 @@ impl Sim {
                     };
                     let (w, d) = match &dense {
                         Some((cm, ck)) => transit_row(&mut srch, i, cm, ck, false, dests),
-                        None => (vec![TOd::NONE; dests.len()], vec![TOd::NONE; dests.len()]),
+                        None => (vec![], vec![]),
                     };
                     let (w_off, d_off) = if let (true, Some((cm, ck))) = (off, &dense) {
                         transit_row(&mut srch, i, cm, ck, true, dests)
                     } else {
                         (vec![], vec![])
                     };
+                    let none = &self.none_row[..dests.len()];
                     let inp = RowInputs {
                         peak_t: &t,
                         peak_km: &k,
                         peak_toll: &tl,
-                        tw: &w,
-                        td: &d,
-                        tw_off: if off { &w_off } else { &w },
-                        td_off: if off { &d_off } else { &d },
+                        tw: pad(&w, none),
+                        td: pad(&d, none),
+                        tw_off: pad(if off { &w_off } else { &w }, none),
+                        td_off: pad(if off { &d_off } else { &d }, none),
                     };
                     let row = self.choose_row(i, &inp);
                     if assign {
@@ -1672,14 +1837,20 @@ impl Sim {
         self.tsk_drive.clear();
         self.tsk_walk_off.clear();
         self.tsk_drive_off.clear();
+        let off_rows = outs
+            .iter()
+            .any(|(_, o)| !o.w_off.is_empty() || !o.d_off.is_empty())
+            || (!self.net.is_empty() && self.net.offpeak_differs());
         for (_, o) in outs {
             self.car_peak.time.extend(o.t);
             self.car_peak.km.extend(o.k);
             self.car_peak.toll.extend(o.tl);
-            self.tsk_walk.extend(o.w);
-            self.tsk_drive.extend(o.d);
-            self.tsk_walk_off.extend(o.w_off);
-            self.tsk_drive_off.extend(o.d_off);
+            self.tsk_walk.push(o.w);
+            self.tsk_drive.push(o.d);
+            if off_rows {
+                self.tsk_walk_off.push(o.w_off);
+                self.tsk_drive_off.push(o.d_off);
+            }
             rows.push(o.row);
         }
         (rows, vol)
@@ -1900,21 +2071,42 @@ fn transit_row(
     dests: &[u32],
 ) -> (Vec<TOd>, Vec<TOd>) {
     s.offpeak = offpeak;
-    let mut w = vec![TOd::NONE; dests.len()];
-    let mut d = vec![TOd::NONE; dests.len()];
-    if !s.net.walk_access[i].is_empty() {
-        s.run(i, Access::Walk, car_min, car_km);
-        w.iter_mut()
-            .zip(dests)
-            .for_each(|(o, &j)| *o = s.od(j as usize));
-    }
-    if !s.net.pnr.is_empty() {
-        s.run(i, Access::Drive, car_min, car_km);
-        d.iter_mut()
-            .zip(dests)
-            .for_each(|(o, &j)| *o = s.od(j as usize));
-    }
+    let read = |s: &mut Searcher, access| {
+        if s.run(i, access, car_min, car_km) {
+            sparse(dests.iter().map(|&j| s.od(j as usize)).collect())
+        } else {
+            Vec::new()
+        }
+    };
+    let w = if s.net.walk_access[i].is_empty() {
+        Vec::new()
+    } else {
+        read(s, Access::Walk)
+    };
+    let d = if s.net.pnr.is_empty() {
+        Vec::new()
+    } else {
+        read(s, Access::Drive)
+    };
     (w, d)
+}
+
+/// A sparse transit row as a full one: `none` (all `NONE`) when empty.
+fn pad<'a>(v: &'a [TOd], none: &'a [TOd]) -> &'a [TOd] {
+    if v.is_empty() {
+        none
+    } else {
+        v
+    }
+}
+
+/// An all-`NONE` transit row is stored empty (see [`TSkim`]).
+fn sparse(v: Vec<TOd>) -> Vec<TOd> {
+    if v.iter().any(|o| o.ok()) {
+        v
+    } else {
+        Vec::new()
+    }
 }
 
 /// One origin's sparse car row spread over all `z` zones (unkept pairs are
@@ -1930,14 +2122,6 @@ fn dense_row(dests: &[u32], time: &[f32], km: &[f32], z: usize) -> (Vec<f32>, Ve
 }
 
 /// Row `r` of the off-peak skim, or of the peak skim when there is no separate one.
-fn off_row<'a>(off: &'a [TOd], peak: &'a [TOd], r: std::ops::Range<usize>) -> &'a [TOd] {
-    if off.is_empty() {
-        &peak[r]
-    } else {
-        &off[r]
-    }
-}
-
 /// Copy the service settings (not the alignment) of `from` onto `to`.
 fn copy_service(from: &TransitLine, to: &mut TransitLine) {
     to.name = from.name.clone();
