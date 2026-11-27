@@ -1,17 +1,18 @@
 use sim_core::synth::{generate, straight_line, SynthConfig};
 use sim_core::{Mode, ModeSplit, Params, Sim};
 
-/// Lines open at once, so ridership tests need not wait out construction.
+/// Default params: lines open at once (`instant_build`).
 fn sim() -> Sim {
+    Sim::new(generate(&SynthConfig::small()), Params::default()).unwrap()
+}
+
+/// Lines build before opening, as in the game.
+fn building_sim() -> Sim {
     let p = Params {
-        instant_build: true,
+        instant_build: false,
         ..Params::default()
     };
     Sim::new(generate(&SynthConfig::small()), p).unwrap()
-}
-
-fn building_sim() -> Sim {
-    Sim::new(generate(&SynthConfig::small()), Params::default()).unwrap()
 }
 
 fn rail() -> sim_core::TransitLine {

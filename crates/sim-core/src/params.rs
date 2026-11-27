@@ -99,7 +99,9 @@ pub struct Params {
 
     /// Build and permitting times are divided by this (12x default, 1x-24x setting).
     pub construction_speedup: f64,
-    /// Open lines the moment they are drawn (no construction period). Off by default.
+    /// Open lines the moment they are drawn (no construction period). True by
+    /// default until the app shows lines under construction (D33); set false
+    /// for the game's construction period.
     pub instant_build: bool,
 
     /// Transit authority cash at the start, dollars. 0: the first line is
@@ -160,7 +162,7 @@ impl Default for Params {
             feedback_iterations: 4,
             daily_iterations: 1,
             construction_speedup: 12.0,
-            instant_build: false,
+            instant_build: true,
             starting_cash: 0.0,
             federal_capital_share: 0.5,
             // Austin Light Rail Phase 1 (in the CIG pipeline): ~$7.1B for 18,700

@@ -61,10 +61,11 @@ use sim_core::{Params, ScenarioInput, Sim, TransitLine, Mode};
 
 let mut sim = Sim::from_json(&std::fs::read_to_string("travis.json")?, Params::default())?;
 
-// Draw a line: returns a stable id. Capital is charged now; the line is under
-// construction until sim.opening_day(mode) (light rail: 6 real years / 12 =
-// ~183 game days), listed in results().pending_lines, then carries riders.
-// Set params.instant_build to open lines at once (tests, sandbox).
+// Draw a line: returns a stable id. Capital is charged now. With
+// params.instant_build = false (the game's setting; the default stays true until
+// the app shows pending lines, D33) the line is under construction until
+// sim.opening_day(mode) (light rail: 6 real years / 12 = ~183 game days),
+// listed in results().pending_lines, then carries riders.
 let id = sim.add_line(line)?;
 for l in &sim.results().lines {
     println!("{} riders/day, per stop {:?}", l.daily_boardings, l.boardings_by_stop);
@@ -85,7 +86,7 @@ let days_crossed = sim.tick(real_dt_seconds);
 | Call | Cost | What it does |
 |---|---|---|
 | `Sim::new(input, params)` / `Sim::from_json(json, params)` | seconds | Validates input, builds networks, runs the baseline to equilibrium. Lines in the input become lines 0..n. |
-| `add_line(TransitLine) -> LineId` | 40-80 ms (20-40 ms with `instant_build`) | Adds a line and charges its capital (less any federal grant on its forecast). It enters service on `opening_day(mode)`; until then it is in `pending_lines()` with no riders. With `params.instant_build` it opens at once and `results()` is refreshed. Ids are never reused. |
+| `add_line(TransitLine) -> LineId` | 40-80 ms (20-40 ms with `instant_build`) | Adds a line and charges its capital (less any federal grant on its forecast). It enters service on `opening_day(mode)`; until then it is in `pending_lines()` with no riders. With `params.instant_build` (default true for now, D33) it opens at once and `results()` is refreshed. Ids are never reused. |
 | `opening_day(Mode) -> u64` | free | Game day a line drawn today would open: `build_years` for the mode / `construction_speedup`. |
 | `pending_lines() -> Vec<PendingLine>` | free | Lines (or new versions) under construction: `id, name, mode, opens_day, replaces_open_line`. Also in `results().pending_lines`. |
 | `update_line(LineId, TransitLine)` | 20-80 ms | Replaces a line (same id). Service changes (headway, fare, speed, span, name) apply at once. Moving, adding or removing stops, or changing mode, is construction: the extra capital is charged now, the old version keeps running, the new one opens on `opening_day`. |
