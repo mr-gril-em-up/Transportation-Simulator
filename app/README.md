@@ -251,8 +251,10 @@ zones, 1.3M people) centered on downtown Austin. On the real build, the Red Line
 about 640 riders/day once open (Day 181) with MetroRail's real 32/51-minute headways and $3.50
 fare, against APTA's about 1,500 a weekday. That is low because the map starts empty: with mode
 constants fitted to Travis ACS commute shares (sim-core SIM-10), a rail line with no bus feeders
-loses riders. sim-core gets 861/day for the line alone at a 30-minute headway and 1,917/day
-inside today's CapMetro network. At 640 riders the line costs about $1.6M per daily rider, over
+loses riders. sim-core gets 861/day for the line alone at its real 32/51-minute headways and
+1,917/day inside today's CapMetro network. The app also gives every Red Line station
+park-and-ride, so that is not the gap to 861; the app's figure is read at Day 181 after the
+sim has run months of days, the probe's on day 0, and the cause is not yet traced. At 640 riders the line costs about $1.6M per daily rider, over
 the $600k grant gate, so it gets no federal grant: cash drops to about -$1.0B, more than the
 about $440M the line lets you borrow, and the demo heads to bankruptcy. A line edit takes under
 100 ms.
