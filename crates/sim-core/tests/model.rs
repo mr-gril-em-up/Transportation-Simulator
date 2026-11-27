@@ -215,7 +215,12 @@ fn warm_daily_rerun_stays_at_the_cold_equilibrium() {
 #[test]
 fn preview_matches_build_and_charges_nothing() {
     let mut s = sim();
+    assert!(!s.results().car_times_stale);
     let p = s.preview_line(rail()).unwrap();
+    assert!(
+        !s.results().car_times_stale,
+        "preview must not mark car times stale"
+    );
     assert_eq!(s.ledger().cash, 0.0);
     assert!(s.lines().is_empty());
     assert!(p.capital_cost > 0.0 && p.line.daily_boardings > 0.0);

@@ -337,9 +337,14 @@ closes the month using that day's line results:
 | Operating assistance | operating cost x `operating_assistance_share [0.143]` (federal formula funds; Texas gives big-city transit authorities no state operating money) |
 | Local tax | served population x `taxable_sales_per_capita [$20,600]` x `local_sales_tax_rate [1%]` / 12 |
 
-Served population is the residents of every zone with any walking coverage of
-a stop. Texas transit authorities (CapMetro, DART, Houston METRO) levy a 1%
-sales tax in their member cities; growing the network grows the taxing area.
+Served population is each zone's residents times its stop coverage share (the
+part of the zone within walking range of a stop, section 5), summed. Texas
+transit authorities (CapMetro, DART, Houston METRO) levy a 1% sales tax in their
+member cities; growing the network grows the taxing area. Weighting by coverage
+rather than counting any zone a stop touches keeps a stop clipping a zone's
+edge from taxing all of it. It understates real service areas, which tax whole
+member cities including streets far from a stop; city-level membership is a
+later refinement.
 Sources (figures.csv rows of the same names): the 1% rate is the Comptroller's
 MTA table (the statutory cap). Taxable sales per capita is derived from
 CapMetro's NTD 2023 local funds divided by 1% and by its 1.36M service-area
@@ -350,7 +355,7 @@ is an upper bound, and small agencies run far higher (El Paso 57%).
 Cash starts at `starting_cash [0]` and may go negative: bonds, debt service and
 the bankruptcy rule are F26. On the synthetic Travis bench, a 28 km light rail
 line costs about $16B and fails the grant gate at its uncalibrated ridership;
-it then needs local tax of about $4M a month against $8.6M operating cost.
+with 67k residents in walking range it collects about $1.2M a month in local tax against $8.6M operating cost.
 
 ## Known gaps
 

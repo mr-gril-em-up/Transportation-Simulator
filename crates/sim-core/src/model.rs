@@ -422,6 +422,7 @@ impl Sim {
     /// line ids are unchanged.
     pub fn preview_line(&mut self, line: TransitLine) -> Result<LinePreview, SimError> {
         line.validate()?;
+        let stale = self.results.car_times_stale;
         self.lines.push(Some(line));
         self.on_lines_changed();
         let id = (self.lines.len() - 1) as LineId;
@@ -429,6 +430,8 @@ impl Sim {
         let capital = self.line_capital(id);
         self.lines.pop();
         self.on_lines_changed();
+        // Same lines and car times as before the preview, so the flag is too.
+        self.results.car_times_stale = stale;
         let (line, capital_cost) = r
             .zip(capital)
             .ok_or_else(|| SimError("preview failed".into()))?;
@@ -474,14 +477,15 @@ impl Sim {
         self.ledger.charge_capital(spend, grant);
     }
 
-    /// Residents of zones within walking range of any stop: the transit tax base.
+    /// Residents within walking range of a stop (population x stop coverage
+    /// share per zone): the transit tax base. Weighting by coverage stops a
+    /// stop that clips a zone's edge from taxing the whole zone.
     fn served_population(&self) -> f64 {
         self.input
             .zones
             .iter()
             .zip(&self.net.coverage)
-            .filter(|(_, c)| **c > 0.0)
-            .map(|(z, _)| z.population)
+            .map(|(z, c)| z.population * c)
             .sum()
     }
 
