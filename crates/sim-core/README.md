@@ -228,6 +228,49 @@ densely so Dijkstra's arrays shrink with the graph.
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#what-is-recomputed-when).
+### Calibration probe: CapMetro Red Line (F19)
+
+`examples/redline.rs` builds the Red Line from the real stop positions in the
+pipeline's `transit.json` (OSM route 550, 10 stations Downtown to Leander, all
+with park-and-ride), adds it to the real Travis build as commuter rail, and
+prints daily boardings per stop:
+
+```
+cargo run --release -p sim-core --example redline -- \
+  ../data-pipeline/data/out/48453-2023/scenario.json \
+  ../data-pipeline/data/out/48453-2023/transit.json 30
+```
+
+First results, default `Params` (logit constants not yet calibrated to ACS):
+
+| Uniform headway | Model boardings/day | vs 1,500 |
+|---|---|---|
+| 30 min | 2,285 | +52% |
+| 32 min (real peak) | 2,198 | +47% |
+| 40 min | 1,883 | +26% |
+| 52 min (real service average) | 1,495 | 0% |
+| 60 min | 1,282 | -15% |
+
+The reference is APTA's 2023 average weekday, 1,500 boardings
+(`ridership_capmetro_rail_avg_weekday`; NTD's annual 477,322 includes Saturday
+and event service, so dividing it by days overstates weekdays). The real
+weekday service runs every 32 minutes in the peaks and about every 51 midday
+over 15.1 hours (`headway_capmetro_rail_peak_min`, `..._midday_min`,
+`span_capmetro_rail_weekday_hours`), about 35 trips in all, a 52-minute
+average. The model has one headway per line, so the fair answer lies between
+the 32 and 52 minute rows: commuters see the peak headway, other trips the
+midday one. Until lines carry a peak and an off-peak headway, the forecast is
+0 to 47% high, likely near the edge of the F19 30% band.
+
+Caveats:
+- Leander and Lakeline sit in Williamson County, whose residents are not zones
+  in the Travis build, so the north end is undercounted (24 and 28 boardings).
+- Nearly all riders arrive by park-and-ride (`transit_drive` 0.07% of trips vs
+  `transit_walk` 0.006%); the walk side needs checking against stop-level counts.
+- The model has one headway per line; a peak/off-peak headway (work trips on
+  the peak one, other trips on the off-peak one) is the next change for a fair
+  comparison.
+
 ## Design and rationale
 
 The full reasoning is in [docs/MODEL.md](docs/MODEL.md) (math, parameter sources,
