@@ -1,7 +1,7 @@
 //! Transit network: platforms (one per line and stop), ride and transfer
 //! edges, zone access, path search (skims) and passenger loading.
 
-use crate::geo::dist_km;
+use crate::geo::{dist_km, PointGrid};
 use crate::graph::NONE;
 use crate::params::{mode_defaults, ModeDefaults, Params};
 use crate::roads::{runs_on_roads, Route};
@@ -129,15 +129,15 @@ impl TransitNet {
         let mut metas = Vec::new();
         let mut platforms = Vec::new();
         let mut adj: Vec<Vec<TEdge>> = Vec::new();
-        let nearest_zone = |lon: f64, lat: f64| -> u32 {
-            let mut best = (f64::INFINITY, 0u32);
-            for (zi, z) in zones.iter().enumerate() {
-                let d = dist_km(lon, lat, z.lon, z.lat);
-                if d < best.0 {
-                    best = (d, zi as u32);
-                }
-            }
-            best.1
+        // Spatial buckets keep the stop/zone joins near-linear statewide;
+        // results equal the all-pairs scans exactly (SIM-20).
+        let zone_pts: Vec<(f64, f64)> = zones.iter().map(|z| (z.lon, z.lat)).collect();
+        let zone_grid = PointGrid::new(zone_pts.iter().copied(), 2.0);
+        let mut buf = Vec::new();
+        let mut nearest_zone = |lon: f64, lat: f64| -> u32 {
+            zone_grid
+                .nearest(lon, lat, &zone_pts, &mut buf)
+                .unwrap_or(0)
         };
         for (li, (id, l)) in lines.iter().enumerate() {
             let dflt = mode_defaults(l.mode);
@@ -206,8 +206,21 @@ impl TransitNet {
             });
         }
         // Transfers between platforms of different lines within walking distance.
+        let big_r = p.stop_walk_km;
+        let grid = PointGrid::new(
+            platforms.iter().map(|pl| (pl.lon, pl.lat)),
+            p.transfer_walk_km.max(big_r).max(0.1),
+        );
+        let mut near = Vec::new();
         for a in 0..platforms.len() {
-            for b in 0..platforms.len() {
+            grid.near(
+                platforms[a].lon,
+                platforms[a].lat,
+                p.transfer_walk_km,
+                &mut near,
+            );
+            for &b in &near {
+                let b = b as usize;
                 if platforms[a].line == platforms[b].line {
                     continue;
                 }
@@ -225,19 +238,20 @@ impl TransitNet {
                 }
             }
         }
-        // Zone access and egress.
-        let big_r = p.stop_walk_km;
+        // Zone access and egress. `coverage` is zero beyond radius + big_r.
         let mut walk_access = vec![Vec::new(); zones.len()];
         let mut egress = vec![Vec::new(); platforms.len()];
         let mut cov = vec![0.0f64; zones.len()];
         for (zi, z) in zones.iter().enumerate() {
-            for (pi, pl) in platforms.iter().enumerate() {
+            grid.near(z.lon, z.lat, z.radius_km.max(0.0) + big_r, &mut near);
+            for &pi in &near {
+                let pl = &platforms[pi as usize];
                 let d = dist_km(z.lon, z.lat, pl.lon, pl.lat);
                 let c = coverage(d, z.radius_km, big_r);
                 if c > 0.0 {
                     let walk = d.clamp(0.5 * big_r, big_r) * p.detour_factor;
-                    walk_access[zi].push((pi as u32, walk));
-                    egress[pi].push((zi as u32, walk));
+                    walk_access[zi].push((pi, walk));
+                    egress[pi as usize].push((zi as u32, walk));
                     cov[zi] = cov[zi].max(c);
                 }
             }
@@ -375,6 +389,10 @@ pub struct Searcher<'a> {
     pub best: Vec<(f64, u32, f64)>,
     /// Search with off-peak headways (non-work trips) instead of peak ones.
     pub offpeak: bool,
+    /// Platforms and zones the last run set, so the next run resets only
+    /// those instead of every platform and zone in the state (SIM-20).
+    touched_plats: Vec<u32>,
+    touched_zones: Vec<u32>,
 }
 
 impl<'a> Searcher<'a> {
@@ -387,6 +405,8 @@ impl<'a> Searcher<'a> {
             vot_min: p.path_vot_per_hour / 60.0,
             best: vec![(f64::INFINITY, NONE, 0.0); n_zones],
             offpeak: false,
+            touched_plats: Vec::new(),
+            touched_zones: Vec::new(),
         }
     }
 
@@ -418,11 +438,20 @@ impl<'a> Searcher<'a> {
     /// unreachable, and callers can skip reading them).
     pub fn run(&mut self, origin: usize, access: Access, car_min: &[f32], car_km: &[f32]) -> bool {
         let net = self.net;
-        self.labels.fill(Label::UNSET);
-        self.best.fill((f64::INFINITY, NONE, 0.0));
+        for &v in &self.touched_plats {
+            self.labels[v as usize] = Label::UNSET;
+        }
+        for &z in &self.touched_zones {
+            self.best[z as usize] = (f64::INFINITY, NONE, 0.0);
+        }
+        self.touched_plats.clear();
+        self.touched_zones.clear();
         self.heap.clear();
         let seed = |s: &mut Self, plat: u32, l: Label| {
             if l.gc < s.labels[plat as usize].gc {
+                if !s.labels[plat as usize].gc.is_finite() {
+                    s.touched_plats.push(plat);
+                }
                 s.labels[plat as usize] = l;
                 s.heap.push(Item(l.gc, plat));
             }
@@ -490,21 +519,31 @@ impl<'a> Searcher<'a> {
                 nl.pred = v;
                 nl.pred_edge = ei as u32;
                 if nl.gc < self.labels[to as usize].gc {
+                    if !self.labels[to as usize].gc.is_finite() {
+                        self.touched_plats.push(to);
+                    }
                     self.labels[to as usize] = nl;
                     self.heap.push(Item(nl.gc, to));
                 }
             }
         }
-        // Destinations: egress walk from any platform reached by riding.
-        for (plat, l) in self.labels.iter().enumerate() {
-            if !l.gc.is_finite() || l.ivt <= 0.0 {
+        // Destinations: egress walk from any platform reached by riding,
+        // in platform order so ties resolve as a scan of all platforms would.
+        self.touched_plats.sort_unstable();
+        for &plat in &self.touched_plats {
+            let l = &self.labels[plat as usize];
+            if l.ivt <= 0.0 {
                 continue;
             }
-            for &(z, wk) in &net.egress[plat] {
+            for &(z, wk) in &net.egress[plat as usize] {
                 let w = wk / self.p.walk_kph * 60.0;
                 let g = l.gc + self.p.walk_weight * w;
-                if g < self.best[z as usize].0 {
-                    self.best[z as usize] = (g, plat as u32, w);
+                let b = &mut self.best[z as usize];
+                if g < b.0 {
+                    if !b.0.is_finite() {
+                        self.touched_zones.push(z);
+                    }
+                    *b = (g, plat, w);
                 }
             }
         }
