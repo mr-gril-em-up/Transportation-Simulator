@@ -53,9 +53,11 @@ fn main() {
         sim.equilibrate_warm();
         warm = t.elapsed().as_secs_f64();
         println!(
-            "day {d}: {warm:.1} s, peak speed {:.0} km/h, car-unreachable pairs {}",
+            "day {d}: {warm:.1} s, peak speed {:.0} km/h, car-unreachable pairs {}, car pairs past the guard {}, unserved {:.0}",
             sim.results().peak_avg_speed_kph,
-            sim.car_unreachable_pairs()
+            sim.car_unreachable_pairs(),
+            sim.car_past_guard_pairs(),
+            sim.results().unserved_trips
         );
     }
     let r = sim.results();

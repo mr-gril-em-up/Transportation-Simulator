@@ -269,7 +269,9 @@ Travis by `examples/calibrate.rs`:
   weekday peak and midday headways and span (DATA-6), the Red Line at its
   32/51 timetable over 15.1 h. Constants `[0, -2.44, -0.43, -4.19, -0.40,
   -3.89]`. Buses carry 77.8k a day against ~69-70k weekday (NTD), 11% high;
-  the Red Line 1,367 against 1,500, 9% low.
+  the Red Line 1,367 against 1,500, 9% low. After the line-searched road
+  assignment (SIM-15) the same constants still reproduce ACS and give buses
+  77.3k and the Red Line 1,352 (10% low).
 - SIM-10 (superseded split): park-and-ride share of transit commuters 3%. **Tuned, not sourced**: ACS
   has no access mode and no CapMetro on-board survey split was found. It
   decides the Red Line: with walk and drive access fitted together, modeled

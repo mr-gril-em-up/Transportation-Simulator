@@ -187,6 +187,11 @@ pub struct LinkFlow {
     pub speed_kph: f64,
 }
 
+/// Congested shortest-path trees stop at this multiple of the strategic
+/// cutoff (SIM-14). A kept pair past it keeps its car option at the guard time
+/// (SIM-15).
+const PEAK_GUARD: f64 = 4.0;
+
 /// A zone pair and its daily travel, for the desire-line view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DesireLine {
@@ -1052,6 +1057,18 @@ impl Sim {
             .count()
     }
 
+    /// Kept zone pairs whose congested car time hit the peak trees' guard
+    /// (4x the strategic cutoff, SIM-14): they keep the car option at the
+    /// guard time, but their car trips are not loaded on the roads (SIM-15).
+    /// 0 without a cutoff.
+    pub fn car_past_guard_pairs(&self) -> usize {
+        let Some(cut) = self.params.strategic_max_min else {
+            return 0;
+        };
+        let guard = (cut * PEAK_GUARD) as f32;
+        self.car_peak.time.iter().filter(|&&t| t >= guard).count()
+    }
+
     /// Commute (home-work) mode shares under the current constants and skims,
     /// the quantity `calibrate_mode_shares` fits.
     pub fn commute_mode_shares(&self) -> ModeSplit {
@@ -1576,7 +1593,7 @@ impl Sim {
                     let (mut tree, mut km, mut toll, mut srch, mut nd, mut outs) = acc
                         .unwrap_or_else(|| {
                             (
-                                self.tree(4.0),
+                                self.tree(PEAK_GUARD),
                                 vec![0.0; g.n_nodes],
                                 vec![0.0; g.n_nodes],
                                 Searcher::new(net, p, z),
@@ -1693,6 +1710,17 @@ impl Sim {
                 t[q] = tree.dist[n] as f32;
                 k[q] = km[n] as f32;
                 tl[q] = toll[n] as f32;
+            } else if self.car_free.time.len() == self.pairs.len() {
+                // Past the congested tree's guard (4x the cutoff): the trip is
+                // at least that slow. Keep the car option at the guard time
+                // with free-flow distance and toll, rather than strand the
+                // trip; it is not loaded on the roads (SIM-15).
+                let f = self.pairs.row(i).start + q;
+                if self.car_free.time[f].is_finite() {
+                    t[q] = tree.bound as f32;
+                    k[q] = self.car_free.km[f];
+                    tl[q] = self.car_free.toll[f];
+                }
             }
         }
         (t, k, tl)

@@ -270,6 +270,7 @@ cargo run --release -p sim-core --example calibrate -- \
 | Fitted, SIM-10 (all 10 stations park-and-ride) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,518 | 1,917 |
 | Fitted, SIM-11 (3 real lots with spaces) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,953 | 1,471 |
 | Fitted on `existing_lines.json` with GTFS headways (now the defaults) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 77,802 | 1,367 |
+| Same constants after the line-searched assignment (SIM-15; a refit moves them under 0.02, not adopted) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 77,349 | 1,352 |
 | Target / count | ACS 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | ~69-70k (NTD weekday) | 1,500 (APTA weekday) |
 
 Shares are % of commuters who travel (ACS less work from home and other).
