@@ -163,13 +163,13 @@ impl Default for Params {
             // Austin Light Rail Phase 1 (in the CIG pipeline): ~$7.1B for 18,700
             // forecast riders is ~$380k per rider; 600k leaves room above it. Estimate.
             federal_max_capital_per_daily_rider: 600_000.0,
-            // Estimate pending a sourced figures.csv row (NTD federal + state
-            // operating funds over operating expense).
-            operating_assistance_share: 0.12,
+            // figures.csv `operating_assistance_share`: CapMetro NTD 2023, federal
+            // $50.9M + state $0 over $356.3M. Upper bound (pandemic relief).
+            operating_assistance_share: 0.143,
+            // figures.csv `transit_sales_tax_rate`: CapMetro, DART, METRO (MTA cap).
             local_sales_tax_rate: 0.01,
-            // Estimate pending a sourced figures.csv row (Texas Comptroller
-            // taxable sales / population).
-            taxable_sales_per_capita: 23_000.0,
+            // figures.csv `taxable_sales_per_capita`: CapMetro service area, 2023$.
+            taxable_sales_per_capita: 20_600.0,
         }
     }
 }
