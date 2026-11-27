@@ -8,7 +8,7 @@ import { createMap, GEO_FULL, SCHEMATIC_FULL, setData, zoomBand } from "./map";
 import { layoutSchematic, morph } from "./schematic";
 import { km } from "./geo";
 import { money } from "./format";
-import { isRegional, type Budget, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
+import { isRegional, type Budget, type ClockState, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
 import { createSim } from "./sim";
 import { serialQueue } from "./sim/queue";
 
@@ -178,6 +178,9 @@ sim.ready().then(
   async () => {
     $("sim-ms").textContent = `${sim.label} · ready`;
     renderBudget(await sim.budget());
+    // Hand the clock to the sim, carrying over pause and speed set while it loaded.
+    simReady = true;
+    syncClock(await sim.setClock({ paused: clock.paused, timelapse: clock.speed }));
   },
   (e) => ($("sim-ms").textContent = `${sim.label} failed to start: ${e}`),
 );
@@ -333,17 +336,53 @@ $("zoom-badge").addEventListener("click", (e) => {
   if (go === "travis") map.flyTo({ center: TRAVIS_CENTER, zoom: 11.5 });
 });
 
-// ---- Clock -------------------------------------------------------------------
+// ---- Clock (F21) ---------------------------------------------------------------
+// The sim owns time: the shell's worker advances sim-core's clock and re-runs the
+// day at each day boundary. The client polls it, interpolates between polls,
+// and re-reads results when the day changes. Controls apply locally at once,
+// then the sim's answer overwrites them.
 const clock = new GameClock();
 const pauseBtn = $("btn-pause");
 const lapseBtn = $("btn-lapse");
+const CLOCK_POLL_MS = 500;
+let simDay = -1;
+let simReady = false;
+
+function syncClock(s: ClockState): void {
+  clock.sync(s);
+  pauseBtn.textContent = clock.paused ? "▶" : "⏸";
+  lapseBtn.textContent = `Time-lapse ${clock.speed}x`;
+  if (simDay >= 0 && s.day !== simDay) void apply(() => sim.results()); // the day re-ran
+  simDay = s.day;
+}
+const clockCall = (p: Promise<ClockState>) => p.then(syncClock, (e) => console.error(e));
 const togglePause = () => {
   clock.paused = !clock.paused;
   pauseBtn.textContent = clock.paused ? "▶" : "⏸";
+  if (simReady) void clockCall(sim.setClock({ paused: clock.paused }));
 };
-const cycleLapse = () => (lapseBtn.textContent = `Time-lapse ${clock.cycleLapse()}x`);
+const cycleLapse = () => {
+  lapseBtn.textContent = `Time-lapse ${clock.cycleLapse()}x`;
+  if (simReady) void clockCall(sim.setClock({ timelapse: clock.speed }));
+};
 pauseBtn.onclick = togglePause;
 lapseBtn.onclick = cycleLapse;
+$("btn-skip").onclick = () => {
+  if (!simReady) return;
+  void apply(async () => {
+    const s = await sim.skipToNextMonth();
+    simDay = s.day; // results are re-read below; keep the poll from fetching them again
+    clock.sync(s);
+    return sim.results();
+  });
+};
+
+let polling = false;
+setInterval(() => {
+  if (!simReady || polling) return;
+  polling = true;
+  void clockCall(sim.clock()).finally(() => (polling = false));
+}, CLOCK_POLL_MS);
 window.addEventListener("keydown", (e) => {
   // Skip form controls: a focused button would also fire its own click on Space.
   if (drawer.active || e.target instanceof HTMLSelectElement || e.target instanceof HTMLButtonElement) return;

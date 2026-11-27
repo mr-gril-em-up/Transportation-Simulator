@@ -17,14 +17,15 @@ doc.
   waits moved to the blocking pool (#9 review follow-ups) (#12)
 - Stop editing (drag, insert, delete) and line rename (F16) (#15, #19)
 - Build cost preview while drawing (capital, grant, riders, operating cost) and
-  a cash/budget line from sim-core's ledger (F16, F23, F26)
+  a cash/budget line from sim-core's ledger (F16, F23, F26) (#22)
+- Sim-owned clock: shell worker drives `Sim::tick`; client polls and
+  interpolates; skip to next month; ridership refreshes after each daily re-run (F21)
 
 ## Next, M0/M1 (blocked items say on what)
 
 | Item | Blocked on |
 |---|---|
 | Ship the pipeline's Travis `scenario.json` as the default scenario | pipeline output path/packaging agreed |
-| Drive `Sim::tick` from a shell worker; results-changed events to the client (F21) | nothing |
 | Snap drawn bus routes to the road graph | road graph from the pipeline; router location (sim-core vs app) to agree |
 | Line inspector: per-stop boardings chart, segment load profile, peak load vs capacity | nothing (fields already cross IPC) |
 | M1 exit check in the UI: Red Line replica vs reported ridership | calibrated mode split (F14) and real scenario |
@@ -32,7 +33,8 @@ doc.
 ## M2 (money, clock, agents)
 
 - Budget panel: monthly statements from `Ledger.history`, settlement as the sim clock crosses months
-- Skip-to-next-month in the clock; clock driven by sim-core
+- Construction period: show lines under construction from `results().pending_lines` and their
+  opening day once sim-core's construction period is switched on (`Params::instant_build = false`)
 - Local-tier agents near the camera via deck.gl; above 10x draw flow animations
 
 ## M3 (statewide)

@@ -6,10 +6,15 @@
 
 use serde::Serialize;
 use sim_core::{
-    synth, Ledger, LineId, LinePreview, LineResult, Params, ScenarioInput, Sim, TransitLine,
+    synth, Clock, Ledger, LineId, LinePreview, LineResult, Params, ScenarioInput, Sim, TransitLine,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
+
+/// How often the clock worker advances `Sim::tick`. Short enough that the
+/// client's display (which interpolates between polls) never drifts visibly.
+const TICK_EVERY: Duration = Duration::from_millis(100);
 
 /// Set TRANSPO_SCENARIO to a ScenarioInput JSON file (data-pipeline output).
 /// Without it the app uses sim-core's synthetic Travis-sized region.
@@ -54,6 +59,31 @@ impl SimState {
             cv.notify_all();
         });
         state
+    }
+
+    /// Start the clock worker: advances `Sim::tick` by real elapsed time until
+    /// the app exits. Day boundaries re-run the day and settle months inside
+    /// `tick`, holding the lock, so edits wait for them (F21).
+    pub fn spawn_clock(self) -> Self {
+        let s = self.clone();
+        std::thread::spawn(move || {
+            let mut last = Instant::now();
+            loop {
+                std::thread::sleep(TICK_EVERY);
+                let now = Instant::now();
+                let dt = (now - last).as_secs_f64();
+                last = now;
+                let (lock, _) = &*s.0;
+                let mut inner = lock.lock().unwrap();
+                if inner.error.is_some() {
+                    return;
+                }
+                if let Some(sim) = inner.sim.as_mut() {
+                    sim.tick(dt);
+                }
+            }
+        });
+        self
     }
 
     /// Block until the Sim is built, then run `f` on it.
@@ -125,6 +155,62 @@ impl SimState {
     /// The transit authority's books (cash, month in progress, settled months).
     pub fn ledger(&self) -> Result<Ledger, String> {
         self.with(|inner| Ok(inner.sim.as_ref().unwrap().ledger().clone()))
+    }
+}
+
+/// The game clock as the client shows it.
+#[derive(Serialize, Debug)]
+pub struct ClockOut {
+    /// sim-core's clock: `game_seconds` since day 0 00:00, `timelapse`, `paused`.
+    #[serde(flatten)]
+    clock: Clock,
+    /// Whole game days since the start; the client re-reads results when it changes.
+    day: u64,
+}
+
+impl SimState {
+    /// Current clock.
+    pub fn clock(&self) -> Result<ClockOut, String> {
+        self.with(|inner| Ok(clock_out(inner)))
+    }
+
+    /// Pause or resume and/or set time-lapse. Either may be omitted.
+    pub fn set_clock(
+        &self,
+        paused: Option<bool>,
+        timelapse: Option<f64>,
+    ) -> Result<ClockOut, String> {
+        self.with(|inner| {
+            let c = &mut inner.sim.as_mut().unwrap().clock;
+            if let Some(p) = paused {
+                c.paused = p;
+            }
+            if let Some(x) = timelapse {
+                c.set_timelapse(x);
+            }
+            Ok(clock_out(inner))
+        })
+    }
+
+    /// Jump to the start of next month: re-runs the day and settles the month.
+    pub fn skip_to_next_month(&self) -> Result<ClockOut, String> {
+        self.with(|inner| {
+            inner.sim.as_mut().unwrap().skip_to_next_month();
+            Ok(clock_out(inner))
+        })
+    }
+
+    /// Results for every client route, without changing anything.
+    pub fn results(&self) -> Result<Vec<RouteResultOut>, String> {
+        self.with(|inner| Ok(all_results(inner)))
+    }
+}
+
+fn clock_out(inner: &Inner) -> ClockOut {
+    let clock = inner.sim.as_ref().unwrap().clock.clone();
+    ClockOut {
+        day: clock.day(),
+        clock,
     }
 }
 
@@ -274,6 +360,38 @@ pub async fn ledger(state: tauri::State<'_, SimState>) -> Result<Ledger, String>
     blocking(move || s.ledger()).await
 }
 
+/// Current game clock (F21). The client polls it and interpolates in between.
+#[tauri::command]
+pub async fn clock(state: tauri::State<'_, SimState>) -> Result<ClockOut, String> {
+    let s = state.inner().clone();
+    blocking(move || s.clock()).await
+}
+
+/// Pause/resume and set time-lapse; omitted fields are unchanged.
+#[tauri::command]
+pub async fn set_clock(
+    state: tauri::State<'_, SimState>,
+    paused: Option<bool>,
+    timelapse: Option<f64>,
+) -> Result<ClockOut, String> {
+    let s = state.inner().clone();
+    blocking(move || s.set_clock(paused, timelapse)).await
+}
+
+/// Skip to the first day of next month, settling the month's budget.
+#[tauri::command]
+pub async fn skip_to_next_month(state: tauri::State<'_, SimState>) -> Result<ClockOut, String> {
+    let s = state.inner().clone();
+    blocking(move || s.skip_to_next_month()).await
+}
+
+/// Results for every route, for re-reading after the day re-runs.
+#[tauri::command]
+pub async fn results(state: tauri::State<'_, SimState>) -> Result<Vec<RouteResultOut>, String> {
+    let s = state.inner().clone();
+    blocking(move || s.results()).await
+}
+
 /// Run a closure that may wait on the Condvar or the Sim lock on Tauri's blocking
 /// pool, so async runtime workers are never parked (review follow-up on #9).
 async fn blocking<T: Send + 'static>(
@@ -335,6 +453,41 @@ mod tests {
         let l = state.ledger().unwrap();
         assert!((l.current.capital_spent - p.capital_cost).abs() < 1.0);
         assert!((cash0 - l.cash - (p.capital_cost - p.federal_grant)).abs() < 1.0);
+    }
+
+    #[test]
+    fn clock_controls_and_month_skip_settle_the_budget() {
+        let state = SimState::start_with(|| Ok(synth::generate(&synth::SynthConfig::small())));
+        let c = state.set_clock(Some(true), Some(10.0)).unwrap();
+        assert!(c.clock.paused);
+        assert_eq!(c.clock.timelapse, 10.0);
+        let c = state.set_clock(None, Some(-1.0)).unwrap();
+        assert_eq!(c.clock.timelapse, 10.0, "invalid time-lapse ignored");
+
+        let bus = line(
+            r#"{"name":"B","mode":"bus","headway_min":10,
+            "stops":[{"lon":-97.76,"lat":30.25},{"lon":-97.743,"lat":30.268},{"lon":-97.73,"lat":30.29}]}"#,
+        );
+        state.upsert("b".into(), bus).unwrap();
+        let c = state.skip_to_next_month().unwrap();
+        assert_eq!(c.day, 30);
+        assert_eq!(state.ledger().unwrap().history.len(), 1, "month settled");
+        assert_eq!(state.results().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn clock_worker_advances_time() {
+        let state = SimState::start_with(|| Ok(synth::generate(&synth::SynthConfig::small())))
+            .spawn_clock();
+        let t0 = state
+            .set_clock(Some(false), Some(60.0))
+            .unwrap()
+            .clock
+            .game_seconds;
+        std::thread::sleep(Duration::from_millis(350));
+        let t1 = state.clock().unwrap().clock.game_seconds;
+        // 60x: one real second is one game hour; allow for scheduling slack.
+        assert!(t1 - t0 > 600.0, "advanced {} game s", t1 - t0);
     }
 
     #[test]

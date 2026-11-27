@@ -186,3 +186,32 @@ describe("build cost (F16)", () => {
     expect(money(-1.2e9)).toBe("-$1.20B");
   });
 });
+
+describe("sim-owned clock (F21)", () => {
+  it("adopts the sim's time, pause and speed", () => {
+    const c = new GameClock();
+    c.sync({ gameSeconds: 86400 + 8 * 3600, timelapse: 10, paused: true, day: 1 });
+    expect(c.label()).toBe("Day 2 08:00");
+    expect(c.speed).toBe(10);
+    c.tick(5);
+    expect(c.label()).toBe("Day 2 08:00"); // paused
+  });
+
+  it("mock clock pauses, changes speed and skips to the next 30-day month", async () => {
+    const s = new MockSim();
+    const a = await s.setClock({ paused: true, timelapse: 60 });
+    expect(a).toMatchObject({ paused: true, timelapse: 60, day: 0 });
+    expect((await s.skipToNextMonth()).day).toBe(30);
+    expect((await s.skipToNextMonth()).day).toBe(60);
+  });
+
+  it("maps the shell's ClockOut", async () => {
+    const { fromClock } = await import("../src/sim/tauri");
+    expect(fromClock({ game_seconds: 18000, timelapse: 2, paused: false, day: 0 })).toEqual({
+      gameSeconds: 18000,
+      timelapse: 2,
+      paused: false,
+      day: 0,
+    });
+  });
+});
