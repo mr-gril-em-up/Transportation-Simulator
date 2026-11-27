@@ -1,8 +1,53 @@
 # Decision log
 
-Decisions that shape the code, with the reason behind each. Newest first. Anyone (human or agent) who makes or reverses a decision that a future developer would otherwise have to ask about adds a row in the same PR.
+Decisions that shape the code, with the reason behind each. Anyone (human or agent) who makes or reverses a decision that a future developer would otherwise have to ask about adds a row in the same PR.
 
 Status values: **Decided** (by Collins), **Approved** (proposed in the design doc and approved by Collins), **As built** (made during implementation; rationale recorded by the implementer).
+
+## How to add a decision
+
+IDs are per stream so parallel PRs never pick the same number:
+
+| Prefix | Stream | Section |
+|---|---|---|
+| `SIM-` | `crates/sim-core` | [Simulation core](#simulation-core-sim) |
+| `DATA-` | `crates/data-pipeline` | [Data pipeline](#data-pipeline-data) |
+| `APP-` | `app/` | [App](#app-app) |
+| `DOC-` | Project-level decisions (scope, licence, process) and `docs/` | [Project and docs](#project-and-docs-doc) |
+
+1. Take the next number in your stream's section (`SIM-3` after `SIM-2`).
+2. **Append the row at the bottom of that section.** Sections run oldest first, so two PRs in different streams never touch the same lines.
+3. Cite it as `SIM-3` in code comments and docs.
+4. To reverse a decision, add a new row and set the old row's Status to "Superseded by SIM-7".
+
+If two PRs in the same stream still pick the same number, the one that merges second renumbers before merging.
+
+`D1` to `D31` below are the original single-sequence IDs. They are frozen: keep citing them as they are, never renumber them, and never add new `D` rows.
+
+## Simulation core (SIM)
+
+| # | Date | Decision | Why | Status | Source |
+|---|---|---|---|---|---|
+
+## Data pipeline (DATA)
+
+| # | Date | Decision | Why | Status | Source |
+|---|---|---|---|---|---|
+
+## App (APP)
+
+Detailed app decisions also live in [app/docs/DECISIONS.md](../app/docs/DECISIONS.md); list here the ones other streams need to know.
+
+| # | Date | Decision | Why | Status | Source |
+|---|---|---|---|---|---|
+
+## Project and docs (DOC)
+
+| # | Date | Decision | Why | Status | Source |
+|---|---|---|---|---|---|
+| DOC-1 | 2026-11-27 | Decision IDs are per stream (`SIM-`, `DATA-`, `APP-`, `DOC-`), appended at the bottom of the stream's section; `D1`–`D31` frozen | One shared sequence made parallel PRs collide on numbers and on the same table lines (#6, #7, #8, #16) | As built | Process fix requested by the coordinator |
+
+## Legacy decisions D1–D31 (frozen, newest first)
 
 | # | Date | Decision | Why | Status | Source |
 |---|---|---|---|---|---|
