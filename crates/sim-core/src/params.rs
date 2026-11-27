@@ -76,8 +76,9 @@ pub struct Params {
 
     /// Share of workers commuting on a given day (absence + work from home).
     pub commute_presence: f64,
-    /// Non-work trips per resident per day (NHTS ~3.5 total minus work).
-    pub other_trips_per_person: f64,
+    /// Total person trips per resident per day, all purposes (2022 NHTS: 2.28).
+    /// Non-work trips are this total minus the zone's work trips, floored at 0.
+    pub trips_per_person: f64,
     /// Gravity model decay per car minute for non-work trips.
     pub gravity_decay_per_min: f64,
     /// Desired arrival time at work: shares per 15-minute bin from `arrival_profile_start_h`.
@@ -128,7 +129,7 @@ impl Default for Params {
             pnr_max_drive_min: 25.0,
             pnr_park_min: 3.0,
             commute_presence: 0.8,
-            other_trips_per_person: 2.4,
+            trips_per_person: 2.28,
             gravity_decay_per_min: 0.08,
             // 5:00 to 10:00 in 15-minute bins, shaped like ACS "time arriving at work".
             work_arrival_profile: vec![
@@ -201,14 +202,24 @@ pub struct ModeDefaults {
     pub alignment_factor: f64,
     /// Passengers per vehicle (or train).
     pub vehicle_capacity: f64,
-    /// Operating cost per vehicle (train) revenue hour, dollars.
-    pub cost_per_revenue_hour: f64,
+    /// Operating cost per car revenue hour, dollars (NTD counts rail revenue
+    /// hours per car, so this is the number NTD publishes).
+    pub cost_per_car_hour: f64,
+    /// Cars per vehicle (train). 1 for buses and single-unit modes.
+    pub cars_per_vehicle: f64,
     /// Default flat fare per boarding, dollars.
     pub fare: f64,
     /// Default distance fare, dollars per km.
     pub fare_per_km: f64,
     /// Default hours of service per day.
     pub span_hours: f64,
+}
+
+impl ModeDefaults {
+    /// Operating cost per vehicle (train) revenue hour: per-car cost x cars.
+    pub fn cost_per_revenue_hour(&self) -> f64 {
+        self.cost_per_car_hour * self.cars_per_vehicle
+    }
 }
 
 /// Default speeds, capacities, costs and fares for a mode.
@@ -218,6 +229,7 @@ pub fn mode_defaults(m: Mode) -> ModeDefaults {
              alignment_factor,
              vehicle_capacity,
              cost,
+             cars,
              fare,
              fare_per_km,
              span_hours| {
@@ -226,26 +238,30 @@ pub fn mode_defaults(m: Mode) -> ModeDefaults {
             dwell_s,
             alignment_factor,
             vehicle_capacity,
-            cost_per_revenue_hour: cost,
+            cost_per_car_hour: cost,
+            cars_per_vehicle: cars,
             fare,
             fare_per_km,
             span_hours,
         }
     };
     match m {
-        Mode::Bus => d(28.0, 20.0, 1.25, 70.0, 175.0, 1.25, 0.0, 18.0),
-        Mode::Trolleybus => d(28.0, 20.0, 1.25, 70.0, 190.0, 1.25, 0.0, 18.0),
-        Mode::Brt => d(38.0, 25.0, 1.15, 100.0, 200.0, 1.25, 0.0, 19.0),
-        Mode::Tram => d(32.0, 25.0, 1.15, 160.0, 300.0, 1.25, 0.0, 19.0),
-        Mode::LightRail => d(55.0, 30.0, 1.1, 300.0, 375.0, 1.25, 0.0, 20.0),
-        Mode::CommuterRail => d(80.0, 45.0, 1.1, 400.0, 700.0, 3.5, 0.0, 16.0),
-        Mode::Metro => d(70.0, 30.0, 1.1, 1000.0, 1200.0, 2.0, 0.0, 20.0),
-        Mode::HighSpeedRail => d(270.0, 120.0, 1.05, 400.0, 3000.0, 20.0, 0.15, 18.0),
-        Mode::Monorail => d(50.0, 30.0, 1.05, 300.0, 450.0, 1.5, 0.0, 18.0),
-        Mode::PeopleMover => d(40.0, 20.0, 1.0, 100.0, 400.0, 0.0, 0.0, 20.0),
-        Mode::Gondola => d(20.0, 0.0, 1.0, 10.0, 250.0, 1.25, 0.0, 16.0),
-        Mode::Maglev => d(400.0, 120.0, 1.0, 600.0, 4000.0, 30.0, 0.2, 18.0),
-        Mode::Ferry => d(30.0, 120.0, 1.1, 150.0, 600.0, 2.0, 0.0, 16.0),
+        // Bus, light rail and commuter rail cost per car hour and the CapMetro
+        // fares come from data-pipeline/reference/figures.csv (FTA NTD 2023,
+        // CapMetro), checked by tests/figures.rs. Other modes are estimates.
+        Mode::Bus => d(28.0, 20.0, 1.25, 70.0, 182.0, 1.0, 1.25, 0.0, 18.0),
+        Mode::Trolleybus => d(28.0, 20.0, 1.25, 70.0, 190.0, 1.0, 1.25, 0.0, 18.0),
+        Mode::Brt => d(38.0, 25.0, 1.15, 100.0, 200.0, 1.0, 1.25, 0.0, 19.0),
+        Mode::Tram => d(32.0, 25.0, 1.15, 160.0, 300.0, 1.0, 1.25, 0.0, 19.0),
+        Mode::LightRail => d(55.0, 30.0, 1.1, 300.0, 436.0, 2.0, 1.25, 0.0, 20.0),
+        Mode::CommuterRail => d(80.0, 45.0, 1.1, 400.0, 716.0, 2.0, 3.5, 0.0, 16.0),
+        Mode::Metro => d(70.0, 30.0, 1.1, 1000.0, 1200.0, 1.0, 2.0, 0.0, 20.0),
+        Mode::HighSpeedRail => d(270.0, 120.0, 1.05, 400.0, 3000.0, 1.0, 20.0, 0.15, 18.0),
+        Mode::Monorail => d(50.0, 30.0, 1.05, 300.0, 450.0, 1.0, 1.5, 0.0, 18.0),
+        Mode::PeopleMover => d(40.0, 20.0, 1.0, 100.0, 400.0, 1.0, 0.0, 0.0, 20.0),
+        Mode::Gondola => d(20.0, 0.0, 1.0, 10.0, 250.0, 1.0, 1.25, 0.0, 16.0),
+        Mode::Maglev => d(400.0, 120.0, 1.0, 600.0, 4000.0, 1.0, 30.0, 0.2, 18.0),
+        Mode::Ferry => d(30.0, 120.0, 1.1, 150.0, 600.0, 1.0, 2.0, 0.0, 16.0),
     }
 }
 

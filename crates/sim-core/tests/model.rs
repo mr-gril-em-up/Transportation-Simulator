@@ -18,10 +18,24 @@ fn baseline_is_car_dominated_with_conserved_trips() {
     assert_eq!(sh.transit(), 0.0);
     assert!((sh.total() - 1.0).abs() < 1e-9);
     // Every generated trip is either assigned a mode or counted as unserved.
-    let gen_other =
-        s.input().zones.iter().map(|z| z.population).sum::<f64>() * s.params.other_trips_per_person;
-    let gen_work =
-        s.input().commutes.iter().map(|c| c.workers).sum::<f64>() * s.params.commute_presence * 2.0;
+    // Other trips: each zone's total trip budget minus its residents' work trips.
+    let pres = s.params.commute_presence;
+    let gen_other: f64 = s
+        .input()
+        .zones
+        .iter()
+        .map(|z| {
+            let work: f64 = s
+                .input()
+                .commutes
+                .iter()
+                .filter(|c| c.home == z.id)
+                .map(|c| c.workers * pres * 2.0)
+                .sum();
+            (z.population * s.params.trips_per_person - work).max(0.0)
+        })
+        .sum();
+    let gen_work = s.input().commutes.iter().map(|c| c.workers).sum::<f64>() * pres * 2.0;
     let total = r.daily_trips.total() + r.unserved_trips;
     assert!(
         (total - gen_other - gen_work).abs() / total < 1e-6,

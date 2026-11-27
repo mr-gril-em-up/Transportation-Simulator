@@ -39,12 +39,22 @@ Two purposes:
 | Purpose | Source | Daily trips |
 |---|---|---|
 | Work (home-based work) | `commutes` (LODES home zone to work zone) | `workers x commute_presence [0.8]` each way, so x2 per day |
-| Other (shopping, errands, social, school) | `population x other_trips_per_person [2.4]` | one-way trips from each zone |
+| Other (shopping, errands, social, school) | `max(0, population x trips_per_person [2.28] - the zone's daily work trips)` | one-way trips from each zone |
 
 - `commute_presence` covers absence and work-from-home. Austin's WFH share is
   among the highest in the US (roughly 20%+), so 0.8 is the starting point.
-- 2.4 other trips per person: NHTS reports roughly 3.5 trips per person per day
-  in total; subtracting work trips leaves about 2.4.
+- `trips_per_person` is the **total** daily trip rate, all purposes: 2.28 from
+  the 2022 NHTS (FHWA Summary of Travel Trends, Table 2-9), row
+  `trips_per_person_day_2022` in
+  [figures.csv](../../data-pipeline/reference/figures.csv). Collins chose the
+  sourced figure over the design doc's ~3.5 (the 2017 value was 3.37). The
+  report warns 2022 is post-pandemic and may not be a steady state, so this is
+  the number to revisit in F13.
+- Work trips are subtracted per home zone, so a zone of commuters makes fewer
+  other trips and the total stays 2.28 x population. A zone whose work trips
+  exceed its budget (possible with LODES vs census mismatch) makes 0 other
+  trips rather than a negative number, so the region total can sit slightly
+  above 2.28 x population.
 
 **Why work trips come straight from LODES and not a model:** LODES is observed
 home-to-work geography (Round Rock to the Domain, Katy to the Energy Corridor).
@@ -242,8 +252,15 @@ Simplifications and why:
 
 - Vehicles = ceil(round trip x 1.1 layover / headway).
 - Revenue hours per day = vehicles x span (`span_hours`, default by mode).
-- Operating cost = revenue hours x cost per revenue hour (bus $175, light rail
-  $375, commuter rail $700... see `mode_defaults`; the doc's ranges).
+- Operating cost = revenue hours x cost per car hour x cars per vehicle
+  (`ModeDefaults::cost_per_revenue_hour()`). NTD counts rail revenue hours per
+  car, so `cost_per_car_hour` is the published figure: bus $182, light rail
+  $436 x 2 cars, commuter rail $716 x 2 cars (FTA NTD 2023 Texas agencies,
+  [figures.csv](../../data-pipeline/reference/figures.csv)). Other modes are
+  estimates from the design doc's ranges, one car per vehicle.
+- Check: the synthetic Travis bench's first light rail line recovers about 4% of
+  operating cost from fares, against 4.8 to 5.8% at DART and Houston METRO
+  (`farebox_recovery_texas_big_city`).
 - Fare revenue = boardings x fare + passenger-km x fare per km. This overstates
   revenue when riders transfer free; good enough until a fare ledger exists.
 - Peak-hour load = busiest segment's daily load x the transit peak factor
