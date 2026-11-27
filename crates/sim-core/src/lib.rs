@@ -1,10 +1,19 @@
 //! Transpo-Sim simulation core: aggregate zone-to-zone demand, mode choice and
-//! network assignment. See README.md for the input schema and public API.
+//! network assignment. See README.md for the public API and docs/ for the model.
 
+pub mod clock;
+pub mod geo;
+pub mod graph;
+pub mod model;
+pub mod params;
 pub mod schema;
+pub mod synth;
+pub mod transit;
 
+pub use clock::Clock;
+pub use model::{DesireLine, LineId, LineResult, LinkFlow, ModeSplit, Results, Sim, ZoneResult};
+pub use params::Params;
 pub use schema::*;
-
 use std::collections::HashSet;
 use std::fmt;
 
@@ -17,6 +26,14 @@ impl fmt::Display for SimError {
     }
 }
 impl std::error::Error for SimError {}
+
+// These return false for NaN, so `!positive(x)` rejects NaN too.
+fn positive(x: f64) -> bool {
+    x > 0.0
+}
+fn non_negative(x: f64) -> bool {
+    x >= 0.0
+}
 
 fn err<T>(msg: impl Into<String>) -> Result<T, SimError> {
     Err(SimError(msg.into()))
@@ -45,7 +62,15 @@ impl ScenarioInput {
             if !nodes.contains(&z.road_node) {
                 return err(format!("zone {} road_node {} missing", z.id, z.road_node));
             }
-            if !(0.0..=1.0).contains(&z.zero_car_share) || z.population < 0.0 || z.jobs < 0.0 {
+            let ok = (0.0..=1.0).contains(&z.zero_car_share)
+                && z.population >= 0.0
+                && z.jobs >= 0.0
+                && z.median_income >= 0.0
+                && z.parking_cost >= 0.0
+                && z.lon.is_finite()
+                && z.lat.is_finite()
+                && z.area_km2.is_none_or(|a| a > 0.0);
+            if !ok {
                 return err(format!("zone {} has out-of-range values", z.id));
             }
         }
@@ -53,13 +78,31 @@ impl ScenarioInput {
             if !nodes.contains(&l.from) || !nodes.contains(&l.to) {
                 return err(format!("road link {i} references a missing node"));
             }
-            if l.length_m <= 0.0 || l.speed_kph <= 0.0 {
+            if !positive(l.length_m) || !positive(l.speed_kph) {
                 return err(format!("road link {i} needs positive length and speed"));
+            }
+            if l.from == l.to {
+                return err(format!("road link {i} is a self-loop"));
+            }
+            if l.lanes == 0 && l.capacity_vph.is_none() {
+                return err(format!("road link {i} has 0 lanes and no capacity_vph"));
+            }
+            if l.capacity_vph.is_some_and(|c| !positive(c)) || !non_negative(l.toll) {
+                return err(format!("road link {i} has invalid capacity or toll"));
             }
         }
         for c in &self.commutes {
+            if !non_negative(c.workers) {
+                return err(format!(
+                    "commute {}->{} has invalid workers",
+                    c.home, c.work
+                ));
+            }
             if !zones.contains(&c.home) || !zones.contains(&c.work) {
-                return err(format!("commute {}->{} references a missing zone", c.home, c.work));
+                return err(format!(
+                    "commute {}->{} references a missing zone",
+                    c.home, c.work
+                ));
             }
         }
         for l in &self.lines {
@@ -74,8 +117,25 @@ impl TransitLine {
         if self.stops.len() < 2 {
             return err(format!("line '{}' needs at least two stops", self.name));
         }
-        if self.headway_min <= 0.0 {
+        if !positive(self.headway_min) {
             return err(format!("line '{}' needs a positive headway", self.name));
+        }
+        let pos = |v: Option<f64>| v.is_none_or(|x| x >= 0.0);
+        if !pos(self.fare) || !pos(self.fare_per_km) || !pos(self.span_hours) {
+            return err(format!("line '{}' has a negative fare or span", self.name));
+        }
+        if self.speed_kph.is_some_and(|s| !positive(s)) {
+            return err(format!("line '{}' needs a positive speed", self.name));
+        }
+        if self
+            .stops
+            .iter()
+            .any(|s| !s.lon.is_finite() || !s.lat.is_finite())
+        {
+            return err(format!(
+                "line '{}' has a non-finite stop coordinate",
+                self.name
+            ));
         }
         Ok(())
     }

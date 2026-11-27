@@ -1,0 +1,187 @@
+use sim_core::synth::{generate, straight_line, SynthConfig};
+use sim_core::{Mode, ModeSplit, Params, Sim};
+
+fn sim() -> Sim {
+    Sim::new(generate(&SynthConfig::small()), Params::default()).unwrap()
+}
+
+fn rail() -> sim_core::TransitLine {
+    straight_line(Mode::LightRail, (0.0, -7.0), (0.0, 7.0), 1.0, 8.0)
+}
+
+#[test]
+fn baseline_is_car_dominated_with_conserved_trips() {
+    let s = sim();
+    let r = s.results();
+    let sh = r.mode_share;
+    assert!(sh.drive > 0.6, "drive share {sh:?}");
+    assert_eq!(sh.transit(), 0.0);
+    assert!((sh.total() - 1.0).abs() < 1e-9);
+    // Every generated trip is either assigned a mode or counted as unserved.
+    let gen_other =
+        s.input().zones.iter().map(|z| z.population).sum::<f64>() * s.params.other_trips_per_person;
+    let gen_work =
+        s.input().commutes.iter().map(|c| c.workers).sum::<f64>() * s.params.commute_presence * 2.0;
+    let total = r.daily_trips.total() + r.unserved_trips;
+    assert!(
+        (total - gen_other - gen_work).abs() / total < 1e-6,
+        "{total} vs {}",
+        gen_other + gen_work
+    );
+    assert!(r.peak_avg_speed_kph > 10.0 && r.peak_avg_speed_kph < 110.0);
+    assert!(s.link_flows().iter().any(|l| l.vc > 0.1));
+}
+
+#[test]
+fn adding_a_line_creates_ridership_and_shifts_mode_share() {
+    let mut s = sim();
+    let drive_before = s.results().mode_share.drive;
+    let id = s.add_line(rail()).unwrap();
+    let r = s.results();
+    assert!(r.car_times_stale);
+    assert_eq!(r.lines.len(), 1);
+    let l = &r.lines[0];
+    assert_eq!(l.id, id);
+    assert!(l.daily_boardings > 100.0, "boardings {}", l.daily_boardings);
+    assert_eq!(l.boardings_by_stop.len(), 15);
+    assert!((l.boardings_by_stop.iter().sum::<f64>() - l.daily_boardings).abs() < 1e-6);
+    assert!(r.mode_share.transit() > 0.0);
+    assert!(r.mode_share.drive < drive_before);
+    assert!(l.operating_cost_per_day > 0.0 && l.fare_revenue_per_day > 0.0);
+    // Daily load in each direction is roughly symmetric (PM returns mirror AM).
+    let (f, b): (f64, f64) = l
+        .segment_loads
+        .iter()
+        .fold((0.0, 0.0), |a, s| (a.0 + s[0], a.1 + s[1]));
+    assert!(f > 0.0 && b > 0.0);
+}
+
+#[test]
+fn fares_and_headways_move_ridership_the_right_way() {
+    let mut s = sim();
+    let id = s.add_line(rail()).unwrap();
+    let base = s.results().lines[0].daily_boardings;
+
+    let mut pricey = rail();
+    pricey.fare = Some(6.0);
+    s.update_line(id, pricey).unwrap();
+    let after_fare = s.results().lines[0].daily_boardings;
+    assert!(after_fare < base, "{after_fare} !< {base}");
+
+    let mut rare = rail();
+    rare.headway_min = 30.0;
+    s.update_line(id, rare).unwrap();
+    assert!(s.results().lines[0].daily_boardings < base);
+
+    let mut fast = rail();
+    fast.headway_min = 4.0;
+    s.update_line(id, fast).unwrap();
+    assert!(s.results().lines[0].daily_boardings > base);
+}
+
+#[test]
+fn removing_a_line_restores_baseline_and_ids_stay_stable() {
+    let mut s = sim();
+    let base = s.results().mode_share;
+    let a = s.add_line(rail()).unwrap();
+    let b = s
+        .add_line(straight_line(Mode::Bus, (-7.0, 1.0), (7.0, 1.0), 0.5, 10.0))
+        .unwrap();
+    assert_ne!(a, b);
+    s.remove_line(a).unwrap();
+    assert_eq!(s.results().lines.len(), 1);
+    assert_eq!(s.results().lines[0].id, b);
+    assert!(s.remove_line(a).is_err());
+    s.remove_line(b).unwrap();
+    let back = s.results().mode_share;
+    assert!((back.drive - base.drive).abs() < 1e-9);
+}
+
+#[test]
+fn transfers_between_crossing_lines_are_used() {
+    let mut s = sim();
+    s.add_line(rail()).unwrap();
+    let cross = straight_line(Mode::Bus, (-7.0, 0.0), (7.0, 0.0), 1.0, 10.0);
+    s.add_line(cross).unwrap();
+    let total_boardings: f64 = s.results().lines.iter().map(|l| l.daily_boardings).sum();
+    let transit_trips = s.results().daily_trips.transit();
+    assert!(
+        total_boardings > transit_trips,
+        "expect some transfers: {total_boardings} vs {transit_trips}"
+    );
+}
+
+#[test]
+fn congestion_feedback_slows_peak_traffic() {
+    let mut input = generate(&SynthConfig::small());
+    let free = {
+        let p = Params {
+            bpr_alpha: 0.0,
+            ..Default::default()
+        };
+        Sim::new(input.clone(), p)
+            .unwrap()
+            .results()
+            .peak_avg_speed_kph
+    };
+    // Double the commuters.
+    input.commutes.iter_mut().for_each(|c| c.workers *= 2.0);
+    let congested = Sim::new(input, Params::default())
+        .unwrap()
+        .results()
+        .peak_avg_speed_kph;
+    assert!(congested < free, "{congested} !< {free}");
+}
+
+#[test]
+fn calibration_hits_targets() {
+    let mut s = sim();
+    let target = ModeSplit {
+        drive: 0.75,
+        carpool: 0.12,
+        transit_walk: 0.0,
+        transit_drive: 0.0,
+        walk: 0.09,
+        bike: 0.04,
+    };
+    s.calibrate_mode_shares(target, 15);
+    let got = s.results().mode_share;
+    for (g, t) in got.to_array().iter().zip(target.to_array()) {
+        assert!((g - t).abs() < 0.01, "{got:?}");
+    }
+}
+
+#[test]
+fn tick_re_equilibrates_at_day_boundaries() {
+    let mut s = sim();
+    s.add_line(rail()).unwrap();
+    assert!(s.results().car_times_stale);
+    s.clock.set_timelapse(60.0);
+    let days = s.tick(24.0); // one game day at 60x
+    assert_eq!(days, 1);
+    assert!(!s.results().car_times_stale);
+}
+
+#[test]
+fn results_serialize_for_the_app() {
+    let mut s = sim();
+    s.add_line(rail()).unwrap();
+    let json = serde_json::to_string(s.results()).unwrap();
+    assert!(json.contains("boardings_by_stop"));
+    assert!(serde_json::to_string(&s.zone_results()).is_ok());
+    assert_eq!(s.desire_lines(20).len(), 20);
+}
+
+#[test]
+fn tiny_fixture_runs() {
+    let s = Sim::from_json(include_str!("fixtures/tiny.json"), Params::default()).unwrap();
+    let r = s.results();
+    assert_eq!(r.lines.len(), 1);
+    assert!(r.daily_trips.total() > 0.0);
+}
+
+#[test]
+fn sim_is_send_for_the_app_mutex() {
+    fn assert_send<T: Send>() {}
+    assert_send::<Sim>();
+}
