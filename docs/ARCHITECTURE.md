@@ -98,8 +98,16 @@ crates/
   data-pipeline/        tsim-data binary, public data -> game package
 app/                    Tauri desktop app: TypeScript client (src/), Rust shell (src-tauri/, own workspace)
 docs/                   this hub: roadmap, architecture, decisions, docs standard
-.github/workflows/      CI (data-pipeline workflow can build a package in Actions)
+.github/workflows/      CI, see below
 ```
+
+## Continuous integration
+
+| Workflow | Runs on PRs touching | What it runs |
+|---|---|---|
+| [data-pipeline.yml](../.github/workflows/data-pipeline.yml) | `crates/data-pipeline/**` | `cargo test` and `clippy -D warnings` for data-pipeline; manual dispatch builds a real package from Census and OSM downloads |
+| [rust.yml](../.github/workflows/rust.yml) | `crates/**`, `Cargo.toml`, `Cargo.lock` (also pushes to main) | Whole root workspace with warnings as errors: `cargo fmt --check`, `build`, `test`, `clippy -D warnings`, `doc`; then the sim-core bench, which fails if a line edit takes 2 s or more (F18) |
+| [app.yml](../.github/workflows/app.yml) | `app/**`, `crates/sim-core/**` | `npm ci`, `npm run build`, `npm test`; `cargo test` and `clippy -D warnings` in `app/src-tauri` |
 
 ## As-built deviations from the design doc
 
