@@ -114,6 +114,8 @@ export function simulateRoute(route: RouteSpec, zones: Zone[]): RouteResult {
 /** Browser-only SimClient backed by `simulateRoute` (see docs/MOCK-SIM.md). */
 export class MockSim implements SimClient {
   readonly label = "mock model (browser)";
+
+  async ready(): Promise<void> {}
   private zones = buildZones();
   private routes = new Map<string, RouteSpec>();
 

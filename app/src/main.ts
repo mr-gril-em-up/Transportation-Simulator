@@ -130,6 +130,13 @@ function renderPanel(): void {
     .join("");
 }
 
+// Startup: sim-core can take seconds (15 s on the real Travis road graph) to build.
+$("sim-ms").textContent = `${sim.label} · loading…`;
+sim.ready().then(
+  () => ($("sim-ms").textContent = `${sim.label} · ready`),
+  (e) => ($("sim-ms").textContent = `${sim.label} failed to start: ${e}`),
+);
+
 // Zoom re-renders only the map: the schematic morphs, the clock is untouched.
 map.on("zoom", render);
 

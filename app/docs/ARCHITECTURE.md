@@ -88,6 +88,7 @@ error, and every later command returns it instead of hanging. This is tested in
 ```ts
 interface SimClient {
   readonly label: string;
+  ready(): Promise<void>; // TauriSim polls sim_status every 500 ms; panel shows "loading…" until then
   upsertRoute(route: RouteSpec): Promise<RouteResult[]>; // add or replace, re-run, all results
   removeRoute(id: string): Promise<RouteResult[]>;
 }

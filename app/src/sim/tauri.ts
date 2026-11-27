@@ -54,6 +54,15 @@ export class TauriSim implements SimClient {
   // Stop ids live only in the client; keep specs to map per-stop results back.
   private routes = new Map<string, RouteSpec>();
 
+  async ready(): Promise<void> {
+    for (;;) {
+      const s = await invoke<{ ready: boolean; error: string | null }>("sim_status");
+      if (s.error) throw new Error(s.error);
+      if (s.ready) return;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
   async upsertRoute(route: RouteSpec): Promise<RouteResult[]> {
     this.routes.set(route.id, route);
     const out = await invoke<LineResultOut[]>("upsert_route", { routeId: route.id, line: toTransitLine(route) });

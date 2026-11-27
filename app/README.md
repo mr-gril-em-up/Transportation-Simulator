@@ -36,8 +36,10 @@ npm run dev         # browser only at http://localhost:1420, mock sim, no Rust n
 
 On startup, sim-core builds the scenario on a background thread. That takes about 4 s for the
 synthetic Travis-sized region in `tauri dev`, where sim-core is optimized even in dev builds
-(decision A16), and about 2 s in a release build. The window opens right away,
-and the first line edit waits for the build to finish. The terminal prints
+(decision A16), and about 2 s in a release build. sim-core reports about 15 s (release) on the
+real Travis road graph (93k nodes). The window opens right away, the ridership panel header shows
+`sim-core · loading…` until `sim_status` reports ready, and a line drawn before then waits for
+the build. The terminal prints
 `[sim] ready in N ms` or `[sim] failed to start: ...`.
 
 ### Controls
@@ -88,6 +90,7 @@ cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo check &&
 ```ts
 interface SimClient {
   readonly label: string;                                // shown in the ridership panel
+  ready(): Promise<void>;                                // resolves when the backend is built
   upsertRoute(route: RouteSpec): Promise<RouteResult[]>; // add or replace; results for EVERY route
   removeRoute(id: string): Promise<RouteResult[]>;
 }

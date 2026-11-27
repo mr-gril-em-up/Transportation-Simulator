@@ -46,6 +46,8 @@ export interface RouteResult {
 export interface SimClient {
   /** Shown in the ridership panel so it is obvious which backend produced the numbers. */
   readonly label: string;
+  /** Resolves once the backend can answer without waiting (sim-core builds for seconds at startup); rejects if it failed to start. */
+  ready(): Promise<void>;
   /** Add or replace a route, re-run demand, and return results for every route. */
   upsertRoute(route: RouteSpec): Promise<RouteResult[]>;
   removeRoute(id: string): Promise<RouteResult[]>;
