@@ -245,8 +245,12 @@ function renderPanel(): void {
     return;
   }
   const own = routes.filter((r) => !existing.has(r.id));
-  const start = routes.filter((r) => existing.has(r.id));
-  const riders = start.reduce((t, r) => t + (results.get(r.id)?.dailyRiders ?? 0), 0);
+  // Rail first, then busiest first: 60-odd rows are only scannable in that order.
+  const ridersOf = (r: RouteSpec) => results.get(r.id)?.dailyRiders ?? 0;
+  const start = routes
+    .filter((r) => existing.has(r.id))
+    .sort((a, b) => Number(isRegional(b.mode)) - Number(isRegional(a.mode)) || ridersOf(b) - ridersOf(a));
+  const riders = start.reduce((t, r) => t + ridersOf(r), 0);
   list.innerHTML =
     (own.length ? own.map(routeRow).join("") : "<em>No lines of your own yet. Draw one.</em>") +
     (start.length

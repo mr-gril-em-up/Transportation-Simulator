@@ -230,5 +230,5 @@ The shell names lines present at start `e0..en` and maps them to sim-core's
 LineIds, so the client edits, deletes, inspects and draws them through the
 same paths as lines the player drew. A separate read-only layer would need
 its own results mapping and would stop the player changing a real route.
-They are grouped in a collapsed section because 70 rows would bury the
+They are grouped in a collapsed section because 61 rows would bury the
 player's own lines.
