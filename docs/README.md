@@ -14,7 +14,7 @@ Start here. Every doc in the repo is listed below. New docs get a row in the sam
 
 | Doc | What it answers | Owner |
 |---|---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Components, data flow, simulation tiers and their invariants, interfaces, known interface gaps | docs |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Components, data flow, simulation tiers and their invariants, interfaces and their traps for consumers | docs |
 | [DOCS_STANDARD.md](DOCS_STANDARD.md) | What every component's docs must cover; PR checklist | docs |
 
 ## Components
