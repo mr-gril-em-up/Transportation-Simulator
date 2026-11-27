@@ -260,7 +260,9 @@ over 15.1 hours (`headway_capmetro_rail_peak_min`, `..._midday_min`,
 average. The model has one headway per line, so the fair answer lies between
 the 32 and 52 minute rows: commuters see the peak headway, other trips the
 midday one. Until lines carry a peak and an off-peak headway, the forecast is
-0 to 47% high, likely near the edge of the F19 30% band. Caveats:
+0 to 47% high, likely near the edge of the F19 30% band.
+
+Caveats:
 - Leander and Lakeline sit in Williamson County, whose residents are not zones
   in the Travis build, so the north end is undercounted (24 and 28 boardings).
 - Nearly all riders arrive by park-and-ride (`transit_drive` 0.07% of trips vs
