@@ -8,6 +8,12 @@ cd "$(dirname "$0")/.."
 YEAR="${YEAR:-2023}"
 RAW=data/raw
 mkdir -p "$RAW"
+# PROBE (temporary)
+curl -sS "https://www.arcgis.com/sharing/rest/content/items/4dfba4bdbd8044c58e1ce1a1c5fdbcd2?f=json" | head -c 3000; echo
+curl -sS "https://services.arcgis.com/KTcxiTD9dsQw4r7Z/arcgis/rest/services?f=json" | python3 -c "import json,sys; [print('SVC',s['name'],s['type'],s.get('url','')) for s in json.load(sys.stdin)['services'] if any(k in s['name'].upper() for k in ('AADT','TRAFFIC','COUNT','TCDS','VOLUME'))]"
+curl -sS "https://www.arcgis.com/sharing/rest/search?q=TxDOT%20AADT%20owner%3ATPP_GIS&num=50&f=json" | python3 -c "import json,sys; [print('ITEM',r['id'],r['title'],r['type'],r.get('url')) for r in json.load(sys.stdin)['results']]"
+curl -sS "https://www.arcgis.com/sharing/rest/search?q=AADT%20Annuals%20Texas&num=50&f=json" | python3 -c "import json,sys; [print('ITEM2',r['id'],r['owner'],r['title'],r['type'],r.get('url')) for r in json.load(sys.stdin)['results']]"
+exit 0
 
 get() { # get NAME URL [FALLBACK_URL]: saves data/raw/NAME, skipped if present
   local out="$RAW/$1"; shift
