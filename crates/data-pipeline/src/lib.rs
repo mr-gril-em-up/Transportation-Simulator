@@ -241,6 +241,11 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         let gtfs_dir = raw.join("gtfs_capmetro");
         if gtfs_dir.join("routes.txt").exists() {
             let hw = gtfs::read_headways(&gtfs_dir)?;
+            let mut keys: Vec<_> = hw.iter().collect();
+            keys.sort_by(|a, b| a.0.cmp(b.0));
+            for (k, h) in keys {
+                eprintln!("gtfs route {k}: {h:?}");
+            }
             m.gtfs_routes_matched = Some(gtfs::apply(&mut transit, &hw));
             m.sources
                 .push("Capital Metro GTFS static feed, via data.austintexas.gov");
@@ -296,8 +301,16 @@ fn rail_summary(t: &Transit) -> Vec<String> {
         .iter()
         .filter(|r| !matches!(r.mode.as_str(), "bus" | "trolleybus"))
         .map(|r| {
+            let hw = match (r.peak_headway_min, r.midday_headway_min) {
+                (None, None) => String::new(),
+                (p, m) => format!(
+                    " | headway {}/{} min",
+                    p.map_or("-".into(), |x| x.to_string()),
+                    m.map_or("-".into(), |x| x.to_string())
+                ),
+            };
             format!(
-                "{} | {} | {} | {} | {} stops",
+                "{} | {} | {} | {} | {} stops{hw}",
                 r.mode,
                 dash(&r.r#ref),
                 dash(&r.name),
