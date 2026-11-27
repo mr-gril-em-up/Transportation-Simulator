@@ -14,12 +14,16 @@ interface TransitLine {
   fare: number | null; // null (sim-core default) on lines present at start
 }
 
+/** Names for routes the pipeline labels by number only (DATA-7 uses the OSM `ref`). */
+const ROUTE_NAMES: Record<string, string> = { "550": "Red Line" };
+
 /** A line present at start (sim.rs `ExistingOut`) as a client route; `color` is the caller's. */
 export function fromExisting(e: { route_id: string; line: TransitLine }): RouteSpec {
   const mode = e.line.mode as Mode;
+  const n = e.line.name;
   return {
     id: e.route_id,
-    name: e.line.name,
+    name: ROUTE_NAMES[n] ?? (/^\d+$/.test(n) ? `Route ${n}` : n),
     mode,
     color: "",
     stops: e.line.stops.map((s, i) => ({ id: `${e.route_id}-s${i}`, name: s.name || `Stop ${i + 1}`, lngLat: [s.lon, s.lat] })),

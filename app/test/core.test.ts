@@ -399,7 +399,7 @@ describe("lines present at start (F44)", () => {
     const r = fromExisting({
       route_id: "e3",
       line: {
-        name: "Red Line",
+        name: "550",
         mode: "commuter_rail",
         stops: [
           { lon: -97.7, lat: 30.2, name: "Downtown", park_ride: true },
@@ -411,6 +411,7 @@ describe("lines present at start (F44)", () => {
       },
     });
     expect(r).toMatchObject({ id: "e3", name: "Red Line", mode: "commuter_rail", headwayMin: 32, offpeakHeadwayMin: 51, fare: 3.5 });
+    expect(fromExisting({ route_id: "e0", line: { name: "801", mode: "bus", stops: [], headway_min: 10, fare: null } }).name).toBe("Route 801");
     expect(r.stops.map((s) => [s.id, s.name])).toEqual([
       ["e3-s0", "Downtown"],
       ["e3-s1", "Stop 2"],

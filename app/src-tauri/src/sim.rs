@@ -421,9 +421,11 @@ fn load_scenario() -> Result<ScenarioInput, String> {
             let json =
                 std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             let mut input = ScenarioInput::from_json(&json).map_err(|e| e.to_string())?;
-            // Lines present at start (today's network, written by the pipeline) only when asked for.
+            // Today's network (F44): the scenario's own lines, else existing_lines.json; none if off.
             if !crate::network::wanted() {
                 input.lines.clear();
+            } else if input.lines.is_empty() {
+                input.lines = crate::network::load(&path)?;
             }
             Ok(input)
         }
