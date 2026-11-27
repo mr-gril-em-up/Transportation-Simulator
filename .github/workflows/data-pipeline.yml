@@ -1,0 +1,43 @@
+name: data-pipeline
+
+on:
+  pull_request:
+    paths: ["crates/data-pipeline/**", ".github/workflows/data-pipeline.yml"]
+  workflow_dispatch:
+    inputs:
+      area:
+        description: "GEOID prefixes (48453 = Travis County, 48 = Texas)"
+        default: "48453"
+      year:
+        description: "LODES year"
+        default: "2023"
+
+defaults:
+  run:
+    working-directory: crates/data-pipeline
+
+jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo test
+      - run: cargo clippy --all-targets -- -D warnings
+
+  # Manual run: downloads real Census + OSM data and builds the area.
+  # Output is attached to the run as an artifact (not committed).
+  build-data:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      AREA: ${{ inputs.area }}
+      YEAR: ${{ inputs.year }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/fetch.sh
+      - run: cargo run --release -- --area "$AREA" --year "$YEAR" --out data/out/area
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tsim-data-${{ inputs.area }}-${{ inputs.year }}
+          path: crates/data-pipeline/data/out/area
