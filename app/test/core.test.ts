@@ -100,12 +100,20 @@ describe("tauri adapter", () => {
         boardings_by_stop: r.stops.map((_, i) => i * 10.4),
         operating_cost_per_day: 50000,
         farebox_recovery: 0.08,
+        length_km: 50,
+        run_min: 60,
+        vehicles_required: 6,
+        passenger_km: 40000,
+        segment_loads: [[100, 90]],
+        peak_hour_load: 150,
+        peak_hour_capacity: 1200,
       },
       r,
     );
     expect(res.dailyRiders).toBe(2500);
     expect(res.boardingsByStop.s2).toBe(21);
     expect(res.fareboxRecovery).toBe(0.08);
+    expect(res.detail).toMatchObject({ lengthKm: 50, vehicles: 6, segmentLoads: [[100, 90]], peakHourCapacity: 1200 });
   });
 });
 
@@ -280,5 +288,43 @@ describe("scenario source label", () => {
       "sim-core · Travis data",
     );
     expect(sourceLabel("C:\\data\\harris\\scenario.json")).toBe("sim-core · harris/scenario.json");
+  });
+});
+
+describe("line inspector", () => {
+  const stops = [
+    { name: "A", boardings: 100 },
+    { name: "B <x>", boardings: 50 },
+    { name: "C", boardings: 150 },
+  ];
+  const detail = {
+    lengthKm: 12.34,
+    runMin: 31.4,
+    vehicles: 6,
+    passengerKm: 9000,
+    segmentLoads: [
+      [120, 80],
+      [60, 140],
+    ] as [number, number][],
+    peakHourLoad: 300,
+    peakHourCapacity: 200,
+  };
+
+  it("shows length, time, fleet and peak use, warning over capacity", async () => {
+    const { inspectorHtml, peakUse } = await import("../src/inspector");
+    expect(peakUse(detail)).toBe(1.5);
+    const html = inspectorHtml(stops, detail);
+    expect(html).toContain("12.3 km · 31 min end to end · 6 vehicles");
+    expect(html).toContain("300 riders for 200 places (150%)");
+    expect(html).toContain("Over capacity");
+    expect(inspectorHtml(stops, { ...detail, peakHourLoad: 100 })).not.toContain("Over capacity");
+  });
+
+  it("draws one bar per stop and a load step per segment, escaping names", async () => {
+    const { inspectorHtml } = await import("../src/inspector");
+    const html = inspectorHtml(stops, detail);
+    expect(html.match(/<rect x="[^"]*" y="[^"]*" width="[^"]*" height="[^"]*"><title>/g)).toHaveLength(3);
+    expect(html).toContain("B &#60;x&#62; to C: 60 out, 140 in");
+    expect(html).not.toContain("<x>");
   });
 });

@@ -199,3 +199,13 @@ The month in progress is not a column: sim-core books fares, operating cost
 and tax only at settlement, so a partial column would show capital and no
 income and mislead. Three columns overflow the 260 px panel. The client
 keeps 12 months, enough for a year view later without changing the API.
+
+### A28. Line inspector inline in the panel, charts as hand-written SVG
+The inspector opens under its line in the ridership panel instead of in a
+popup, so the map stays visible while the player changes headway or stops
+and watches the loads move. The two charts are a few dozen lines of SVG
+string building; a chart library would add a dependency and bundle size
+for bars and a step line. Daily segment loads are drawn rather than
+peak-hour ones because that is what sim-core reports per segment; the
+peak-hour figure exists only for the busiest segment and is shown as text
+against capacity.
