@@ -136,6 +136,21 @@ And back (`fromLineResult`): `daily_boardings` becomes `dailyRiders`,
 required) already cross the IPC boundary and are ignored until the UI renders
 them.
 
+### Construction period (F24)
+
+The shell builds the Sim with `Params { instant_build: false, ..default }`
+(`game_params()` in `sim.rs`), so sim-core holds each new line in
+`pending_lines` until `opens_day`. After every sim call, `applyNow` fetches
+`pendingRoutes()` alongside `results()` and `budget()`. A pending route that is
+new (`replacesOpenLine` false) draws at 35% opacity (`building` feature
+property) and shows its opening day in the panel. A rebuild draws normally
+because its old version is running; its per-stop boardings are hidden because
+`boardings_by_stop` belongs to the running version's stops. Lines open inside
+`Sim::tick` or `skip_to_next_month`; the client sees it through the day change
+that already triggers a results re-read. `preview_route` adds `opens_day`
+(`Sim::opening_day(mode)`) for the drawing hint. Shell tests keep instant build
+(`start_with`) except `construction_period_holds_new_lines_until_they_open`.
+
 ### Build cost preview and budget (F16, F23, F26)
 
 `LineDrawer` reports the draft after every placed stop. `main.ts` turns it

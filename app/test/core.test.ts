@@ -170,8 +170,8 @@ describe("build cost (F16)", () => {
   it("maps sim-core's LinePreview and Ledger", async () => {
     const { fromPreview, fromLedger } = await import("../src/sim/tauri");
     expect(
-      fromPreview({ line: { daily_boardings: 1234.6, operating_cost_per_day: 900 }, capital_cost: 5e6, federal_grant: 2.5e6 }),
-    ).toEqual({ dailyRiders: 1235, capitalCost: 5e6, federalGrant: 2.5e6, operatingCostPerDay: 900 });
+      fromPreview({ line: { daily_boardings: 1234.6, operating_cost_per_day: 900 }, capital_cost: 5e6, federal_grant: 2.5e6, opens_day: 183 }),
+    ).toEqual({ dailyRiders: 1235, capitalCost: 5e6, federalGrant: 2.5e6, operatingCostPerDay: 900, opensDay: 183 });
     expect(fromLedger({ cash: -1, current: { capital_spent: 2, federal_capital_grants: 1 } })).toEqual({
       cash: -1,
       capitalSpentThisMonth: 2,

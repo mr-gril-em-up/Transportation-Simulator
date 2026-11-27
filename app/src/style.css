@@ -26,3 +26,4 @@ button.on { background: #1b1d22; color: #fff; border-color: #1b1d22; }
 
 #budget { font-size: 12px; margin: -4px 0 8px; color: #444; }
 #budget .neg { color: #b00; }
+.econ.building { color: #8a5a00; }

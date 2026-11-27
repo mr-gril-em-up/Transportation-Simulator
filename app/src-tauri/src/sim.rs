@@ -17,6 +17,15 @@ use std::time::{Duration, Instant};
 /// client's display (which interpolates between polls) never drifts visibly.
 const TICK_EVERY: Duration = Duration::from_millis(100);
 
+/// Parameters for the game: sim-core defaults with the construction period on
+/// (lines open after their mode's build time / `construction_speedup`, F24).
+fn game_params() -> Params {
+    Params {
+        instant_build: false,
+        ..Params::default()
+    }
+}
+
 /// Set TRANSPO_SCENARIO to a ScenarioInput JSON file (data-pipeline output)
 /// to load it instead of the default below.
 const SCENARIO_ENV: &str = "TRANSPO_SCENARIO";
@@ -41,16 +50,24 @@ pub struct SimState(Arc<(Mutex<Inner>, Condvar)>);
 impl SimState {
     /// Start building the Sim on a background thread and return immediately.
     pub fn start() -> Self {
-        Self::start_with(load_scenario)
+        Self::start_with_params(load_scenario, game_params())
     }
 
+    /// Instant build (sim-core defaults); tests use it.
+    #[cfg(test)]
     fn start_with(load: impl FnOnce() -> Result<ScenarioInput, String> + Send + 'static) -> Self {
+        Self::start_with_params(load, Params::default())
+    }
+
+    fn start_with_params(
+        load: impl FnOnce() -> Result<ScenarioInput, String> + Send + 'static,
+        params: Params,
+    ) -> Self {
         let state = SimState::default();
         let s = state.clone();
         std::thread::spawn(move || {
             let t0 = std::time::Instant::now();
-            let built = load()
-                .and_then(|input| Sim::new(input, Params::default()).map_err(|e| e.to_string()));
+            let built = load().and_then(|input| Sim::new(input, params).map_err(|e| e.to_string()));
             let (lock, cv) = &*s.0;
             let mut inner = lock.lock().unwrap();
             match built {
@@ -148,14 +165,34 @@ impl SimState {
     /// What `line` would cost and carry if built now. Nothing is charged and no
     /// line is kept. Runs under the same lock as every other call because
     /// sim-core adds and removes the line while it evaluates.
-    pub fn preview(&self, line: TransitLine) -> Result<LinePreview, String> {
+    pub fn preview(&self, line: TransitLine) -> Result<PreviewOut, String> {
         self.with(|inner| {
-            inner
+            let sim = inner.sim.as_mut().unwrap();
+            let opens_day = sim.opening_day(line.mode);
+            let preview = sim.preview_line(line).map_err(|e| e.to_string())?;
+            Ok(PreviewOut { preview, opens_day })
+        })
+    }
+
+    /// Lines under construction, tagged with client route ids.
+    pub fn pending(&self) -> Result<Vec<PendingOut>, String> {
+        self.with(|inner| {
+            let by_line: HashMap<LineId, &String> =
+                inner.ids.iter().map(|(k, v)| (*v, k)).collect();
+            Ok(inner
                 .sim
-                .as_mut()
+                .as_ref()
                 .unwrap()
-                .preview_line(line)
-                .map_err(|e| e.to_string())
+                .pending_lines()
+                .into_iter()
+                .filter_map(|p| {
+                    Some(PendingOut {
+                        route_id: (*by_line.get(&p.id)?).clone(),
+                        opens_day: p.opens_day,
+                        replaces_open_line: p.replaces_open_line,
+                    })
+                })
+                .collect())
         })
     }
 
@@ -163,6 +200,27 @@ impl SimState {
     pub fn ledger(&self) -> Result<Ledger, String> {
         self.with(|inner| Ok(inner.sim.as_ref().unwrap().ledger().clone()))
     }
+}
+
+/// `Sim::preview_line` plus the day the line would open if drawn now.
+#[derive(Serialize, Debug)]
+pub struct PreviewOut {
+    /// sim-core's preview, flattened into the same JSON object.
+    #[serde(flatten)]
+    preview: LinePreview,
+    /// Game day (`Clock::day`) it would open: today plus its mode's build time.
+    opens_day: u64,
+}
+
+/// A client route under construction (sim-core `PendingLine`).
+#[derive(Serialize, Debug)]
+pub struct PendingOut {
+    /// The client's route id.
+    route_id: String,
+    /// Game day the new version enters service.
+    opens_day: u64,
+    /// True if an older version keeps running until then (a rebuild).
+    replaces_open_line: bool,
 }
 
 /// The game clock as the client shows it.
@@ -362,14 +420,21 @@ pub async fn desire_lines(
     blocking(move || s.desire_lines(n)).await
 }
 
-/// Cost and ridership of a line before it is built (F16 build cost preview).
+/// Cost, ridership and opening day of a line before it is built (F16 build cost preview).
 #[tauri::command]
 pub async fn preview_route(
     state: tauri::State<'_, SimState>,
     line: TransitLine,
-) -> Result<LinePreview, String> {
+) -> Result<PreviewOut, String> {
     let s = state.inner().clone();
     blocking(move || s.preview(line)).await
+}
+
+/// Routes under construction and the day each opens (F24).
+#[tauri::command]
+pub async fn pending_routes(state: tauri::State<'_, SimState>) -> Result<Vec<PendingOut>, String> {
+    let s = state.inner().clone();
+    blocking(move || s.pending()).await
 }
 
 /// The ledger: cash and this month's capital spend and grants.
@@ -460,7 +525,7 @@ mod tests {
             "stops":[{"lon":-97.76,"lat":30.25},{"lon":-97.743,"lat":30.268},{"lon":-97.73,"lat":30.29}]}"#,
         );
         let cash0 = state.ledger().unwrap().cash;
-        let p = state.preview(rail.clone()).unwrap();
+        let p = state.preview(rail.clone()).unwrap().preview;
         assert!(p.capital_cost > 0.0 && p.line.daily_boardings > 0.0);
         assert_eq!(state.ledger().unwrap().cash, cash0, "preview is free");
         assert!(
@@ -507,6 +572,40 @@ mod tests {
         let t1 = state.clock().unwrap().clock.game_seconds;
         // 60x: one real second is one game hour; allow for scheduling slack.
         assert!(t1 - t0 > 600.0, "advanced {} game s", t1 - t0);
+    }
+
+    #[test]
+    fn construction_period_holds_new_lines_until_they_open() {
+        let state = SimState::start_with_params(
+            || Ok(synth::generate(&synth::SynthConfig::small())),
+            game_params(),
+        );
+        let rail = line(
+            r#"{"name":"R","mode":"light_rail","headway_min":10,
+            "stops":[{"lon":-97.76,"lat":30.25},{"lon":-97.743,"lat":30.268},{"lon":-97.73,"lat":30.29}]}"#,
+        );
+        let p = state.preview(rail.clone()).unwrap();
+        assert!(
+            p.opens_day > 30,
+            "light rail takes months: day {}",
+            p.opens_day
+        );
+
+        assert!(
+            state.upsert("r1".into(), rail).unwrap().is_empty(),
+            "not open yet"
+        );
+        let pending = state.pending().unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].route_id, "r1");
+        assert_eq!(pending[0].opens_day, p.opens_day);
+        assert!(!pending[0].replaces_open_line);
+
+        while state.clock().unwrap().day < p.opens_day {
+            state.skip_to_next_month().unwrap();
+        }
+        assert!(state.pending().unwrap().is_empty());
+        assert_eq!(state.results().unwrap().len(), 1, "open now");
     }
 
     #[test]

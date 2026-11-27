@@ -21,7 +21,9 @@ doc.
 - Sim-owned clock: shell worker drives `Sim::tick`; client polls and
   interpolates; skip to next month; ridership refreshes after each daily re-run (F21) (#23)
 - Real Travis County data by default (`npm run data`, then the shell finds the
-  downloaded build); panel names the scenario source
+  downloaded build); panel names the scenario source (#26)
+- Construction period on: lines under construction draw faded with their
+  opening day in the panel and the drawing hint (F24)
 
 ## Next, M0/M1 (blocked items say on what)
 
@@ -34,8 +36,6 @@ doc.
 ## M2 (money, clock, agents)
 
 - Budget panel: monthly statements from `Ledger.history`, settlement as the sim clock crosses months
-- Construction period: show lines under construction from `results().pending_lines` and their
-  opening day once sim-core's construction period is switched on (`Params::instant_build = false`)
 - Local-tier agents near the camera via deck.gl; above 10x draw flow animations
 
 ## M3 (statewide)

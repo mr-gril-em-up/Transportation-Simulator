@@ -7,6 +7,9 @@ const STYLE_URL = import.meta.env.VITE_MAP_STYLE ?? "https://tiles.openfreemap.o
 
 // Zoom bands from the design doc (view width -> zone unit).
 /** Zoom at or below which regional lines are pure schematic. */
+/** Lines still under construction (feature property `building`) draw faded. */
+const BUILDING_OPACITY: maplibregl.ExpressionSpecification = ["case", ["boolean", ["get", "building"], false], 0.35, 1];
+
 export const SCHEMATIC_FULL = 10;
 /** Zoom at or above which regional lines are pure geography; the morph runs in between. */
 export const GEO_FULL = 11.5;
@@ -115,7 +118,7 @@ export async function createMap(container: string): Promise<maplibregl.Map> {
     source: "bus-lines",
     minzoom: BUS_MINZOOM,
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": ["get", "color"], "line-width": 4 },
+    paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": BUILDING_OPACITY },
   });
   src("rail-lines");
   map.addLayer({
@@ -123,7 +126,11 @@ export async function createMap(container: string): Promise<maplibregl.Map> {
     type: "line",
     source: "rail-lines",
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": ["get", "color"], "line-width": ["interpolate", ["linear"], ["zoom"], 6, 3, 12, 6] },
+    paint: {
+      "line-color": ["get", "color"],
+      "line-width": ["interpolate", ["linear"], ["zoom"], 6, 3, 12, 6],
+      "line-opacity": BUILDING_OPACITY,
+    },
   });
 
   src("stops");

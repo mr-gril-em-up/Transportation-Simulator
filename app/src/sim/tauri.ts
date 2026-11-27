@@ -2,7 +2,7 @@
 // app/src-tauri/src/sim.rs. Converts the app's RouteSpec to sim-core's
 // TransitLine and LineResult back to RouteResult.
 import { invoke } from "@tauri-apps/api/core";
-import { isRegional, type Budget, type ClockState, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
+import { isRegional, type Budget, type PendingRoute, type ClockState, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 /** sim-core TransitLine (crates/sim-core/src/schema.rs). Omitted fields take mode defaults. */
 interface TransitLine {
@@ -27,6 +27,7 @@ interface LinePreview {
   line: { daily_boardings: number; operating_cost_per_day: number };
   capital_cost: number;
   federal_grant: number;
+  opens_day: number; // added by the shell (PreviewOut)
 }
 
 /** sim-core Ledger (crates/sim-core/src/economy.rs), fields used here. */
@@ -40,6 +41,7 @@ export const fromPreview = (p: LinePreview): RoutePreview => ({
   capitalCost: p.capital_cost,
   federalGrant: p.federal_grant,
   operatingCostPerDay: p.line.operating_cost_per_day,
+  opensDay: p.opens_day,
 });
 
 export const fromLedger = (l: Ledger): Budget => ({
@@ -130,6 +132,11 @@ export class TauriSim implements SimClient {
 
   async previewRoute(route: RouteSpec): Promise<RoutePreview> {
     return fromPreview(await invoke<LinePreview>("preview_route", { line: toTransitLine(route) }));
+  }
+
+  async pendingRoutes(): Promise<PendingRoute[]> {
+    const out = await invoke<{ route_id: string; opens_day: number; replaces_open_line: boolean }[]>("pending_routes");
+    return out.map((p) => ({ routeId: p.route_id, opensDay: p.opens_day, replacesOpenLine: p.replaces_open_line }));
   }
 
   async budget(): Promise<Budget> {

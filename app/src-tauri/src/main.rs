@@ -18,7 +18,8 @@ fn main() {
             sim::clock,
             sim::set_clock,
             sim::skip_to_next_month,
-            sim::results
+            sim::results,
+            sim::pending_routes
         ])
         .run(tauri::generate_context!())
         .expect("error while running Transpo-Sim");

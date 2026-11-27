@@ -8,7 +8,7 @@ import { createMap, GEO_FULL, SCHEMATIC_FULL, setData, zoomBand } from "./map";
 import { layoutSchematic, morph } from "./schematic";
 import { km } from "./geo";
 import { money } from "./format";
-import { isRegional, type Budget, type ClockState, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
+import { isRegional, type PendingRoute, type Budget, type ClockState, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
 import { createSim } from "./sim";
 import { serialQueue } from "./sim/queue";
 
@@ -21,6 +21,7 @@ const map = await createMap("map");
 if (import.meta.env.DEV) Object.assign(window, { __map: map }); // for e2e scripts
 const routes: RouteSpec[] = [];
 let results = new Map<string, RouteResult>();
+let pending = new Map<string, PendingRoute>(); // routes under construction (F24)
 let nextId = 1;
 
 // ---- Simulation round trip -------------------------------------------------
@@ -40,6 +41,7 @@ async function applyNow(call: () => Promise<RouteResult[]>): Promise<void> {
   try {
     results = new Map((await call()).map((r) => [r.routeId, r]));
     renderBudget(await sim.budget());
+    pending = new Map((await sim.pendingRoutes()).map((p) => [p.routeId, p]));
     $("sim-ms").textContent = `${sim.label} · ${Math.round(performance.now() - t0)} ms`;
   } catch (e) {
     $("sim-ms").textContent = `${sim.label} error: ${e}`;
@@ -80,6 +82,14 @@ function addRoute(mode: Mode, pts: LngLat[], stopNames?: string[], name?: string
 }
 
 // ---- Rendering --------------------------------------------------------------
+/** New line not open yet: drawn faded. A rebuild draws normally (the old version runs). */
+const building = (id: string) => pending.has(id) && !pending.get(id)!.replacesOpenLine;
+/** During a rebuild the results are the running version's, whose stops differ from the drawn ones. */
+const stopBoardings = (routeId: string, stopId: string) =>
+  pending.has(routeId) ? 0 : (results.get(routeId)?.boardingsByStop[stopId] ?? 0);
+/** "Day 184 (in 183 days)" for a sim-core day number. */
+const openingLabel = (day: number) => `Day ${day + 1}` + (simDay >= 0 ? ` (in ${day - simDay} days)` : "");
+
 function render(): void {
   const z = map.getZoom();
   // While editing, draw true geography so dragged stops land where the cursor is.
@@ -94,13 +104,13 @@ function render(): void {
     "rail-lines",
     layouts.map((l) => ({
       type: "Feature",
-      properties: { color: l.color },
+      properties: { color: l.color, building: building(l.routeId) },
       geometry: { type: "LineString", coordinates: l.schem.map((s, i) => morph(s, l.geo[i], t)) },
     })),
   );
   for (const l of layouts)
     l.stops.forEach((s, idx) => {
-      const b = results.get(l.routeId)?.boardingsByStop[s.id] ?? 0;
+      const b = stopBoardings(l.routeId, s.id);
       stops.push(stopFeature(morph(s.schem, s.geo, t), true, l.color, s.name, b, s.interchange, l.routeId, idx));
     });
 
@@ -110,13 +120,13 @@ function render(): void {
     "bus-lines",
     bus.map((r) => ({
       type: "Feature",
-      properties: { color: r.color },
+      properties: { color: r.color, building: building(r.id) },
       geometry: { type: "LineString", coordinates: r.stops.map((s) => s.lngLat) },
     })),
   );
   for (const r of bus)
     r.stops.forEach((s, idx) => {
-      const b = results.get(r.id)?.boardingsByStop[s.id] ?? 0;
+      const b = stopBoardings(r.id, s.id);
       stops.push(stopFeature(s.lngLat, false, r.color, s.name, b, false, r.id, idx));
     });
   setData(map, "stops", stops);
@@ -161,10 +171,14 @@ function renderPanel(): void {
       const opts = [5, 10, 15, 20, 30, 60]
         .map((h) => `<option value="${h}" ${h === r.headwayMin ? "selected" : ""}>every ${h} min</option>`)
         .join("");
+      const p = pending.get(r.id);
+      const build = p
+        ? `<div class="econ building">${p.replacesOpenLine ? "Rebuild opens" : "Under construction, opens"} ${openingLabel(p.opensDay)}${p.replacesOpenLine ? "; current version keeps running" : ""}</div>`
+        : "";
       const editing = editor.route?.id === r.id;
       return `<div class="route${editing ? " editing" : ""}" data-id="${r.id}">
         <span class="swatch" style="background:${r.color}"></span>
-        <b class="name" data-act="rename" title="Double-click to rename">${escapeHtml(r.name)}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day${econ}
+        <b class="name" data-act="rename" title="Double-click to rename">${escapeHtml(r.name)}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day${econ}${build}
         <div class="row"><select data-act="headway">${opts}</select>
         <button data-act="edit">${editing ? "Done" : "Edit stops"}</button>
         <button data-act="del" title="Delete line">✕</button></div></div>`;
@@ -253,6 +267,7 @@ function previewDraft(mode: Mode, pts: LngLat[]): void {
         `${head} · <b>${money(p.capitalCost)}</b> to build, ${grant} · ` +
         `<b>${p.dailyRiders.toLocaleString()}</b> riders/day` +
         (p.operatingCostPerDay !== undefined ? ` · ${money(p.operatingCostPerDay)}/day to run` : "") +
+        (p.opensDay !== undefined && p.opensDay > simDay ? ` · opens ${openingLabel(p.opensDay)}` : "") +
         `<br>Enter or double-click to build, Esc to cancel.`;
     })
     .catch((e) => {
