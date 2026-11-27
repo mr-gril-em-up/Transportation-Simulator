@@ -542,7 +542,7 @@ impl Sim {
                 }
             }
         }
-        out.sort_by(|a, b| b.trips.partial_cmp(&a.trips).unwrap());
+        out.sort_by(|a, b| b.trips.total_cmp(&a.trips));
         out.truncate(n);
         out
     }
@@ -654,7 +654,7 @@ impl Sim {
                 let cycle = 2.0 * l.run_min() * 1.1;
                 let vehicles = (cycle / l.headway).ceil().max(1.0);
                 let rev_hours = vehicles * l.span_hours;
-                let op_cost = rev_hours * l.defaults.cost_per_revenue_hour;
+                let op_cost = rev_hours * l.defaults.cost_per_revenue_hour();
                 let revenue = loads.boardings[li] * l.fare + loads.pkm[li] * l.fare_per_km;
                 LineResult {
                     id: l.id,
@@ -741,7 +741,7 @@ impl Sim {
         }
     }
 
-    /// Doubly-unconstrained gravity model for non-work trips on free-flow car time.
+    /// Singly constrained gravity model for non-work trips on free-flow car time.
     fn gravity_other(&self) -> Vec<f64> {
         let z = self.nz;
         let zones = &self.input.zones;
@@ -749,7 +749,9 @@ impl Sim {
         let rows: Vec<Vec<f64>> = (0..z)
             .into_par_iter()
             .map(|i| {
-                let prod = zones[i].population * p.other_trips_per_person;
+                // Total trips minus this zone's work trips (both directions).
+                let work: f64 = self.hbw[i * z..(i + 1) * z].iter().sum::<f64>() * 2.0;
+                let prod = (zones[i].population * p.trips_per_person - work).max(0.0);
                 let mut w: Vec<f64> = (0..z)
                     .map(|j| {
                         let t = self.car_free.time[i * z + j] as f64;

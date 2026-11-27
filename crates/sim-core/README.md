@@ -36,14 +36,15 @@ cargo test -p sim-core
 cargo doc -p sim-core --no-deps      # public items are documented (missing_docs is on)
 ```
 
-21 tests, under a second in debug builds. `tests/schema.rs` loads the fixture
+23 tests, under a second in debug builds. `tests/schema.rs` loads the fixture
 [tests/fixtures/tiny.json](tests/fixtures/tiny.json) and checks defaults and
 validation errors. `tests/model.rs` runs the full model on
 `SynthConfig::small()` (64 zones) and checks trip conservation, that a line adds
 riders and shifts mode share, that higher fares and longer headways lose riders,
 stable line ids, transfers, congestion feedback, calibration, the clock, and
 that results serialize. Unit tests cover Dijkstra and loading, stop coverage,
-the logit, distances and the clock. Full list in
+the logit, distances and the clock. `tests/figures.rs` checks that sourced
+defaults equal their rows in `crates/data-pipeline/reference/figures.csv`. Full list in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#testing).
 
 ## Interfaces
@@ -74,9 +75,9 @@ let days_crossed = sim.tick(real_dt_seconds);
 | Call | Cost | What it does |
 |---|---|---|
 | `Sim::new(input, params)` / `Sim::from_json(json, params)` | seconds | Validates input, builds networks, runs the baseline to equilibrium. Lines in the input become lines 0..n. |
-| `add_line(TransitLine) -> LineId` | ~20 ms | Adds a line, refreshes `results()`. Ids are never reused. |
-| `update_line(LineId, TransitLine)` | ~20 ms | Replaces a line in place (same id). |
-| `remove_line(LineId)` | ~20 ms | Removes a line. Its id is retired. |
+| `add_line(TransitLine) -> LineId` | 20-40 ms | Adds a line, refreshes `results()`. Ids are never reused. |
+| `update_line(LineId, TransitLine)` | 20-40 ms | Replaces a line in place (same id). |
+| `remove_line(LineId)` | 20-40 ms | Removes a line. Its id is retired. |
 | `lines() -> Vec<(LineId, &TransitLine)>` | free | Active lines. |
 | `results() -> &Results` | free | Latest results (see below). |
 | `zone_results() -> Vec<ZoneResult>` | ms | Per zone: daily trips, transit trips and share, stop coverage. For heatmaps. |
@@ -203,7 +204,7 @@ choices a reader is most likely to question:
 - **Line edits do not re-run road congestion.** A new line moves car volumes a
   few percent; the player needs instant feedback. Car times catch up at the next
   game-day boundary, the strategic tier's cadence. `results.car_times_stale`
-  flags the gap. This is how a line edit takes 20 ms instead of seconds.
+  flags the gap. This is how a line edit takes 20 to 40 ms instead of seconds.
 - **Method of successive averages with mode-choice feedback** instead of
   Frank-Wolfe: same equilibrium, no line search, and mode choice sits in the
   same loop.
@@ -213,8 +214,11 @@ choices a reader is most likely to question:
   does not jump when a stop moves 100 m.
 - **Constants live in `Params` with their source in a comment**, not read from a
   data file at run time, so sim-core stays headless and self-contained (repo
-  rule). Sourced figures from the pipeline's reference table are being folded
-  into these defaults.
+  rule). Where the pipeline's reference table
+  ([figures.csv](../data-pipeline/reference/figures.csv)) has a figure, the
+  default copies it and [tests/figures.rs](tests/figures.rs) fails if the two
+  drift: trip rate 2.28/person/day, bus/light rail/commuter rail cost per car
+  hour, CapMetro fares, and the 2x walk and wait weights (D25, D29).
 - **Dense Z x Z matrices.** Right for ~700 block groups; statewide (F34) needs
   sparse storage, noted in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#threading-and-performance).
 
@@ -239,11 +243,11 @@ choices a reader is most likely to question:
 | F01 Workspace and input schema | Done (#1; NaN, zero-lane and self-loop validation added here) |
 | F11 Car travel times and BPR assignment | Done |
 | F12 Transit skims (walk, wait, in-vehicle, transfers, park-and-ride) | Done |
-| F13 Non-work trips | Partial: gravity model, single purpose, rate from `Params` |
+| F13 Non-work trips | Partial: gravity model, single purpose; total rate 2.28/person/day (2022 NHTS) minus work trips |
 | F14 Logit mode split | Partial: six-way MNL and `calibrate_mode_shares` done; ACS calibration needs pipeline data |
 | F15 Sim API | sim-core side done; Tauri commands are the app's |
-| F18 Incremental re-evaluation | Done on the synthetic Travis-sized region (20 ms); confirm on real Travis data |
+| F18 Incremental re-evaluation | Done on the synthetic Travis-sized region (20-40 ms); confirm on real Travis data |
 | F21 One clock | Partial: `Clock` with time-lapse and skip-to-next-month in sim-core; app still runs its own client clock |
 | F22 Desired arrival times | Partial: arrival profile drives peak share and transit schedule delay; no departure-time choice |
 | F24 Construction compression | Partial: `construction_speedup` and `build_days` only |
-| F25 Operating costs and fares | Partial: per-line op cost, flat and distance fares, farebox; no budget |
+| F25 Operating costs and fares | Partial: per-line op cost from NTD cost per car hour x cars, CapMetro fares, distance fares, farebox; no budget |

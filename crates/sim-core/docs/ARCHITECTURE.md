@@ -57,7 +57,7 @@ equilibrate_warm  (once per game day via tick; keeps yesterday's link volumes)
 pass  (one parallel loop over origins, ONE shortest-path tree each)
   tree -> car skim row -> transit skim row -> mode choice row -> [AON load of the row's car demand on the same tree]
 
-add_line / update_line / remove_line  (~20 ms)
+add_line / update_line / remove_line  (20-40 ms)
   rebuild transit net -> transit skims -> finish        (car times held; results.car_times_stale = true)
 
 finish
@@ -132,6 +132,7 @@ module boundaries above are where those changes go; the API does not change.
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
 | `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs |
+| `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit |
 | `examples/bench.rs` | Travis-sized timing; asserts a line edit < 2 s |
 
@@ -142,6 +143,9 @@ in debug builds.
 
 - **New transit mode:** add a `Mode` variant in `schema.rs` and a row in
   `params::mode_defaults`. Nothing else changes.
+- **New sourced default:** add the figure to the pipeline's `figures.csv`
+  (data thread), copy it into `Params` or `mode_defaults` with a comment, and
+  add a `check` line in `tests/figures.rs`.
 - **New zone attribute from the pipeline:** add an optional field with a
   `#[serde(default)]` in `schema.rs`, document it in the README schema section,
   use it in `model.rs`.
