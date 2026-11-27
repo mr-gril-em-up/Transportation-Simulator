@@ -18,10 +18,24 @@ fn baseline_is_car_dominated_with_conserved_trips() {
     assert_eq!(sh.transit(), 0.0);
     assert!((sh.total() - 1.0).abs() < 1e-9);
     // Every generated trip is either assigned a mode or counted as unserved.
-    let gen_other =
-        s.input().zones.iter().map(|z| z.population).sum::<f64>() * s.params.other_trips_per_person;
-    let gen_work =
-        s.input().commutes.iter().map(|c| c.workers).sum::<f64>() * s.params.commute_presence * 2.0;
+    // Other trips: each zone's total trip budget minus its residents' work trips.
+    let pres = s.params.commute_presence;
+    let gen_other: f64 = s
+        .input()
+        .zones
+        .iter()
+        .map(|z| {
+            let work: f64 = s
+                .input()
+                .commutes
+                .iter()
+                .filter(|c| c.home == z.id)
+                .map(|c| c.workers * pres * 2.0)
+                .sum();
+            (z.population * s.params.trips_per_person - work).max(0.0)
+        })
+        .sum();
+    let gen_work = s.input().commutes.iter().map(|c| c.workers).sum::<f64>() * pres * 2.0;
     let total = r.daily_trips.total() + r.unserved_trips;
     assert!(
         (total - gen_other - gen_work).abs() / total < 1e-6,
@@ -196,4 +210,59 @@ fn warm_daily_rerun_stays_at_the_cold_equilibrium() {
     assert!(rel(warm.peak_avg_speed_kph, cold.peak_avg_speed_kph) < 0.03);
     assert!(rel(warm.mode_share.drive, cold.mode_share.drive) < 0.01);
     assert!(rel(warm.peak_vehicle_km, cold.peak_vehicle_km) < 0.03);
+}
+
+#[test]
+fn preview_matches_build_and_charges_nothing() {
+    let mut s = sim();
+    let p = s.preview_line(rail()).unwrap();
+    assert_eq!(s.ledger().cash, 0.0);
+    assert!(s.lines().is_empty());
+    assert!(p.capital_cost > 0.0 && p.line.daily_boardings > 0.0);
+    let id = s.add_line(rail()).unwrap();
+    assert_eq!(id, 0, "preview must not use up a line id");
+    let built = &s.results().lines[0];
+    assert!((built.daily_boardings - p.line.daily_boardings).abs() < 1e-6);
+    let l = s.ledger();
+    assert!((l.current.capital_spent - p.capital_cost).abs() < 1e-6);
+    assert!((l.current.federal_capital_grants - p.federal_grant).abs() < 1e-6);
+    assert!((l.cash - (p.federal_grant - p.capital_cost)).abs() < 1e-6);
+}
+
+#[test]
+fn extending_a_line_pays_only_the_difference() {
+    let mut s = sim();
+    let short = straight_line(Mode::Bus, (0.0, -3.0), (0.0, 3.0), 0.5, 10.0);
+    let long = straight_line(Mode::Bus, (0.0, -7.0), (0.0, 7.0), 0.5, 10.0);
+    let id = s.add_line(short.clone()).unwrap();
+    let first = s.ledger().current.capital_spent;
+    let full = s.preview_line(long.clone()).unwrap().capital_cost;
+    s.update_line(id, long).unwrap();
+    assert!((s.ledger().current.capital_spent - full).abs() < 1e-6);
+    // Cutting it back refunds nothing.
+    s.update_line(id, short).unwrap();
+    assert!((s.ledger().current.capital_spent - full).abs() < 1e-6);
+    assert!(first < full);
+}
+
+#[test]
+fn month_settles_fares_costs_and_local_tax() {
+    let mut s = sim();
+    s.skip_to_next_month();
+    let m = &s.ledger().history[0];
+    assert_eq!(
+        (m.local_tax, m.operating_cost),
+        (0.0, 0.0),
+        "no lines, no tax base"
+    );
+    s.add_line(rail()).unwrap();
+    let before = s.ledger().cash;
+    let capital = s.ledger().current.federal_capital_grants - s.ledger().current.capital_spent;
+    s.skip_to_next_month();
+    let l = s.ledger();
+    assert_eq!(l.history.len(), 2);
+    let m = &l.history[1];
+    assert!(m.local_tax > 0.0 && l.served_population > 0.0);
+    assert!(m.operating_cost > m.fare_revenue && m.fare_revenue > 0.0);
+    assert!((l.cash - before - (m.net - capital)).abs() < 1e-3);
 }

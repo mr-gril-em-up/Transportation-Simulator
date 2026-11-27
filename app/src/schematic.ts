@@ -4,7 +4,7 @@
 // MERGE_KM become one interchange station; a line reaching an already placed
 // station bends to it with one diagonal plus one straight leg.
 import type { LngLat, RouteSpec } from "./sim/api";
-import { km } from "./sim/mock";
+import { km } from "./geo";
 
 type XY = [number, number]; // lng, mercator-y in degrees: angles match the screen
 

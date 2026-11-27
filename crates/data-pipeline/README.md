@@ -15,7 +15,7 @@ cargo run --release -- --area 48 --out data/out/texas  # all of Texas
 
 ### Use a published build (no raw downloads)
 
-Every manual run of the **data-pipeline** workflow publishes its output as GitHub Release `data-<area>-<year>` (prerelease; assets replaced on re-run). To use the latest Travis build in the app or sim-core:
+Every manual run of the **data-pipeline** workflow publishes its output as GitHub Release `data-<area>-<year>` (D32; prerelease, assets replaced on re-run). To use the latest Travis build in the app or sim-core:
 
 ```sh
 cd crates/data-pipeline

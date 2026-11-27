@@ -113,3 +113,26 @@ share the same channel (F21).
 reads the same on the synthetic and real scenarios, and statewide later.
 Color encodes transit share, so drawing a line visibly changes the layer.
 deck.gl stays deferred (A2): 300 GeoJSON lines are trivial for MapLibre.
+
+### A19. Stop editing gestures: drag, click to insert, right-click to delete
+These are direct manipulation on the map with no toolbar modes, so editing
+needs no extra UI. A new stop goes at the position that adds the least line
+length (`bestInsertIndex`), which is where a planner would put it in almost
+every case and needs no segment picking. A drag previews locally and calls
+the sim once on release, so 20+ mouse moves never queue 20 sim runs.
+Right-click (not a modifier key) works the same on every platform; the
+webview context menu is suppressed.
+
+### A20. Editing always draws true geography
+In schematic or morph view, stop positions on screen are not their real
+coordinates, so a drag would write a wrong location. While a line is being
+edited, `render()` uses `t = 1` (pure geography) at every zoom, and the
+editor fits the camera to the line.
+
+### A21. Interchange stops move together
+Snapping while drawing puts two lines' stops at the same spot. Dragging
+one of them moves every other line's stop within 10 m (`LINK_KM`), and
+each touched line is re-simulated. The tolerance is there because snapped
+coordinates come from rendered, tile-quantized geometry, so they are not
+bit-identical. Splitting an interchange means deleting the stop on one line
+and adding a new one.

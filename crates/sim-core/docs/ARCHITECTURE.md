@@ -16,6 +16,7 @@ math is in [MODEL.md](MODEL.md); the API and schema are in the
 | `transit.rs` | Transit platforms and edges, stop coverage, path search (`Searcher`), passenger loading (`LineLoads`) | geo, params, schema |
 | `model.rs` | `Sim`: demand, skims, mode choice, feedback loop, results | everything above |
 | `clock.rs` | The one game clock | none |
+| `economy.rs` | Capital cost, federal grant gate, `Ledger` with monthly settlement | model (`LineResult`), params |
 | `synth.rs` | Synthetic Travis-like scenario and straight test lines | geo, schema |
 
 Rule of thumb: `graph.rs` and `transit.rs` know nothing about demand or choice;
@@ -38,6 +39,7 @@ All zone-pair data is dense row-major `Z x Z` (`index = i * Z + j`).
 | `net` (TransitNet) | platforms, edges, coverage | `new` | every line edit |
 | `tsk_walk`, `tsk_drive` | Z x Z transit components | every line edit and `equilibrate` | |
 | `results`, `transit_od`, `zone_trips` | | every state change | |
+| `ledger`, `capital_paid` | books; capital paid per line slot | `new` | capital on `add_line`/`update_line`; settlement at month boundaries |
 
 ## What is recomputed when
 
@@ -57,8 +59,15 @@ equilibrate_warm  (once per game day via tick; keeps yesterday's link volumes)
 pass  (one parallel loop over origins, ONE shortest-path tree each)
   tree -> car skim row -> transit skim row -> mode choice row -> [AON load of the row's car demand on the same tree]
 
-add_line / update_line / remove_line  (~20 ms)
+add_line / update_line / remove_line  (20-40 ms)
   rebuild transit net -> transit skims -> finish        (car times held; results.car_times_stale = true)
+  add/update then: charge capital above what the line already paid, less federal grant
+
+preview_line  (40-80 ms)
+  push line -> as add_line (no charge) -> read result and capital -> pop line -> as remove_line
+
+tick / skip_to_next_month
+  clock -> equilibrate_warm at a day boundary -> ledger.settle once per month boundary crossed
 
 finish
   mode choice -> transit loading -> line economics -> Results
@@ -131,8 +140,9 @@ module boundaries above are where those changes go; the API does not change.
 | Test | Covers |
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
-| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs |
-| unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit |
+| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement |
+| `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
+| unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit, grant gate and settlement arithmetic |
 | `examples/bench.rs` | Travis-sized timing; asserts a line edit < 2 s |
 
 Tests use `SynthConfig::small()` (64 zones) so the suite runs in under a second
@@ -142,6 +152,9 @@ in debug builds.
 
 - **New transit mode:** add a `Mode` variant in `schema.rs` and a row in
   `params::mode_defaults`. Nothing else changes.
+- **New sourced default:** add the figure to the pipeline's `figures.csv`
+  (data thread), copy it into `Params` or `mode_defaults` with a comment, and
+  add a `check` line in `tests/figures.rs`.
 - **New zone attribute from the pipeline:** add an optional field with a
   `#[serde(default)]` in `schema.rs`, document it in the README schema section,
   use it in `model.rs`.

@@ -14,7 +14,8 @@ doc.
   `sim_status`; Sim built at startup from `TRANSPO_SCENARIO` or the synthetic
   region; cost and farebox in the panel (#9)
 - Desire-line layer (F06) from `desire_lines`; sim calls serialized; blocking
-  waits moved to the blocking pool (#9 review follow-ups)
+  waits moved to the blocking pool (#9 review follow-ups) (#12)
+- Stop editing (drag, insert, delete) and line rename (F16)
 
 ## Next, M0/M1 (blocked items say on what)
 
@@ -23,7 +24,6 @@ doc.
 | Ship the pipeline's Travis `scenario.json` as the default scenario | pipeline output path/packaging agreed |
 | Drive `Sim::tick` from a shell worker; results-changed events to the client (F21) | nothing |
 | Snap drawn bus routes to the road graph | road graph from the pipeline; router location (sim-core vs app) to agree |
-| Stop editing: drag, insert, delete stops; rename lines | nothing |
 | Line inspector: per-stop boardings chart, segment load profile, peak load vs capacity | nothing (fields already cross IPC) |
 | M1 exit check in the UI: Red Line replica vs reported ridership | calibrated mode split (F14) and real scenario |
 

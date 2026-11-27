@@ -76,8 +76,9 @@ pub struct Params {
 
     /// Share of workers commuting on a given day (absence + work from home).
     pub commute_presence: f64,
-    /// Non-work trips per resident per day (NHTS ~3.5 total minus work).
-    pub other_trips_per_person: f64,
+    /// Total person trips per resident per day, all purposes (2022 NHTS: 2.28).
+    /// Non-work trips are this total minus the zone's work trips, floored at 0.
+    pub trips_per_person: f64,
     /// Gravity model decay per car minute for non-work trips.
     pub gravity_decay_per_min: f64,
     /// Desired arrival time at work: shares per 15-minute bin from `arrival_profile_start_h`.
@@ -98,6 +99,21 @@ pub struct Params {
 
     /// Build and permitting times are divided by this (12x default, 1x-24x setting).
     pub construction_speedup: f64,
+
+    /// Transit authority cash at the start, dollars. 0: the first line is
+    /// paid from grants and future tax (bonds arrive with F26).
+    pub starting_cash: f64,
+    /// Share of a line's capital cost the federal government pays when the
+    /// line passes the cost-effectiveness gate (FTA Capital Investment Grants: up to 80%, typically ~50%).
+    pub federal_capital_share: f64,
+    /// Gate: highest capital cost per forecast daily boarding that still gets a federal grant, dollars.
+    pub federal_max_capital_per_daily_rider: f64,
+    /// Federal and state operating assistance as a share of operating cost.
+    pub operating_assistance_share: f64,
+    /// Local transit sales tax rate (CapMetro, DART, Houston METRO: 1%).
+    pub local_sales_tax_rate: f64,
+    /// Taxable retail sales per resident per year, dollars.
+    pub taxable_sales_per_capita: f64,
 }
 
 impl Default for Params {
@@ -128,7 +144,7 @@ impl Default for Params {
             pnr_max_drive_min: 25.0,
             pnr_park_min: 3.0,
             commute_presence: 0.8,
-            other_trips_per_person: 2.4,
+            trips_per_person: 2.28,
             gravity_decay_per_min: 0.08,
             // 5:00 to 10:00 in 15-minute bins, shaped like ACS "time arriving at work".
             work_arrival_profile: vec![
@@ -142,6 +158,18 @@ impl Default for Params {
             feedback_iterations: 4,
             daily_iterations: 1,
             construction_speedup: 12.0,
+            starting_cash: 0.0,
+            federal_capital_share: 0.5,
+            // Austin Light Rail Phase 1 (in the CIG pipeline): ~$7.1B for 18,700
+            // forecast riders is ~$380k per rider; 600k leaves room above it. Estimate.
+            federal_max_capital_per_daily_rider: 600_000.0,
+            // figures.csv `operating_assistance_share`: CapMetro NTD 2023, federal
+            // $50.9M + state $0 over $356.3M. Upper bound (pandemic relief).
+            operating_assistance_share: 0.143,
+            // figures.csv `transit_sales_tax_rate`: CapMetro, DART, METRO (MTA cap).
+            local_sales_tax_rate: 0.01,
+            // figures.csv `taxable_sales_per_capita`: CapMetro service area, 2023$.
+            taxable_sales_per_capita: 20_600.0,
         }
     }
 }
@@ -201,23 +229,40 @@ pub struct ModeDefaults {
     pub alignment_factor: f64,
     /// Passengers per vehicle (or train).
     pub vehicle_capacity: f64,
-    /// Operating cost per vehicle (train) revenue hour, dollars.
-    pub cost_per_revenue_hour: f64,
+    /// Operating cost per car revenue hour, dollars (NTD counts rail revenue
+    /// hours per car, so this is the number NTD publishes).
+    pub cost_per_car_hour: f64,
+    /// Cars per vehicle (train). 1 for buses and single-unit modes.
+    pub cars_per_vehicle: f64,
     /// Default flat fare per boarding, dollars.
     pub fare: f64,
     /// Default distance fare, dollars per km.
     pub fare_per_km: f64,
     /// Default hours of service per day.
     pub span_hours: f64,
+    /// Capital cost of guideway and stations per route km, dollars.
+    pub capital_per_km: f64,
+    /// Purchase price per car, dollars.
+    pub vehicle_cost: f64,
+}
+
+impl ModeDefaults {
+    /// Operating cost per vehicle (train) revenue hour: per-car cost x cars.
+    pub fn cost_per_revenue_hour(&self) -> f64 {
+        self.cost_per_car_hour * self.cars_per_vehicle
+    }
 }
 
 /// Default speeds, capacities, costs and fares for a mode.
 pub fn mode_defaults(m: Mode) -> ModeDefaults {
+    // Operating columns: speed, dwell, alignment, capacity, cost per car hour,
+    // cars, fare, fare per km, span.
     let d = |speed_kph,
              dwell_s,
              alignment_factor,
              vehicle_capacity,
              cost,
+             cars,
              fare,
              fare_per_km,
              span_hours| {
@@ -226,28 +271,61 @@ pub fn mode_defaults(m: Mode) -> ModeDefaults {
             dwell_s,
             alignment_factor,
             vehicle_capacity,
-            cost_per_revenue_hour: cost,
+            cost_per_car_hour: cost,
+            cars_per_vehicle: cars,
             fare,
             fare_per_km,
             span_hours,
+            capital_per_km: 0.0,
+            vehicle_cost: 0.0,
         }
     };
-    match m {
-        Mode::Bus => d(28.0, 20.0, 1.25, 70.0, 175.0, 1.25, 0.0, 18.0),
-        Mode::Trolleybus => d(28.0, 20.0, 1.25, 70.0, 190.0, 1.25, 0.0, 18.0),
-        Mode::Brt => d(38.0, 25.0, 1.15, 100.0, 200.0, 1.25, 0.0, 19.0),
-        Mode::Tram => d(32.0, 25.0, 1.15, 160.0, 300.0, 1.25, 0.0, 19.0),
-        Mode::LightRail => d(55.0, 30.0, 1.1, 300.0, 375.0, 1.25, 0.0, 20.0),
-        Mode::CommuterRail => d(80.0, 45.0, 1.1, 400.0, 700.0, 3.5, 0.0, 16.0),
-        Mode::Metro => d(70.0, 30.0, 1.1, 1000.0, 1200.0, 2.0, 0.0, 20.0),
-        Mode::HighSpeedRail => d(270.0, 120.0, 1.05, 400.0, 3000.0, 20.0, 0.15, 18.0),
-        Mode::Monorail => d(50.0, 30.0, 1.05, 300.0, 450.0, 1.5, 0.0, 18.0),
-        Mode::PeopleMover => d(40.0, 20.0, 1.0, 100.0, 400.0, 0.0, 0.0, 20.0),
-        Mode::Gondola => d(20.0, 0.0, 1.0, 10.0, 250.0, 1.25, 0.0, 16.0),
-        Mode::Maglev => d(400.0, 120.0, 1.0, 600.0, 4000.0, 30.0, 0.2, 18.0),
-        Mode::Ferry => d(30.0, 120.0, 1.1, 150.0, 600.0, 2.0, 0.0, 16.0),
+    // Bus, light rail and commuter rail cost per car hour and the CapMetro
+    // fares come from data-pipeline/reference/figures.csv (FTA NTD 2023,
+    // CapMetro), checked by tests/figures.rs. Other modes are estimates.
+    let ops = match m {
+        Mode::Bus => d(28.0, 20.0, 1.25, 70.0, 182.0, 1.0, 1.25, 0.0, 18.0),
+        Mode::Trolleybus => d(28.0, 20.0, 1.25, 70.0, 190.0, 1.0, 1.25, 0.0, 18.0),
+        Mode::Brt => d(38.0, 25.0, 1.15, 100.0, 200.0, 1.0, 1.25, 0.0, 19.0),
+        Mode::Tram => d(32.0, 25.0, 1.15, 160.0, 300.0, 1.0, 1.25, 0.0, 19.0),
+        Mode::LightRail => d(55.0, 30.0, 1.1, 300.0, 436.0, 2.0, 1.25, 0.0, 20.0),
+        Mode::CommuterRail => d(80.0, 45.0, 1.1, 400.0, 716.0, 2.0, 3.5, 0.0, 16.0),
+        Mode::Metro => d(70.0, 30.0, 1.1, 1000.0, 1200.0, 1.0, 2.0, 0.0, 20.0),
+        Mode::HighSpeedRail => d(270.0, 120.0, 1.05, 400.0, 3000.0, 1.0, 20.0, 0.15, 18.0),
+        Mode::Monorail => d(50.0, 30.0, 1.05, 300.0, 450.0, 1.0, 1.5, 0.0, 18.0),
+        Mode::PeopleMover => d(40.0, 20.0, 1.0, 100.0, 400.0, 1.0, 0.0, 0.0, 20.0),
+        Mode::Gondola => d(20.0, 0.0, 1.0, 10.0, 250.0, 1.0, 1.25, 0.0, 16.0),
+        Mode::Maglev => d(400.0, 120.0, 1.0, 600.0, 4000.0, 1.0, 30.0, 0.2, 18.0),
+        Mode::Ferry => d(30.0, 120.0, 1.1, 150.0, 600.0, 1.0, 2.0, 0.0, 16.0),
+    };
+    // Capital: guideway per km and price per car. Sourced rows (figures.csv,
+    // per mile / 1.609): bus and electric bus prices (MTC), LRV price, Austin
+    // light rail $840M/mile, US mostly-surface rail $117M/mile (tram), mostly-
+    // tunnel $570M/mile (metro), Texas Central HSR $167M/mile. Others are estimates.
+    let (capital_per_km, vehicle_cost) = match m {
+        Mode::Bus => (0.3e6, 716_400.0),
+        Mode::Trolleybus => (3.0e6, 1_407_600.0),
+        Mode::Brt => (15.0e6, 1_407_600.0),
+        Mode::Tram => (117.0e6 / MI_KM, 5.0e6),
+        Mode::LightRail => (840.0e6 / MI_KM, 5.0e6),
+        Mode::CommuterRail => (20.0e6, 5.0e6),
+        Mode::Metro => (570.0e6 / MI_KM, 15.0e6),
+        Mode::HighSpeedRail => (167.0e6 / MI_KM, 40.0e6),
+        Mode::Monorail => (150.0e6, 10.0e6),
+        Mode::PeopleMover => (100.0e6, 5.0e6),
+        Mode::Gondola => (30.0e6, 0.1e6),
+        Mode::Maglev => (300.0e6, 60.0e6),
+        Mode::Ferry => (0.0, 10.0e6),
+    };
+    ModeDefaults {
+        capital_per_km,
+        vehicle_cost,
+        ..ops
     }
 }
+
+/// Kilometers per mile, for converting the per-mile cost figures.
+pub const MI_KM: f64 = 1.609_344;
 
 /// Default road capacity per lane by free-flow speed (HCM-style rough values).
 pub fn lane_capacity_vph(speed_kph: f64) -> f64 {

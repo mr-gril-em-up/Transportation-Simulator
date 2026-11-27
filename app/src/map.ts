@@ -131,7 +131,7 @@ export async function createMap(container: string): Promise<maplibregl.Map> {
     id: "stops",
     type: "circle",
     source: "stops",
-    filter: ["any", ["get", "regional"], [">=", ["zoom"], BUS_MINZOOM]],
+    filter: ["any", ["get", "regional"], ["get", "editing"], [">=", ["zoom"], BUS_MINZOOM]],
     paint: {
       // Size by boardings once you are close; uniform tube-style dots when far.
       "circle-radius": [
@@ -140,7 +140,7 @@ export async function createMap(container: string): Promise<maplibregl.Map> {
         13, ["+", 4, ["*", 1.2, ["sqrt", ["/", ["get", "boardings"], 20]]]],
       ],
       "circle-color": "#ffffff",
-      "circle-stroke-color": ["case", ["get", "interchange"], "#111111", ["get", "color"]],
+      "circle-stroke-color": ["case", ["get", "editing"], "#111111", ["get", "interchange"], "#111111", ["get", "color"]],
       "circle-stroke-width": ["case", ["get", "interchange"], 3, 2.5],
     },
   });

@@ -1,6 +1,7 @@
 // Stand-in for sim-core: a tiny gravity + binary-logit model over synthetic
 // Travis County zones. Deterministic, responds to stop placement, headway and
 // fare, and runs in a few ms. Numbers are plausible, not calibrated.
+import { km } from "../geo";
 import { isRegional, type DesireLine, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 interface Zone {
@@ -23,11 +24,6 @@ const CENTERS: [number, number, number][] = [
 
 const DOWNTOWN: LngLat = [-97.743, 30.268];
 
-/** Equirectangular distance in km; accurate to <1% at county scale. */
-export function km(a: LngLat, b: LngLat): number {
-  const kx = 111.32 * Math.cos(((a[1] + b[1]) / 2) * (Math.PI / 180));
-  return Math.hypot((a[0] - b[0]) * kx, (a[1] - b[1]) * 110.57);
-}
 
 /** ~2 km grid over Travis County with population decaying from downtown. */
 export function buildZones(): Zone[] {

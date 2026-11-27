@@ -39,12 +39,22 @@ Two purposes:
 | Purpose | Source | Daily trips |
 |---|---|---|
 | Work (home-based work) | `commutes` (LODES home zone to work zone) | `workers x commute_presence [0.8]` each way, so x2 per day |
-| Other (shopping, errands, social, school) | `population x other_trips_per_person [2.4]` | one-way trips from each zone |
+| Other (shopping, errands, social, school) | `max(0, population x trips_per_person [2.28] - the zone's daily work trips)` | one-way trips from each zone |
 
 - `commute_presence` covers absence and work-from-home. Austin's WFH share is
   among the highest in the US (roughly 20%+), so 0.8 is the starting point.
-- 2.4 other trips per person: NHTS reports roughly 3.5 trips per person per day
-  in total; subtracting work trips leaves about 2.4.
+- `trips_per_person` is the **total** daily trip rate, all purposes: 2.28 from
+  the 2022 NHTS (FHWA Summary of Travel Trends, Table 2-9), row
+  `trips_per_person_day_2022` in
+  [figures.csv](../../data-pipeline/reference/figures.csv). Collins chose the
+  sourced figure over the design doc's ~3.5 (the 2017 value was 3.37). The
+  report warns 2022 is post-pandemic and may not be a steady state, so this is
+  the number to revisit in F13.
+- Work trips are subtracted per home zone, so a zone of commuters makes fewer
+  other trips and the total stays 2.28 x population. A zone whose work trips
+  exceed its budget (possible with LODES vs census mismatch) makes 0 other
+  trips rather than a negative number, so the region total can sit slightly
+  above 2.28 x population.
 
 **Why work trips come straight from LODES and not a model:** LODES is observed
 home-to-work geography (Round Rock to the Domain, Katy to the Energy Corridor).
@@ -204,9 +214,13 @@ Then it skims once more, runs mode choice and loads transit.
 `equilibrate_warm` (what the game runs once per game day) starts from the
 previous day's volumes and runs `daily_iterations [1]` round with step
 `1/(feedback_iterations + n)`, i.e. it treats the previous solution as four
-rounds of history. Demand does not change between days unless the player
-changed lines, so the previous equilibrium is already close; one round absorbs
-the line edits made during the day.
+rounds of history. The step is fixed at 1/5, so each game day moves road
+volumes a fifth of the way toward the day's all-or-nothing target: a line edit's
+effect on car times is about half absorbed after 3 game days and 90% after
+10. That lag is deliberate. Demand does not change between days unless the
+player changed lines, car volumes move a few percent per line, and drivers in
+reality take days to weeks to re-sort their routes. A caller that needs the
+settled state at once (tests, a scenario load) runs `equilibrate`.
 
 Why MSA with feedback and not Frank-Wolfe user equilibrium: MSA with feedback
 converges to the same combined mode-and-route equilibrium, needs no line
@@ -242,8 +256,15 @@ Simplifications and why:
 
 - Vehicles = ceil(round trip x 1.1 layover / headway).
 - Revenue hours per day = vehicles x span (`span_hours`, default by mode).
-- Operating cost = revenue hours x cost per revenue hour (bus $175, light rail
-  $375, commuter rail $700... see `mode_defaults`; the doc's ranges).
+- Operating cost = revenue hours x cost per car hour x cars per vehicle
+  (`ModeDefaults::cost_per_revenue_hour()`). NTD counts rail revenue hours per
+  car, so `cost_per_car_hour` is the published figure: bus $182, light rail
+  $436 x 2 cars, commuter rail $716 x 2 cars (FTA NTD 2023 Texas agencies,
+  [figures.csv](../../data-pipeline/reference/figures.csv)). Other modes are
+  estimates from the design doc's ranges, one car per vehicle.
+- Check: the synthetic Travis bench's first light rail line recovers about 4% of
+  operating cost from fares, against 4.8 to 5.8% at DART and Houston METRO
+  (`farebox_recovery_texas_big_city`).
 - Fare revenue = boardings x fare + passenger-km x fare per km. This overstates
   revenue when riders transfer free; good enough until a fare ledger exists.
 - Peak-hour load = busiest segment's daily load x the transit peak factor
@@ -253,6 +274,83 @@ Simplifications and why:
 Projected or foreign-only modes (maglev, gondola, people mover) take speeds and
 costs from built systems abroad; these are flagged in the build menu by the app,
 not here. No hyperloop.
+
+## 10. Capital cost and funding
+
+Collins decided (D30) that the network is funded by state and federal grants
+plus a local tax base, using real sourced figures. Code:
+[src/economy.rs](../src/economy.rs), wired into `Sim` in `model.rs`.
+
+### Capital cost (F23, first cut)
+
+`capital = capital_per_km x route length + vehicles x cars_per_vehicle x vehicle_cost`
+
+where `vehicles` is the fleet from section 9 (round trip x 1.1 / headway).
+
+| Mode | Per route km | Per car | Source |
+|---|---|---|---|
+| Bus | $0.3M (stops, shelters) | $716,400 | price: MTC FY2024-25 pricelist (figures.csv); per km estimate |
+| Trolleybus | $3M (overhead wire) | $1,407,600 | price: MTC battery-electric bus as proxy; per km estimate |
+| BRT | $15M | $1,407,600 | estimate; same bus price |
+| Tram | $117M/mile = $72.7M | $5M | Eno: US mostly-surface rail; LRV price (figures.csv) |
+| Light rail | **$840M/mile = $522M** | $5M | Austin Light Rail Phase 1, FTA profile (Collins's chosen figure); LRV price |
+| Commuter rail | $20M | $5M | estimate (shares existing freight right-of-way) |
+| Metro | $570M/mile = $354M | $15M | Eno: US mostly-tunnel rail; car price estimate |
+| High-speed rail | $167M/mile = $104M | $40M per train | Texas Central (USDOT > $40B / 240 mi); train estimate |
+| Monorail, people mover, gondola, maglev, ferry | $150M, $100M, $30M, $300M, $0 | $10M, $5M, $0.1M, $60M, $10M | estimates |
+
+`tests/figures.rs` checks every sourced cell against figures.csv.
+
+Simplifications and why:
+- The Austin figure is a whole-project cost (stations, maintenance facility,
+  vehicles, finance charges). Adding vehicles on top double-counts about 1-2%;
+  not worth a second constant.
+- No terrain, land cover or right-of-way multipliers yet (rest of F23). The
+  same line costs the same through wetlands or downtown.
+- Capital is charged the moment a line is added or extended: no construction
+  period yet (F24). An edit pays only the cost above what the line already paid
+  (`capital_paid` per line); shortening or removing a line refunds nothing,
+  because sunk construction is gone.
+- Lines in the input (present at start) are treated as already paid for.
+
+### Federal capital grants
+
+When capital is charged, the federal government pays `federal_capital_share
+[0.5]` of it if the line passes a cost-effectiveness gate: total capital cost
+per forecast daily boarding at most `federal_max_capital_per_daily_rider
+[$600k]`. This stands in for FTA Capital Investment Grants, which fund up to 80%
+(typically about half) of projects rated on cost-effectiveness. Austin Light
+Rail Phase 1 ($7.1B excluding finance charges, 18,700 forecast riders) is about
+$380k per rider and is in the CIG pipeline, so the gate sits above it. The
+forecast is the model's own daily boardings with the line in place, the same
+number `preview_line` shows.
+
+### Monthly settlement
+
+At each 30-day month boundary (`tick` or `Sim::skip_to_next_month`), the ledger
+closes the month using that day's line results:
+
+| Line | Formula |
+|---|---|
+| Fare revenue | 30 x sum of `fare_revenue_per_day` |
+| Operating cost | 30 x sum of `operating_cost_per_day` |
+| Operating assistance | operating cost x `operating_assistance_share [0.143]` (federal formula funds; Texas gives big-city transit authorities no state operating money) |
+| Local tax | served population x `taxable_sales_per_capita [$20,600]` x `local_sales_tax_rate [1%]` / 12 |
+
+Served population is the residents of every zone with any walking coverage of
+a stop. Texas transit authorities (CapMetro, DART, Houston METRO) levy a 1%
+sales tax in their member cities; growing the network grows the taxing area.
+Sources (figures.csv rows of the same names): the 1% rate is the Comptroller's
+MTA table (the statutory cap). Taxable sales per capita is derived from
+CapMetro's NTD 2023 local funds divided by 1% and by its 1.36M service-area
+residents (Austin MSA high: $26,000). Operating assistance is CapMetro NTD
+2023, federal $50.9M over $356.3M; 2023 may still carry pandemic relief, so it
+is an upper bound, and small agencies run far higher (El Paso 57%).
+
+Cash starts at `starting_cash [0]` and may go negative: bonds, debt service and
+the bankruptcy rule are F26. On the synthetic Travis bench, a 28 km light rail
+line costs about $16B and fails the grant gate at its uncalibrated ridership;
+it then needs local tax of about $4M a month against $8.6M operating cost.
 
 ## Known gaps
 
@@ -268,3 +366,5 @@ In rough priority for M1 tuning:
    700 zones, not for 6,900 tracts (M3 needs sparse or blocked storage and a
    contracted highway graph).
 7. Park-and-ride car trips are not added to road volumes.
+8. Capital cost has no terrain or right-of-way multipliers and no construction
+   period; funding has no bonds or state appropriation yet (F23, F24, F26).
