@@ -85,7 +85,8 @@ export function loadingText(p: LoadProgress): { stage: string; detail: string; f
     (left > 3 ? `, about ${Math.round(left)} s left` : left > -10 ? ", nearly done" : ", taking longer than the estimate");
   if (p.stage === "reading") return { stage: "Reading the scenario", detail, fill };
   const where = p.statewide ? `all of Texas, ${p.zones.toLocaleString()} census tracts` : `${p.zones.toLocaleString()} zones`;
-  return { stage: `Finding the first traffic equilibrium: ${where}`, detail, fill };
+  const how = p.warm ? "Settling traffic from the last start's roads" : "Finding the first traffic equilibrium";
+  return { stage: `${how}: ${where}`, detail, fill };
 }
 
 // Texas county names by FIPS for the metros and their neighbors; others show the code.

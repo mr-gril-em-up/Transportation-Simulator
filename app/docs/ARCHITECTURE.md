@@ -154,6 +154,19 @@ lines, so interchanges between a real DART line and a drawn one merge; the
 lines are never sent to sim-core. The badge runs `countyAt` (nearest zone
 centroid, 6,896 checks) on every zoom and `moveend`.
 
+### Warm start (SIM-19)
+
+`SimState::start` passes `warm_path()`: `road_state-<network|blank>.json`
+beside the scenario, or none (synthetic region, `TRANSPO_WARM_START=0`). The
+startup thread reads it (`read_road_state`; unreadable, or saved under
+another `build_stamp`, the size and mtime of `scenario.json` and
+`existing_lines.json`, is the same as missing) and builds with `Sim::new_warm`, else `Sim::new`. If the Sim did
+not start warm (no file, or sim-core rejected a fingerprint from another
+road graph), it writes `sim.road_state()` there (`write_road_state`; a
+failure is logged and costs only the next start's speed). Nothing else
+writes the file, so play never changes where the next game starts.
+`LoadInfo.warm` tells the loading card.
+
 ### Lines present at start (F44)
 
 sim-core treats `ScenarioInput.lines` as existing service: LineIds 0..n in
@@ -263,8 +276,11 @@ slice is a floor, not a cap: the day's final commit is one call of about
 the lock (`WAITING`, a static counter bumped in `SimState::with`), the worker
 skips its slice, because std's Mutex is not fair; the skipped time carries
 into the next step. `clock` reports `day_progress` (0 to 1) while a job runs;
-the client shows "New day computing" and re-reads results when the job ends,
-or when the day changes with no job (a county day finishes inside one step).
+the client shows "New day computing". The worker counts finished re-runs
+(`days_done`: a job that ended, a day that ran inside one step, or a skip to
+next month) and `clock` reports it; the client re-reads results when it
+changes, so a job that ends and the next that starts between two 500 ms
+polls still triggers a re-read (review note on #82).
 
 ```mermaid
 sequenceDiagram
@@ -277,7 +293,7 @@ sequenceDiagram
     loop every 500 ms
         C->>S: clock
         S-->>C: game_seconds, timelapse, paused, day
-        Note over C: job ended, or day changed with no job? apply(results)
+        Note over C: days_done changed? apply(results)
     end
     C->>S: set_clock / skip_to_next_month (buttons)
 ```

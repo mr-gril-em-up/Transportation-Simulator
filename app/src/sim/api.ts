@@ -144,6 +144,8 @@ export interface LoadProgress {
   zones: number; // 0 until the scenario is read
   /** On sim-core's strategic tier (the statewide build, F34). */
   statewide: boolean;
+  /** Starting from the saved road state of an earlier start (SIM-19, A36). */
+  warm: boolean;
   /** Zone centroid extent [[west, south], [east, north]], once read. */
   bounds?: [LngLat, LngLat];
 }

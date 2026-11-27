@@ -54,8 +54,9 @@ doc.
   drawn in the tube view, county named from City zoom (F34 app side, A32 to A34)
 - Done: day re-run in slices with a "New day computing" indicator (SIM-18, A35); today's
   network statewide (DATA-9, 415 lines) with line colors from GTFS names
-- Next: warm start from a saved `RoadState` (sim-core `Sim::new_warm`); progress callback from
-  sim-core; faster statewide line edits (sim-core)
+- Done: warm start from the saved starting road state (SIM-19, A36): 230 s to 72 s statewide here
+- Next: ship the road state with the data release; progress callback from sim-core; faster
+  statewide line edits (sim-core, in progress)
 - Stream statewide tract-level layers; regional tier per metro
 
 ## M4 (MVP polish)

@@ -6,7 +6,8 @@
 
 use serde::Serialize;
 use sim_core::{
-    synth, Clock, Ledger, LineId, LinePreview, LineResult, Params, ScenarioInput, Sim, TransitLine,
+    synth, Clock, Ledger, LineId, LinePreview, LineResult, Params, RoadState, ScenarioInput, Sim,
+    TransitLine,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -55,9 +56,100 @@ fn strategic(p: Params) -> Params {
 }
 
 /// Startup estimates for the loading screen, seconds, measured in `tauri dev`
-/// on 4 cores (2026-11-27). Rough on other machines; the screen says so.
+/// on 4 cores under Xvfb with the 455-line statewide network (2026-11-27:
+/// 230 s cold, 72 s warm). Rough on other machines; the screen says so.
 const EXPECT_COUNTY_S: f64 = 17.0;
-const EXPECT_STATEWIDE_S: f64 = 80.0;
+const EXPECT_STATEWIDE_S: f64 = 200.0;
+const EXPECT_STATEWIDE_WARM_S: f64 = 70.0;
+
+/// Set to `0`, `off` or `false` to always start cold (no saved road state).
+const WARM_ENV: &str = "TRANSPO_WARM_START";
+
+/// The saved starting road state beside the scenario, one per starting
+/// network (`road_state-network.json` / `road_state-blank.json`, A36), or
+/// none for the synthetic region or with `TRANSPO_WARM_START=0`.
+fn warm_path() -> Option<PathBuf> {
+    let off = matches!(
+        std::env::var(WARM_ENV)
+            .map(|v| v.to_ascii_lowercase())
+            .as_deref(),
+        Ok("0" | "off" | "false")
+    );
+    let start = if crate::network::wanted() {
+        "network"
+    } else {
+        "blank"
+    };
+    scenario_path()
+        .filter(|_| !off)
+        .map(|p| p.with_file_name(format!("road_state-{start}.json")))
+}
+
+/// A saved road state with the stamp of the build it came from.
+#[derive(serde::Deserialize, Serialize)]
+struct SavedRoads {
+    /// `build_stamp` of the files beside it when it was saved.
+    build: String,
+    roads: RoadState,
+}
+
+/// Size and modification time of `scenario.json` and `existing_lines.json`
+/// in the road state's directory. A republished build changes them, so a
+/// state saved under the old demand is not reused on the same roads (the
+/// road fingerprint alone would let it through; review note on #84).
+fn build_stamp(dir: &Path) -> String {
+    ["scenario.json", "existing_lines.json"]
+        .iter()
+        .map(|f| match std::fs::metadata(dir.join(f)) {
+            Ok(m) => {
+                let t = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_secs());
+                format!("{f}:{}:{t}", m.len())
+            }
+            Err(_) => format!("{f}:none"),
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// The saved road state, or none if missing, unreadable or from another
+/// build of the data (then the start is cold and saves a fresh one).
+fn read_road_state(p: &Path) -> Option<RoadState> {
+    let json = std::fs::read_to_string(p).ok()?;
+    let saved: SavedRoads = match serde_json::from_str(&json) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[sim] ignoring {}: {e}", p.display());
+            return None;
+        }
+    };
+    let now = build_stamp(p.parent()?);
+    if saved.build != now {
+        eprintln!(
+            "[sim] ignoring {}: saved for another build of the data",
+            p.display()
+        );
+        return None;
+    }
+    Some(saved.roads)
+}
+
+/// Save the starting road state; a failure only costs the next start its speed-up.
+fn write_road_state(p: &Path, roads: RoadState) {
+    let saved = SavedRoads {
+        build: p.parent().map(build_stamp).unwrap_or_default(),
+        roads,
+    };
+    let res = serde_json::to_string(&saved)
+        .map_err(|e| e.to_string())
+        .and_then(|j| std::fs::write(p, j).map_err(|e| e.to_string()));
+    if let Err(e) = res {
+        eprintln!("[sim] could not save {}: {e}", p.display());
+    }
+}
 
 /// Set TRANSPO_SCENARIO to a ScenarioInput JSON file (data-pipeline output)
 /// to load it instead of the default below.
@@ -78,6 +170,8 @@ struct Inner {
     existing: Vec<ExistingOut>,
     /// Startup progress for the loading screen.
     load: LoadInfo,
+    /// Day re-runs finished since startup (`ClockOut::days_done`).
+    days_done: u64,
 }
 
 /// What the startup thread is doing, for the loading screen.
@@ -94,6 +188,8 @@ pub struct LoadInfo {
     zones: usize,
     /// Running on the strategic tier (statewide, F34).
     statewide: bool,
+    /// Starting from a saved road state (SIM-19), so the first equilibrium is one warm day.
+    warm: bool,
     /// Zone centroid extent `[west, south, east, north]`, once read.
     bounds: Option<[f64; 4]>,
     #[serde(skip)]
@@ -115,7 +211,7 @@ pub struct SimState(Arc<(Mutex<Inner>, Condvar)>);
 impl SimState {
     /// Start building the Sim on a background thread and return immediately.
     pub fn start() -> Self {
-        Self::start_with_params(load_scenario, game_params())
+        Self::start_with_params(load_scenario, game_params(), warm_path())
     }
 
     /// Instant build, so tests see lines open at once (sim-core's default
@@ -126,12 +222,15 @@ impl SimState {
             instant_build: true,
             ..Params::default()
         };
-        Self::start_with_params(load, params)
+        Self::start_with_params(load, params, None)
     }
 
+    /// `warm`: where the starting road state is kept (SIM-19, A36). Read if
+    /// present to start warm; written after a cold start, never during play.
     fn start_with_params(
         load: impl FnOnce() -> Result<ScenarioInput, String> + Send + 'static,
         params: Params,
+        warm: Option<PathBuf>,
     ) -> Self {
         let state = SimState::default();
         let t0 = Instant::now();
@@ -147,6 +246,7 @@ impl SimState {
             let mut existing = Vec::new();
             let built = load().and_then(|input| {
                 let statewide = input.zones.len() > STRATEGIC_ZONES;
+                let saved = warm.as_deref().and_then(read_road_state);
                 {
                     let mut inner = s.0 .0.lock().unwrap();
                     let l = &mut inner.load;
@@ -154,9 +254,12 @@ impl SimState {
                     l.zones = input.zones.len();
                     l.statewide = statewide;
                     l.bounds = bounds(&input);
-                    if statewide {
-                        l.expected_s = EXPECT_STATEWIDE_S;
-                    }
+                    l.warm = saved.is_some();
+                    l.expected_s = match (statewide, saved.is_some()) {
+                        (true, true) => EXPECT_STATEWIDE_WARM_S,
+                        (true, false) => EXPECT_STATEWIDE_S,
+                        _ => EXPECT_COUNTY_S,
+                    };
                 }
                 let params = if statewide { strategic(params) } else { params };
                 existing = input
@@ -168,19 +271,32 @@ impl SimState {
                         line: l.clone(),
                     })
                     .collect();
-                Sim::new(input, params).map_err(|e| e.to_string())
+                let sim = match &saved {
+                    Some(r) => Sim::new_warm(input, params, r),
+                    None => Sim::new(input, params),
+                }
+                .map_err(|e| e.to_string())?;
+                if let Some(p) = warm.as_deref().filter(|_| !sim.started_warm()) {
+                    write_road_state(p, sim.road_state());
+                }
+                Ok(sim)
             });
             let (lock, cv) = &*s.0;
             let mut inner = lock.lock().unwrap();
             match built {
                 Ok(sim) => {
                     eprintln!(
-                        "[sim] ready in {} ms ({} lines at start, {} zones{})",
+                        "[sim] ready in {} ms ({} lines at start, {} zones{}{})",
                         t0.elapsed().as_millis(),
                         existing.len(),
                         inner.load.zones,
                         if inner.load.statewide {
                             ", strategic tier"
+                        } else {
+                            ""
+                        },
+                        if sim.started_warm() {
+                            ", warm start"
                         } else {
                             ""
                         }
@@ -227,7 +343,13 @@ impl SimState {
                     return;
                 }
                 if let Some(sim) = inner.sim.as_mut() {
-                    sim.tick_budgeted(dt, DAY_SLICE);
+                    let was = sim.day_progress().is_some();
+                    let days = sim.tick_budgeted(dt, DAY_SLICE);
+                    let now = sim.day_progress().is_some();
+                    // A day's results are in: its job ended, or it ran inside this step.
+                    if (was && !now) || (days > 0 && !was && !now) {
+                        inner.days_done += 1;
+                    }
                 }
             }
         });
@@ -407,6 +529,9 @@ pub struct ClockOut {
     /// re-reads results when it ends (results stay on the previous day until then).
     #[serde(skip_serializing_if = "Option::is_none")]
     day_progress: Option<f64>,
+    /// Day re-runs finished since startup. The client re-reads results when it changes, which
+    /// also catches a job ending and the next starting between two polls.
+    days_done: u64,
 }
 
 impl SimState {
@@ -437,6 +562,7 @@ impl SimState {
     pub fn skip_to_next_month(&self) -> Result<ClockOut, String> {
         self.with(|inner| {
             inner.sim.as_mut().unwrap().skip_to_next_month();
+            inner.days_done += 1;
             Ok(clock_out(inner))
         })
     }
@@ -453,6 +579,7 @@ fn clock_out(inner: &Inner) -> ClockOut {
     ClockOut {
         day: clock.day(),
         day_progress: sim.day_progress(),
+        days_done: inner.days_done,
         clock,
     }
 }
@@ -845,6 +972,7 @@ mod tests {
         let state = SimState::start_with_params(
             || Ok(synth::generate(&synth::SynthConfig::small())),
             game_params(),
+            None,
         );
         let rail = line(
             r#"{"name":"R","mode":"light_rail","headway_min":10,
@@ -908,6 +1036,32 @@ mod tests {
             l.ledger.distressed_months
         );
         assert!(state.issue_bond(1e6).unwrap_err().contains("bankrupt"));
+    }
+
+    #[test]
+    fn a_cold_start_saves_the_road_state_and_the_next_starts_warm() {
+        let dir = std::env::temp_dir().join(format!("transpo-warm-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("road_state-network.json");
+        let small = || Ok(synth::generate(&synth::SynthConfig::small()));
+        let params = Params {
+            instant_build: true,
+            ..Params::default()
+        };
+        let cold = SimState::start_with_params(small, params.clone(), Some(path.clone()));
+        let before = cold.ledger().unwrap(); // waits for the build
+        assert!(!cold.status().load.warm);
+        assert!(path.exists(), "cold start saves the starting road state");
+        let warm = SimState::start_with_params(small, params.clone(), Some(path.clone()));
+        warm.ledger().unwrap();
+        assert!(warm.status().load.warm, "second start reads it");
+        assert_eq!(warm.ledger().unwrap().ledger.cash, before.ledger.cash);
+        // A republished build (here a new scenario.json beside it) is not warm-started from it.
+        std::fs::write(dir.join("scenario.json"), "{}").unwrap();
+        let rebuilt = SimState::start_with_params(small, params.clone(), Some(path.clone()));
+        rebuilt.ledger().unwrap();
+        assert!(!rebuilt.status().load.warm);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

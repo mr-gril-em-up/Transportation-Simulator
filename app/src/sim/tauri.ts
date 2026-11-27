@@ -140,6 +140,7 @@ interface ClockOut {
   paused: boolean;
   day: number;
   day_progress?: number;
+  days_done: number;
 }
 
 export const fromClock = (c: ClockOut): ClockState => ({
@@ -148,6 +149,7 @@ export const fromClock = (c: ClockOut): ClockState => ({
   paused: c.paused,
   day: c.day,
   ...(c.day_progress !== undefined && { dayProgress: c.day_progress }),
+  daysDone: c.days_done,
 });
 
 /** RouteSpec to sim-core TransitLine (field mapping in docs/ARCHITECTURE.md). */
@@ -201,6 +203,7 @@ interface LoadInfo {
   expected_s: number;
   zones: number;
   statewide: boolean;
+  warm: boolean;
   bounds: [number, number, number, number] | null;
 }
 
@@ -211,6 +214,7 @@ export function fromLoad(l: LoadInfo): LoadProgress {
     expectedS: l.expected_s,
     zones: l.zones,
     statewide: l.statewide,
+    warm: l.warm,
     ...(l.bounds && { bounds: [[l.bounds[0], l.bounds[1]], [l.bounds[2], l.bounds[3]]] as [LngLat, LngLat] }),
   };
 }

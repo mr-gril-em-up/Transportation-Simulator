@@ -288,11 +288,12 @@ describe("sim-owned clock (F21)", () => {
 
   it("maps the shell's ClockOut", async () => {
     const { fromClock } = await import("../src/sim/tauri");
-    expect(fromClock({ game_seconds: 18000, timelapse: 2, paused: false, day: 0 })).toEqual({
+    expect(fromClock({ game_seconds: 18000, timelapse: 2, paused: false, day: 0, days_done: 0 })).toEqual({
       gameSeconds: 18000,
       timelapse: 2,
       paused: false,
       day: 0,
+      daysDone: 0,
     });
   });
 });
@@ -430,15 +431,16 @@ describe("statewide view", () => {
   it("frames the scenario from the shell's load report", async () => {
     const { fromLoad, sourceLabel } = await import("../src/sim/tauri");
     expect(sourceLabel("/x/data/out/48-2023-tract-highway/scenario.json")).toBe("sim-core · Texas data");
-    const p = fromLoad({ stage: "equilibrium", elapsed_s: 20, expected_s: 80, zones: 6896, statewide: true, bounds: [-106.6, 25.9, -93.6, 36.5] });
+    const p = fromLoad({ stage: "equilibrium", elapsed_s: 20, expected_s: 80, zones: 6896, statewide: true, warm: false, bounds: [-106.6, 25.9, -93.6, 36.5] });
     expect(p.bounds).toEqual([[-106.6, 25.9], [-93.6, 36.5]]);
-    expect(fromLoad({ stage: "reading", elapsed_s: 0, expected_s: 17, zones: 0, statewide: false, bounds: null }).bounds).toBeUndefined();
+    expect(fromLoad({ stage: "reading", elapsed_s: 0, expected_s: 17, zones: 0, statewide: false, warm: false, bounds: null }).bounds).toBeUndefined();
     const t = loadingText(p);
     expect(t.stage).toContain("6,896 census tracts");
     expect(t.fill).toBeCloseTo(0.25);
     expect(t.detail).toBe("20 s, about 60 s left");
     expect(loadingText({ ...p, elapsedS: 200 }).fill).toBe(0.97); // never claims done before it is
     expect(loadingText({ ...p, elapsedS: 200 }).detail).toContain("longer than the estimate");
+    expect(loadingText({ ...p, warm: true }).stage).toMatch(/^Settling traffic from the last start's roads/);
   });
 
   it("names the county of the nearest zone", () => {
@@ -481,7 +483,7 @@ describe("statewide view", () => {
 
   it("passes the day's re-run progress through", async () => {
     const { fromClock } = await import("../src/sim/tauri");
-    expect(fromClock({ game_seconds: 0, timelapse: 1, paused: false, day: 3, day_progress: 0.4 }).dayProgress).toBe(0.4);
-    expect("dayProgress" in fromClock({ game_seconds: 0, timelapse: 1, paused: false, day: 3 })).toBe(false);
+    expect(fromClock({ game_seconds: 0, timelapse: 1, paused: false, day: 3, day_progress: 0.4, days_done: 2 })).toMatchObject({ dayProgress: 0.4, daysDone: 2 });
+    expect("dayProgress" in fromClock({ game_seconds: 0, timelapse: 1, paused: false, day: 3, days_done: 3 })).toBe(false);
   });
 });

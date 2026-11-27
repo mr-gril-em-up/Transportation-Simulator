@@ -581,19 +581,21 @@ const pauseBtn = $("btn-pause");
 const lapseBtn = $("btn-lapse");
 const CLOCK_POLL_MS = 500;
 let simDay = -1;
-let dayComputing = false;
+let daysDone = -1;
 let simReady = false;
 
 function syncClock(s: ClockState): void {
   clock.sync(s);
   pauseBtn.textContent = clock.paused ? "▶" : "⏸";
   lapseBtn.textContent = `Time-lapse ${clock.speed}x`;
-  // Results change when a day's re-run ends: at once (county, tick re-runs inside the step) or
-  // when the sliced job finishes (statewide, SIM-18). Re-read then, not while it computes.
+  // Results change when a day's re-run ends (SIM-18: a sliced job, or inside one step on a
+  // county). The shell counts finished re-runs, so a job that ends and the next that starts
+  // between two polls still triggers a re-read. The mock has no count: it re-reads on day change.
   const computing = s.dayProgress !== undefined;
-  if (simDay >= 0 && ((s.day !== simDay && !computing) || (dayComputing && !computing))) void apply(() => sim.results());
+  const done = s.daysDone ?? s.day;
+  if (simDay >= 0 && done !== daysDone) void apply(() => sim.results());
   simDay = s.day;
-  dayComputing = computing;
+  daysDone = done;
   $("day-computing").hidden = !computing;
   if (computing) $("day-computing").textContent = `New day computing ${Math.round(s.dayProgress! * 100)}%`;
 }
