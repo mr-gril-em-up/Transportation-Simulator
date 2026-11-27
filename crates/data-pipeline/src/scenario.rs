@@ -224,6 +224,9 @@ pub fn simplify(
     (keep, links, members)
 }
 
+/// A scenario road link as `(from, to, index in road_links)`.
+pub type LinkRef = (u32, u32, u32);
+
 /// Builds the scenario. Zones with no reachable road node (no roads file)
 /// get road node 0 and a single placeholder node, so census-only builds still
 /// validate; real builds always carry roads.
@@ -232,12 +235,13 @@ pub fn to_scenario(zones: &[Zone], flows: &[Flow], roads: Option<&Roads>) -> Sce
 }
 
 /// [`to_scenario`], plus for each `roads.edges` entry the scenario link
-/// `(from, to)` it ended up in (`None` if simplification dropped it).
+/// `(from, to, index in road_links)` it ended up in (`None` if
+/// simplification dropped it). The index tells parallel links apart.
 pub fn to_scenario_mapped(
     zones: &[Zone],
     flows: &[Flow],
     roads: Option<&Roads>,
-) -> (ScenarioInput, Vec<Option<(u32, u32)>>) {
+) -> (ScenarioInput, Vec<Option<LinkRef>>) {
     let empty = Roads {
         nodes: vec![],
         edges: vec![],
@@ -292,9 +296,9 @@ pub fn to_scenario_mapped(
         });
     }
     let mut edge_link = vec![None; roads.edges.len()];
-    for (l, m) in road_links.iter().zip(&members) {
+    for (li, (l, m)) in road_links.iter().zip(&members).enumerate() {
         for &k in m {
-            edge_link[used[k]] = Some((l.from, l.to));
+            edge_link[used[k]] = Some((l.from, l.to, li as u32));
         }
     }
     let scenario = ScenarioInput {

@@ -107,8 +107,8 @@ TxDOT traffic count stations snapped to scenario links (DATA-10), written when `
 
 ```json
 [{"station_id": "227_7101", "year": 2023, "aadt": 187000, "on_road": "IH0035",
-  "lon": -97.7321, "lat": 30.2803, "from": 1200, "to": 1201,
-  "from2": 1350, "to2": 1349, "dist_m": 12.4}]
+  "lon": -97.7321, "lat": 30.2803, "from": 1200, "to": 1201, "link": 40211,
+  "from2": 1350, "to2": 1349, "link2": 40388, "active": true, "dist_m": 12.4}]
 ```
 
 | Field | Meaning |
@@ -118,6 +118,8 @@ TxDOT traffic count stations snapped to scenario links (DATA-10), written when `
 | `on_road` | TxDOT `ON_ROAD` (`IH0035`, `FM2222`, street names) |
 | `lon`, `lat` | Station location |
 | `from`, `to` | Scenario road link (node ids in `scenario.json`) the station snaps to |
+| `link`, `link2` | Index of `from`-`to` (and of `from2`-`to2`) in `scenario.json` `road_links`; tells parallel links between the same two nodes apart |
+| `active` | TxDOT `ACTIVE`: the station is still counted (inactive stations keep their last AADT) |
 | `from2`, `to2` | Opposite carriageway when `from`-`to` is one-way and one was found; compare `aadt` with the sum of both links. Omitted otherwise |
 | `dist_m` | Station to `from`-`to` distance, meters (at most 100) |
 
