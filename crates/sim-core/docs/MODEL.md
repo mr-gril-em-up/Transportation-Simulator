@@ -420,16 +420,18 @@ payment clears the balance and the bond leaves `Ledger::bonds`.
 by the transit sales tax, and a new issue must leave annual debt service, old
 plus new, within the pledged revenue divided by a coverage ratio:
 
-`12 x (monthly_debt_service + new payment) <= tax_capacity() / bond_coverage_min [1.5]`
+`12 x (monthly_debt_service + new payment) <= tax_capacity() / bond_coverage_min [2.0]`
 
 `tax_capacity()` is the tax every resident of the scenario would pay
 (population x `taxable_sales_per_capita` x `local_sales_tax_rate`), not just
 those near a stop: a Texas MTA taxes its whole member area, and the cap must
 let the first line be bonded before any stop exists. `Sim::bond_capacity()`
 is the principal still allowed; `issue_bond` refuses above it. Rough Travis
-scale: 1.3M residents give $268M a year, so $179M of annual debt service, about
-$2.6B of 30-year debt at 5.43%. 1.5x is a typical sales-tax bond covenant
-(unverified, figures.csv row requested).
+scale: 1.3M residents give $268M a year, so $134M of annual debt service, about
+$2.0B of 30-year debt at 5.43%; the synthetic test region allows about $183M.
+Source (figures.csv `bond_coverage_min`): Houston METRO's sales-tax bonds
+require 2.0x maximum annual debt service before new parity bonds (KBRA AAA
+affirmation, Sep 2023); DART's senior lien is reported at 2x too.
 
 Bankruptcy is the sandbox's only fail state (D15). At each settlement a month
 is **distressed** if either:
@@ -502,8 +504,7 @@ In rough priority for M1 tuning:
    contracted highway graph).
 7. Park-and-ride car trips are not added to road volumes.
 8. Capital cost has no terrain or right-of-way multipliers; construction time
-   ignores length and roads under works keep full capacity; the borrowing cap
-   uses an unverified 1.5x covenant and bankruptcy only blocks new bonds
-   (its consequence is a pending design call) and no refinancing (F23, F24,
-   F26). There is no state appropriation because Texas gives big-city transit
+   ignores length and roads under works keep full capacity; bankruptcy only
+   blocks new bonds (its consequence is a pending design call); bonds cannot
+   be refinanced (F23, F24, F26). There is no state appropriation because Texas gives big-city transit
    authorities none (figures.csv `operating_assistance_share` note).

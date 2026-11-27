@@ -201,9 +201,9 @@ impl Default for Params {
             bond_term_speedup: 1.0,
             // ROADMAP F26: debt service above revenue for 12 months ends the game.
             bankruptcy_months: 12,
-            // Typical additional-bonds test for sales-tax revenue bonds,
-            // 1.5x pledged revenue (unverified; figures.csv row requested).
-            bond_coverage_min: 1.5,
+            // figures.csv `bond_coverage_min`: Houston METRO sales-tax bonds'
+            // additional-bonds test, 2.0x maximum annual debt service (KBRA 2023).
+            bond_coverage_min: 2.0,
         }
     }
 }
