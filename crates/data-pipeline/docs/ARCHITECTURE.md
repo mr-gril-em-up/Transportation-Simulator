@@ -119,7 +119,7 @@ Converts the layers into `sim_core::ScenarioInput`:
   3. Contract pass-through nodes: a non-connector node with exactly two links of equal speed, lanes per direction and direction (two-way, or one-way flowing through) becomes one link of the summed length. Links that differ are left alone, so speed and capacity changes stay where OSM puts them.
 
   Kept nodes keep their roads.json ids (sim-core allows sparse ids). On the real Travis build this takes road nodes from 93,461 to 52,210 and links from 121,120 to 79,583, and sim-core's baseline from 12.0 s to 6.8 s with identical mode shares and peak speed. `roads.json` keeps every node and edge for drawing.
-- `lines` is empty: the game starts with no transit by default (design doc, "Starting map"). Existing routes stay in `transit.json`.
+- `lines` holds today's network (`lines::existing_lines`, DATA-7): every OSM route with GTFS headways, one line per `ref` (the direction relation with the most stops), mode from the OSM `route` value (`train` is commuter rail), peak/midday headway and span from GTFS. A route with a timetable entry in `figures.csv` (Red Line 550: 32 / 51 min, 15.1 h) uses that instead. Rail stops whose name contains Leander, Lakeline or Howard get `park_ride: true` and `park_ride_spaces` from `pnr_spaces_capmetro_*`. Lines are built through JSON so optional sim-core fields do not have to exist. Starting with an empty map stays an app setting: it drops `lines`.
 
 `ScenarioInput::validate()` runs before anything is written to `scenario.json`; a failure aborts the build.
 
