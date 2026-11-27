@@ -92,8 +92,8 @@ let days_crossed = sim.tick(real_dt_seconds);
 | `remove_line(LineId)` | 20-40 ms | Removes a line, open or under construction. Its id is retired. No refund. |
 | `preview_line(TransitLine) -> LinePreview` | 40-80 ms | Build preview: ridership (`line: LineResult`), `capital_cost`, `federal_grant`, `capital_per_daily_boarding`. Evaluates the line, then removes it; ledger and ids unchanged. |
 | `ledger() -> &Ledger` | free | Transit authority books: `cash`, `current` month, settled `history` (`MonthStatement`), `served_population`, outstanding `bonds`, `debt()`, `distressed_months`, `bankrupt_month`. `add_line`/`update_line` charge capital (net of any federal grant); month boundaries settle fares, operating cost, assistance, local tax and bond payments, then apply the bankruptcy rule. |
-| `issue_bond(principal) -> Result<Bond>` | free | Borrows now at `bond_rate` (5.43%, Bond Buyer Revenue Bond Index) over `bond_term_months()` (360 by default). Cash arrives at once, level payments start next month. Errors on a non-positive amount, above `bond_capacity()`, or after bankruptcy. 12 distressed months in a row (debt service above operating surplus, each bond counted only once the lines building at its issue have opened; or cash below zero) set `ledger().bankrupt_month` (F26, SIM-5). |
-| `bond_capacity() -> f64`, `tax_capacity() -> f64` | free | Borrowing cap (additional-bonds test, SIM-7): principal a new bond may still borrow, from annual tax capacity (all scenario residents x taxable sales x 1%) / `bond_coverage_min` (2.0, Houston METRO's covenant) less current debt service. For the app's bond menu. |
+| `issue_bond(principal) -> Result<Bond>` | free | Borrows now at `bond_rate` (5.43%, Bond Buyer Revenue Bond Index) over `bond_term_months()` (360 by default). Cash arrives at once, level payments start next month, or once the lines under construction at issue open (interest is capitalized until then, SIM-9). Errors on a non-positive amount, above `bond_capacity()`, or after bankruptcy. 12 distressed months in a row (debt service above operating surplus, each bond counted only once the lines building at its issue have opened; or cash below zero) set `ledger().bankrupt_month` (F26, SIM-5). |
+| `bond_capacity() -> f64`, `tax_capacity() -> f64` | free | Borrowing cap (additional-bonds test, SIM-7, SIM-9): principal a new bond may still borrow, from annual tax capacity (residents within `tax_area_km` 3 km of any stop on lines open or under construction x taxable sales x 1%) / `bond_coverage_min` (2.0, Houston METRO's covenant) less current debt service. 0 with no lines. For the app's bond menu. |
 | `skip_to_next_month() -> u64` | ~2 s | Jumps the clock to next month, re-runs the day, settles the month. Use this, not `sim.clock.skip_to_next_month()`, so the ledger settles. |
 | `lines() -> Vec<(LineId, &TransitLine)>` | free | Every line as last drawn (the version under construction if any). `results().lines` has only lines in service. |
 | `results() -> &Results` | free | Latest results (see below). |
@@ -124,7 +124,11 @@ let days_crossed = sim.tick(real_dt_seconds);
 boardings_by_stop` (aligned with the line's `stops`), `passenger_km,
 max_segment_load, peak_hour_load, peak_hour_capacity, vehicles_required,
 revenue_hours_per_day, operating_cost_per_day, fare_revenue_per_day,
-farebox_recovery, segment_loads` (`[forward, reverse]` per stop pair).
+farebox_recovery, segment_loads` (`[forward, reverse]` per stop pair),
+`segment_shapes` (bus, trolleybus and BRT: the street route per stop pair as
+`[lon, lat]` points from stop to stop; an empty entry means a straight
+fallback segment; empty for other modes, SIM-8). `LinePreview::line` carries
+it too, so a draft snaps to streets while it is drawn.
 
 Errors are `SimError(String)` with a readable message (bad JSON, dangling ids,
 a line with one stop, an unknown line id).
@@ -305,7 +309,7 @@ choices a reader is most likely to question:
   default copies it and [tests/figures.rs](tests/figures.rs) fails if the two
   drift: trip rate 2.28/person/day, bus/light rail/commuter rail cost per car
   hour, CapMetro fares, the 2x walk and wait weights, capital and vehicle
-  prices, the funding keys, and the bond rate and term (D25, D29).
+  prices, the funding keys, and the bond rate, term and coverage ratio (D25, D29).
 - **Dense Z x Z matrices.** Right for ~700 block groups; statewide (F34) needs
   sparse storage, noted in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#threading-and-performance).
 
@@ -341,4 +345,4 @@ choices a reader is most likely to question:
 | F23 Capital cost | Partial: per-km guideway plus vehicles from sourced figures, `preview_line` for the build preview; no terrain or right-of-way multipliers |
 | F24 Construction compression | Partial: lines build for `build_years` / 12 before opening (light rail ~6 game months), old version runs during a rebuild; no road capacity loss during works |
 | F25 Operating costs and fares | Partial: per-line op cost from NTD cost per car hour x cars, CapMetro fares, distance fares, farebox, monthly budget settlement in `Ledger` |
-| F26 Funding | Partial: federal capital grants with a cost-per-rider gate, operating assistance, local 1% sales tax over the served area; no bonds, state appropriation or bankruptcy |
+| F26 Funding | Partial: federal capital grants with a cost-per-rider gate, operating assistance, local 1% sales tax over the tax area (zones within 3 km of a stop), 30-year bonds with capitalized interest during construction, a borrowing cap and the bankruptcy rule; no state appropriation (Texas gives none) |

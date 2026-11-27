@@ -411,6 +411,12 @@ fn twelve_distressed_months_is_bankruptcy() {
 #[test]
 fn borrowing_is_capped_by_tax_capacity() {
     let mut s = sim();
+    assert_eq!(s.bond_capacity(), 0.0, "no lines, no tax area, no pledge");
+    // A line under construction already counts toward the pledged tax area.
+    let mut b = building_sim();
+    b.add_line(rail()).unwrap();
+    assert!(b.bond_capacity() > 0.0 && b.ledger().served_population == 0.0);
+    s.add_line(rail()).unwrap();
     let cap = s.bond_capacity();
     assert!(cap > 0.0 && s.tax_capacity() > 0.0);
     assert!(s.issue_bond(cap * 1.01).is_err(), "above capacity");
@@ -431,4 +437,41 @@ fn bond_for_a_line_under_construction_waits_for_opening_before_coverage() {
     let b = s.issue_bond(amount).unwrap();
     let opens_month = opens.div_ceil(30);
     assert_eq!(b.coverage_from_month, b.issued_month + 1 + opens_month);
+}
+
+#[test]
+fn bus_segments_follow_the_roads_and_rail_does_not() {
+    let mut s = sim();
+    // Stops on grid corners (1 km grid): each diagonal hop is 2 km of street.
+    let bus = straight_line(Mode::Bus, (-4.0, -4.0), (4.0, 4.0), 2f64.sqrt(), 10.0);
+    let id = s.add_line(bus.clone()).unwrap();
+    let r = s.results().lines.iter().find(|l| l.id == id).unwrap();
+    assert_eq!(r.segment_shapes.len(), bus.stops.len() - 1);
+    for (k, shape) in r.segment_shapes.iter().enumerate() {
+        let (a, b) = (&bus.stops[k], &bus.stops[k + 1]);
+        assert!(shape.len() >= 3, "segment {k} routed via a corner");
+        assert_eq!(shape[0], [a.lon, a.lat]);
+        assert_eq!(*shape.last().unwrap(), [b.lon, b.lat]);
+    }
+    let per_seg = r.length_km / r.segment_shapes.len() as f64;
+    assert!((per_seg - 2.0).abs() < 0.02, "street km {per_seg}");
+
+    let rail = straight_line(Mode::LightRail, (-4.0, -4.0), (4.0, 4.0), 2f64.sqrt(), 10.0);
+    let id = s.add_line(rail).unwrap();
+    let r = s.results().lines.iter().find(|l| l.id == id).unwrap();
+    assert!(r.segment_shapes.is_empty(), "rail keeps alignment_factor");
+}
+
+#[test]
+fn bus_stop_off_the_road_network_falls_back_to_a_straight_segment() {
+    let mut s = sim();
+    // The synthetic region spans +-8 km; the last stop is 20 km out.
+    let bus = straight_line(Mode::Bus, (0.0, 2.0), (0.0, 20.0), 6.0, 10.0);
+    let id = s.add_line(bus).unwrap();
+    let r = s.results().lines.iter().find(|l| l.id == id).unwrap();
+    assert!(!r.segment_shapes[0].is_empty(), "inside the grid: routed");
+    assert!(
+        r.segment_shapes.last().unwrap().is_empty(),
+        "off-network: straight"
+    );
 }

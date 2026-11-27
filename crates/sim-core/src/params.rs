@@ -121,6 +121,9 @@ pub struct Params {
     pub local_sales_tax_rate: f64,
     /// Taxable retail sales per resident per year, dollars.
     pub taxable_sales_per_capita: f64,
+    /// Zones whose centre is within this distance of an open stop pay the
+    /// local transit tax in full (stand-in for MTA city membership, SIM-9), km.
+    pub tax_area_km: f64,
     /// Annual interest rate on the authority's bonds (0.0543 = 5.43%).
     pub bond_rate: f64,
     /// Bond repayment term, real years.
@@ -193,6 +196,11 @@ impl Default for Params {
             local_sales_tax_rate: 0.01,
             // figures.csv `taxable_sales_per_capita`: CapMetro service area, 2023$.
             taxable_sales_per_capita: 20_600.0,
+            // Game balance (SIM-9): on real Travis the Red Line's 10 stations
+            // then tax ~291k residents ($60M a year), enough to run it and
+            // service a bond for its capital; a city-wide network reaches the
+            // whole county, near CapMetro's real ~$280M.
+            tax_area_km: 3.0,
             // figures.csv `bond_rate`: Bond Buyer Revenue Bond Index (30-year),
             // Oct 2026; 2026 range 4.92-5.47%. `bond_term_years`: market
             // convention (ATP caps maturities at 40 years).

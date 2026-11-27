@@ -89,11 +89,30 @@ fn main() {
     );
     let bus = straight_line(Mode::Bus, (-15.0, 3.0), (15.0, 3.0), 0.6, 12.0);
     let t = Instant::now();
-    sim.add_line(bus).unwrap();
+    let bus_id = sim.add_line(bus).unwrap();
+    let br = sim.results().lines.iter().find(|l| l.id == bus_id).unwrap();
+    let routed = br.segment_shapes.iter().filter(|s| !s.is_empty()).count();
     println!(
-        "add second line: {:.3} s  transit share {:.2}%",
+        "add second line (bus, routed on roads): {:.3} s  {routed}/{} segments routed  {:.1} km  transit share {:.2}%",
         t.elapsed().as_secs_f64(),
+        br.segment_shapes.len(),
+        br.length_km,
         sim.results().mode_share.transit() * 100.0
+    );
+    let t = Instant::now();
+    sim.update_line(
+        bus_id,
+        sim.lines()
+            .iter()
+            .find(|(i, _)| *i == bus_id)
+            .unwrap()
+            .1
+            .clone(),
+    )
+    .unwrap();
+    println!(
+        "same bus line again (route cache): {:.3} s",
+        t.elapsed().as_secs_f64()
     );
     let t = Instant::now();
     sim.equilibrate_warm();

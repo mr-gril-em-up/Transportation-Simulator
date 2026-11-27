@@ -675,16 +675,24 @@ mod tests {
     #[test]
     fn bonds_add_cash_and_debt_and_stop_at_bankruptcy() {
         let state = SimState::start_with(|| Ok(synth::generate(&synth::SynthConfig::small())));
-        let l = state.issue_bond(100e6).unwrap();
-        assert!((l.ledger.cash - 100e6).abs() < 1.0);
-        assert!((l.debt - 100e6).abs() < 1.0);
+        // No lines: no tax area, nothing pledged, so nothing can be borrowed (SIM-9).
+        assert!(state.issue_bond(1e6).unwrap_err().contains("capacity"));
+        // A light rail line across the region leaves cash far below zero.
+        let rail = line(
+            r#"{"name":"LR","mode":"light_rail","headway_min":10,
+            "stops":[{"lon":-97.80,"lat":30.27},{"lon":-97.76,"lat":30.27},{"lon":-97.72,"lat":30.27},{"lon":-97.68,"lat":30.27}]}"#,
+        );
+        state.upsert("r1".into(), rail).unwrap();
+        let cash0 = state.ledger().unwrap().ledger.cash;
+        assert!(cash0 < 0.0);
+        let l = state.issue_bond(1e6).unwrap();
+        assert!((l.ledger.cash - cash0 - 1e6).abs() < 1.0);
+        assert!((l.debt - 1e6).abs() < 1.0);
         assert!(l.debt_service_per_month > 0.0 && l.bond_term_months > 0);
         assert!(state.issue_bond(-5.0).is_err());
-
-        // With no lines the operating surplus is 0, so the $100M bond's
-        // payments fail the coverage test every month until bankruptcy.
-        // (A $50B bond is now refused by the borrowing cap, SIM-7.)
         assert!(state.issue_bond(50e9).unwrap_err().contains("capacity"));
+
+        // Cash stays below zero every month, so bankruptcy follows.
         let months = state.ledger().unwrap().bankruptcy_months;
         for _ in 0..=months {
             state.skip_to_next_month().unwrap();

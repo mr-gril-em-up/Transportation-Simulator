@@ -9,6 +9,7 @@ mod geo;
 mod graph;
 pub mod model;
 pub mod params;
+mod roads;
 pub mod schema;
 pub mod synth;
 mod transit;

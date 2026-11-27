@@ -4,9 +4,11 @@
 use crate::geo::dist_km;
 use crate::graph::NONE;
 use crate::params::{mode_defaults, ModeDefaults, Params};
+use crate::roads::{runs_on_roads, Route};
 use crate::schema::{Mode, TransitLine};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::sync::Arc;
 
 /// A zone as the transit network sees it.
 #[derive(Clone, Copy)]
@@ -31,6 +33,10 @@ pub struct LineMeta {
     pub first_platform: u32,
     pub seg_km: Vec<f64>,
     pub seg_min: Vec<f64>,
+    /// Street geometry per segment for road-routed lines ([lon, lat] from
+    /// stop to stop); empty for a segment that fell back to `alignment_factor`
+    /// and for every segment of non-road modes.
+    pub seg_shape: Vec<Vec<[f64; 2]>>,
 }
 
 impl LineMeta {
@@ -106,8 +112,15 @@ pub fn coverage(d: f64, r: f64, big_r: f64) -> f64 {
 }
 
 impl TransitNet {
-    /// `lines` are (id, line) pairs of the active lines.
-    pub fn build(lines: &[(u32, &TransitLine)], zones: &[ZonePt], p: &Params) -> TransitNet {
+    /// `lines` are (id, line) pairs of the active lines. `route` gives the
+    /// road route between two stops of a road-running line, or None to use
+    /// straight-line km x `alignment_factor` (SIM-8).
+    pub fn build(
+        lines: &[(u32, &TransitLine)],
+        zones: &[ZonePt],
+        p: &Params,
+        route: &mut dyn FnMut([f64; 2], [f64; 2]) -> Option<Arc<Route>>,
+    ) -> TransitNet {
         let mut metas = Vec::new();
         let mut platforms = Vec::new();
         let mut adj: Vec<Vec<TEdge>> = Vec::new();
@@ -137,9 +150,20 @@ impl TransitNet {
             }
             let mut seg_km = Vec::new();
             let mut seg_min = Vec::new();
+            let mut seg_shape = Vec::new();
+            let on_roads = runs_on_roads(l.mode);
             for k in 0..l.stops.len() - 1 {
                 let (a, b) = (&l.stops[k], &l.stops[k + 1]);
-                let km = dist_km(a.lon, a.lat, b.lon, b.lat) * dflt.alignment_factor;
+                let routed = if on_roads {
+                    route([a.lon, a.lat], [b.lon, b.lat])
+                } else {
+                    None
+                };
+                let km = match &routed {
+                    Some(r) => r.km,
+                    None => dist_km(a.lon, a.lat, b.lon, b.lat) * dflt.alignment_factor,
+                };
+                seg_shape.push(routed.map(|r| r.shape.clone()).unwrap_or_default());
                 let min = km / speed * 60.0 + dflt.dwell_s / 60.0;
                 seg_km.push(km);
                 seg_min.push(min);
@@ -172,6 +196,7 @@ impl TransitNet {
                 first_platform: first,
                 seg_km,
                 seg_min,
+                seg_shape: if on_roads { seg_shape } else { Vec::new() },
             });
         }
         // Transfers between platforms of different lines within walking distance.

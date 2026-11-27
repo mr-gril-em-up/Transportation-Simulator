@@ -111,8 +111,9 @@ soon as every zone's road node is reached. Same-zone or same-node trips use
 the intrazonal distance x `detour_factor [1.3]` at 25 km/h.
 
 **Transit graph.** One platform per (line, stop). Edges:
-- Ride: between consecutive stops in both directions. Time = straight-line
-  distance x mode alignment factor / running speed + dwell.
+- Ride: between consecutive stops in both directions. Time = segment km /
+  running speed + dwell. Segment km is the street route for road modes (see
+  below), else straight-line distance x the mode's `alignment_factor`.
 - Transfer: between platforms of different lines within `transfer_walk_km [0.4]`.
   Cost = walk + wait for the new line + `transfer_penalty_min [5]` + any fare
   difference.
@@ -120,6 +121,27 @@ the intrazonal distance x `detour_factor [1.3]` at 25 km/h.
 - Park-and-ride access: drive from the origin to stops flagged `park_ride`
   within `pnr_max_drive_min [25]`, plus `pnr_park_min [3]`. Drive time comes from
   the car skim to the zone nearest the stop.
+
+**Road routing for bus, trolleybus and BRT (SIM-8).** Code:
+[src/roads.rs](../src/roads.rs). Each stop snaps to the nearest routable road
+node (a node of the contracted graph) within `SNAP_KM [0.5]`. Between two
+snapped nodes, A* on free-flow distance (straight-line heuristic) finds the
+shortest directed path; its km, plus the two stop-to-node hops, replaces
+straight km x `alignment_factor`. The running speed stays the mode speed, so
+congestion does not slow buses yet. The segment falls back to the factor if a
+stop is over 0.5 km from a routable node, no path exists, or the route is over
+`MAX_DETOUR [2.5]` x the straight line (a bad snap onto a one-way loop or across
+a river). Routes are cached per node pair, so re-evaluating every line on an
+edit only routes new stop pairs (a 50-stop bus adds no measurable time on real
+Travis). Contracted edges are expanded through their member links back to node
+coordinates, giving `LineResult::segment_shapes` for the app to draw.
+
+Check on real Travis: routing 40 CapMetro bus routes from `transit.json` at
+their OSM stops snaps 95% of 1,498 segments, with overall circuity (route km /
+straight km) 1.27, median 1.22, 90th percentile 1.76. That is close to the bus
+`alignment_factor [1.25]` it replaces, so the factor stays as the fallback.
+Rail and other guided modes keep the factor: their alignments are not on the
+road graph.
 
 Expected wait `= h/2` for headways up to 12 minutes and `6 + (h - 12)/4` beyond:
 riders time their arrival for infrequent service, so a 60-minute headway costs
@@ -382,14 +404,23 @@ closes the month using that day's line results:
 | Operating assistance | operating cost x `operating_assistance_share [0.143]` (federal formula funds; Texas gives big-city transit authorities no state operating money) |
 | Local tax | served population x `taxable_sales_per_capita [$20,600]` x `local_sales_tax_rate [1%]` / 12 |
 
-Served population is each zone's residents times its stop coverage share (the
-part of the zone within walking range of a stop, section 5), summed. Texas
-transit authorities (CapMetro, DART, Houston METRO) levy a 1% sales tax in their
-member cities; growing the network grows the taxing area. Weighting by coverage
-rather than counting any zone a stop touches keeps a stop clipping a zone's
-edge from taxing all of it. It understates real service areas, which tax whole
-member cities including streets far from a stop; city-level membership is a
-later refinement.
+Served population (the tax area, SIM-9) is the full population of every zone
+whose centre lies within `tax_area_km [3]` of an open stop. Texas transit
+authorities (CapMetro, DART, Houston METRO) levy a 1% sales tax across whole
+member cities, not just the blocks beside a stop; the buffer stands in for
+city membership, which follows service. Growing the network grows the taxing
+area, up to the whole county (CapMetro's real base: ~1.36M residents, ~$280M a
+year).
+
+Why 3 km and not walking coverage: the first cut (#20) taxed only residents in
+walking range, weighted by stop coverage. On real Travis that gave the Red
+Line's ten stations ~$0.5M a month against $1.6M operating cost, so the first
+rail line always bankrupted the player. With a 3 km buffer the same stations
+tax ~291k residents, about $5.0M a month ($60M a year). That runs the line and
+services a bond of a few hundred million, while a $1B commuter rail build from
+scratch stays out of reach without a federal grant or a wider network first.
+Buffer sizes on real Travis around the Red Line: 1 km 38k residents, 2 km
+130k, 3 km 291k, 5 km 513k, 8 km 731k. 3 km is a balance choice.
 Sources (figures.csv rows of the same names): the 1% rate is the Comptroller's
 MTA table (the statutory cap). Taxable sales per capita is derived from
 CapMetro's NTD 2023 local funds divided by 1% and by its 1.36M service-area
@@ -400,7 +431,7 @@ is an upper bound, and small agencies run far higher (El Paso 57%).
 Cash starts at `starting_cash [0]` and may go negative, but a month that ends
 below zero counts toward bankruptcy (next section). On the synthetic Travis bench, a 28 km light rail
 line costs about $16B and fails the grant gate at its uncalibrated ridership;
-with 67k residents in walking range it collects about $1.2M a month in local tax against $8.6M operating cost.
+its tax area (before SIM-9, the 67k residents in walking range) then collected about $1.2M a month in local tax against $8.6M operating cost.
 
 ### Bonds, debt service and bankruptcy (F26)
 
@@ -422,13 +453,15 @@ plus new, within the pledged revenue divided by a coverage ratio:
 
 `12 x (monthly_debt_service + new payment) <= tax_capacity() / bond_coverage_min [2.0]`
 
-`tax_capacity()` is the tax every resident of the scenario would pay
-(population x `taxable_sales_per_capita` x `local_sales_tax_rate`), not just
-those near a stop: a Texas MTA taxes its whole member area, and the cap must
-let the first line be bonded before any stop exists. `Sim::bond_capacity()`
-is the principal still allowed; `issue_bond` refuses above it. Rough Travis
-scale: 1.3M residents give $268M a year, so $134M of annual debt service, about
-$2.0B of 30-year debt at 5.43%; the synthetic test region allows about $183M.
+`tax_capacity()` is the annual tax of the tax area of every stop on lines
+open **or under construction** (SIM-9): what the authority will collect once
+its committed network runs, so a line can be bonded while it is still being
+built. With no lines it is 0 and nothing can be borrowed. (SIM-7 first used
+the whole scenario's population; that let the player borrow against tax the
+network would never collect and walk into bankruptcy.) `Sim::bond_capacity()`
+is the principal still allowed; `issue_bond` refuses above it. Real Travis:
+the Red Line alone pledges ~$60M a year, so about $440M of 30-year debt at
+5.43%; a county-wide network pledges $268M, about $2.0B.
 Source (figures.csv `bond_coverage_min`): Houston METRO's sales-tax bonds
 require 2.0x maximum annual debt service before new parity bonds (KBRA AAA
 affirmation, Sep 2023); DART's senior lien is reported at 2x too.
@@ -438,9 +471,9 @@ is **distressed** if either:
 
 - debt service exceeds the operating surplus (fares + operating assistance +
   local tax - operating cost, `MonthStatement::operating_surplus`), the
-  roadmap's rule, a debt-service coverage ratio below 1. Each bond's
-  payments join this test only from `Bond::coverage_from_month`: the month
-  after the last line under construction at issue opens (SIM-7); or
+  roadmap's rule, a debt-service coverage ratio below 1. A bond pays nothing
+  during its construction period (below), so only earning lines carry debt
+  service; or
 - cash ends the month below zero (SIM-5), tested every month.
 
 A healthy month resets `distressed_months`. `bankruptcy_months [12]`
@@ -448,19 +481,20 @@ distressed months in a row set `Ledger::bankrupt_month`; the game is over.
 sim-core keeps simulating so the app can show what went wrong, but
 `issue_bond` refuses from then on. Ending the game is the app's call.
 
-Why bonds get a construction grace (SIM-6, refined by SIM-7): a line under
-construction has no riders and its stops are not yet in the served
-population, so a bond taken to build it would fail the coverage test every
-month until it opens. On real Travis a $510M bond ($2.9M a month) showed a
-distressed month after one month with cash positive, and any line taking 12
-or more game months to build would bankrupt its borrower before opening.
-Real projects use capitalized interest: the issue funds its own interest until
-the asset earns. SIM-6 skipped the test in any month with something under
-construction, which a player could stretch forever by keeping one cheap line
-building. SIM-7 fixes the grace per bond when it is issued: until the last
-line then under construction opens (`opening_day`), at most the longest build
-time of any mode. Later construction does not extend it. The cash test still
-runs throughout, and the borrowing cap stops rolling new bonds to pay old ones.
+**Capitalized interest (SIM-6, SIM-7, SIM-9).** A line under construction has
+no riders and is not yet in the tax area, so paying a bond during the build
+would fail the coverage test, and drain cash, every month until opening. Real
+projects capitalize interest: the issue covers its own interest until the
+asset earns. Each bond records `coverage_from_month`, the month after the last
+line under construction at issue opens. Before it, each month's interest is
+added to the balance (`MonthStatement::capitalized_interest`, no cash moves)
+and the level payment is recomputed over the payments still to come; from it
+on, the bond pays normally and its payments count in the coverage test. The
+grace is fixed at issue, so later construction does not extend it (bounded by
+one build period). History: SIM-6 skipped the coverage test while anything
+was under construction (stretchable forever); SIM-7 fixed the grace per bond
+but still drew payments from cash during construction, which pushed a
+fully-bonded build below zero; SIM-9 capitalizes the interest instead.
 
 Why cash counts: with only the debt-service test, a player could skip bonds
 and run cash negative forever, an interest-free loan. Counting negative cash
@@ -470,7 +504,7 @@ Why real 30-year terms (SIM-5): D9 said bond terms compress with
 construction. Only construction is compressed; fares, costs and taxes are per
 real day. Compressing the term 12x alone makes each payment ~12x larger, so a
 tax base that carries $X of 30-year debt carries about X/7 at 2.5 years.
-Rough Travis scale: all 1.3M residents in reach of a stop would raise
+Rough Travis scale: all 1.3M residents in the tax area would raise
 1.3M x $20,600 x 1% = $268M a year; at 5.43% over 30 years that services at most
 about $4.0B (annuity factor 14.8), versus about $0.6B over 2.5 years. Austin's
 light rail is priced in billions, so compression would rule it out.
@@ -485,9 +519,12 @@ general obligation yielded 4.81%. `bond_term_years` 30 is the market
 convention (unverified): ATP's January 2026 resolution caps maturities at 40
 years and ATP had no bonds outstanding at the end of FY2025.
 
-Balance note: the local tax only covers residents within walking range of a
-stop, so a lone expensive line runs a large operating deficit and soon
-distresses the books. Coverage (cheap bus networks) grows the tax base first.
+Balance note: the borrowing cap and the tax both grow with the network's
+reach, so cheap, wide coverage (bus networks) builds the tax base and the
+capacity to bond the expensive rail line that follows. Capital is charged
+when a line is drawn whether or not it can be financed; a build the cash and
+`bond_capacity()` cannot cover leaves cash negative and leads to bankruptcy,
+so the app should show both before the player commits.
 
 ## Known gaps
 
