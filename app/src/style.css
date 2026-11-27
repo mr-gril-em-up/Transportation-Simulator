@@ -36,3 +36,12 @@ button.on { background: #1b1d22; color: #fff; border-color: #1b1d22; }
 #budget th, #budget td { padding: 1px 4px; text-align: right; white-space: nowrap; }
 #budget td:first-child { text-align: left; }
 #budget tr.total td { border-top: 1px solid #ccc; font-weight: 600; }
+.inspector { margin-top: 6px; font-size: 11px; color: #444; }
+.inspector .warn { color: #b00; }
+.inspector .chart-title { margin-top: 4px; color: #666; }
+.inspector .chart { display: block; }
+.inspector .bars rect { fill: #888; }
+.inspector .load path { fill: none; stroke: #444; stroke-width: 1.5; }
+.inspector .load path.rev { stroke-dasharray: 3 2; stroke: #888; }
+.inspector .ends { display: flex; justify-content: space-between; color: #666; }
+.route .toggle { cursor: pointer; font-size: 12px; color: #444; margin-top: 4px; }

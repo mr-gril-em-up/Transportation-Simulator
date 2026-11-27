@@ -11,6 +11,11 @@ on:
       year:
         description: "LODES year"
         default: "2023"
+      level:
+        description: "Zone level: bg (block group), tract or county"
+        type: choice
+        options: [bg, tract, county]
+        default: bg
       skip_osm:
         description: "Census-only check: skip OSM roads and transit, and do not publish a release"
         type: boolean
@@ -30,7 +35,7 @@ jobs:
       - run: cargo clippy --all-targets --locked -- -D warnings
 
   # Manual run: downloads real Census + OSM data, builds the area, and
-  # publishes the output as GitHub Release "data-<area>-<year>" (replacing
+  # publishes the output as GitHub Release "data-<area>-<year>[-<level>]" (replacing
   # assets on re-run) so consumers fetch it with scripts/download-build.sh.
   build-data:
     if: github.event_name == 'workflow_dispatch'
@@ -40,24 +45,27 @@ jobs:
     env:
       AREA: ${{ inputs.area }}
       YEAR: ${{ inputs.year }}
+      LEVEL: ${{ inputs.level }}
+      # Block-group builds keep the old tag; coarser levels get a suffix.
+      SUFFIX: ${{ inputs.level != 'bg' && format('-{0}', inputs.level) || '' }}
       SKIP_OSM: ${{ inputs.skip_osm && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
       - run: ./scripts/fetch.sh
-      - run: cargo run --release -- --area "$AREA" --year "$YEAR" --out data/out/area
+      - run: cargo run --release -- --area "$AREA" --year "$YEAR" --level "$LEVEL" --out data/out/area
       - uses: actions/upload-artifact@v4
         with:
-          name: tsim-data-${{ inputs.area }}-${{ inputs.year }}
+          name: tsim-data-${{ inputs.area }}-${{ inputs.year }}-${{ inputs.level }}
           path: crates/data-pipeline/data/out/area
-      - name: Publish release data-${{ inputs.area }}-${{ inputs.year }}
+      - name: Publish release data-${{ inputs.area }}-${{ inputs.year }} (level ${{ inputs.level }})
         if: ${{ !inputs.skip_osm }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="data-$AREA-$YEAR"
-          tar -czf "tsim-data-$AREA-$YEAR.tar.gz" -C data/out/area .
-          cp data/out/area/manifest.json "manifest-$AREA-$YEAR.json"
+          TAG="data-$AREA-$YEAR$SUFFIX"
+          tar -czf "tsim-data-$AREA-$YEAR$SUFFIX.tar.gz" -C data/out/area .
+          cp data/out/area/manifest.json "manifest-$AREA-$YEAR$SUFFIX.json"
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "$GITHUB_SHA" \
-            --title "Pipeline build: area $AREA, LODES $YEAR" \
+            --title "Pipeline build: area $AREA, LODES $YEAR, zones $LEVEL" \
             --notes "Built by the data-pipeline workflow. Contents: scenario.json (sim-core input), zones.json, roads.json, transit.json, manifest.json. Data: US Census Bureau (public domain); OpenStreetMap contributors (ODbL)."
-          gh release upload "$TAG" "tsim-data-$AREA-$YEAR.tar.gz" "manifest-$AREA-$YEAR.json" --clobber
+          gh release upload "$TAG" "tsim-data-$AREA-$YEAR$SUFFIX.tar.gz" "manifest-$AREA-$YEAR$SUFFIX.json" --clobber

@@ -27,6 +27,7 @@ doc.
 - Real Red Line preset: OSM route 550 stations, $3.50 fare, 32/51-minute
   peak/off-peak headways (`offpeakHeadwayMin`); about 1,860 riders/day vs APTA 1,500 (#31, #38)
 - Monthly statements: last two closed months under the budget (F26)
+- Line inspector: boardings by stop, segment loads both ways, peak load vs capacity (F17)
 - Bonds (issue from the budget panel), debt and payments, distress count and
   bankruptcy banner (F26)
 
@@ -34,8 +35,7 @@ doc.
 
 | Item | Blocked on |
 |---|---|
-| Snap drawn bus routes to the road graph | road graph from the pipeline; router location (sim-core vs app) to agree |
-| Line inspector: per-stop boardings chart, segment load profile, peak load vs capacity | nothing (fields already cross IPC) |
+| Snap drawn bus routes to the road graph | sim-core's router (agreed: sim-core routes bus, trolleybus and BRT on the road graph and returns `LineResult.segment_shapes`; the app draws them) |
 | M1 exit check in the UI: Red Line replica vs reported ridership | calibrated mode split (F14) and real scenario |
 
 ## M2 (money, clock, agents)
