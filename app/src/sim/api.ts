@@ -47,6 +47,11 @@ export interface RouteResult {
   fareboxRecovery?: number; // fare revenue / operating cost, 0..n
   /** Line inspector figures (sim-core only). */
   detail?: LineDetail;
+  /**
+   * Street route per segment for bus, trolleybus and BRT (sim-core SIM-8): [lng, lat] points from
+   * stop k to stop k+1. An empty segment fell back to a straight line; absent for other modes.
+   */
+  shape?: LngLat[][];
 }
 
 /** What the line inspector shows, from sim-core's `LineResult`. */
@@ -77,6 +82,10 @@ export interface RoutePreview {
   operatingCostPerDay?: number;
   /** Game day (sim-core `Clock::day`) it would open if built now; absent means at once. */
   opensDay?: number;
+  /** Length sim-core charges and times: along the streets for road modes. */
+  lengthKm?: number;
+  /** Street route per segment, as in `RouteResult.shape`. */
+  shape?: LngLat[][];
 }
 
 /** A route under construction (F24). Until `opensDay` it carries no riders, or,
@@ -99,6 +108,7 @@ export interface Statement {
   bondProceeds: number;
   debtService: number; // bond payments, interest plus principal
   interest: number; // interest part of debtService
+  capitalizedInterest: number; // interest added to debt during construction instead of paid (no cash)
   net: number; // change in cash over the month
 }
 
@@ -117,6 +127,8 @@ export interface Budget {
   bankruptMonth: number | null; // game month the authority went bankrupt
   bondRate: number; // annual rate a new bond gets (0.0543 = 5.43%)
   bondTermMonths: number;
+  bondCapacity: number; // most a new bond may borrow now; 0 until a line pledges tax
+  taxCapacity: number; // annual local tax pledged to bonds (open and pending lines)
   /** Settled months, newest first, at most STATEMENT_MONTHS. Fares, operating cost and tax are booked only at settlement. */
   statements: Statement[];
 }

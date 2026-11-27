@@ -180,8 +180,12 @@ describe("build cost (F16)", () => {
   it("maps sim-core's LinePreview and Ledger", async () => {
     const { fromPreview, fromLedger } = await import("../src/sim/tauri");
     expect(
-      fromPreview({ line: { daily_boardings: 1234.6, operating_cost_per_day: 900 }, capital_cost: 5e6, federal_grant: 2.5e6, opens_day: 183 }),
-    ).toEqual({ dailyRiders: 1235, capitalCost: 5e6, federalGrant: 2.5e6, operatingCostPerDay: 900, opensDay: 183 });
+      fromPreview({ line: { daily_boardings: 1234.6, operating_cost_per_day: 900, length_km: 7 }, capital_cost: 5e6, federal_grant: 2.5e6, opens_day: 183 }),
+    ).toEqual({ dailyRiders: 1235, capitalCost: 5e6, federalGrant: 2.5e6, operatingCostPerDay: 900, opensDay: 183, lengthKm: 7 });
+    const shape: [number, number][][] = [[[0, 0], [0.5, 0.2], [1, 0]]];
+    expect(
+      fromPreview({ line: { daily_boardings: 1, operating_cost_per_day: 1, length_km: 2, segment_shapes: shape }, capital_cost: 1, federal_grant: 0, opens_day: 0 }).shape,
+    ).toEqual(shape);
     expect(
       fromLedger({
         cash: -1,
@@ -197,6 +201,7 @@ describe("build cost (F16)", () => {
           bond_proceeds: 0,
           debt_service: 4,
           interest: 3,
+          capitalized_interest: 7,
           net: -14,
         })),
         distressed_months: 3,
@@ -206,6 +211,8 @@ describe("build cost (F16)", () => {
         bankruptcy_months: 12,
         bond_rate: 0.0543,
         bond_term_months: 360,
+        bond_capacity: 2e8,
+        tax_capacity: 6e7,
       }),
     ).toEqual({
       cash: -1,
@@ -218,6 +225,8 @@ describe("build cost (F16)", () => {
       bankruptMonth: null,
       bondRate: 0.0543,
       bondTermMonths: 360,
+      bondCapacity: 2e8,
+      taxCapacity: 6e7,
       statements: [2, 1, 0].map((month) => ({
         month,
         fares: 10,
@@ -229,6 +238,7 @@ describe("build cost (F16)", () => {
         bondProceeds: 0,
         debtService: 4,
         interest: 3,
+        capitalizedInterest: 7,
         net: -14,
       })),
     });
@@ -326,5 +336,59 @@ describe("line inspector", () => {
     expect(html.match(/<rect x="[^"]*" y="[^"]*" width="[^"]*" height="[^"]*"><title>/g)).toHaveLength(3);
     expect(html).toContain("B &#60;x&#62; to C: 60 out, 140 in");
     expect(html).not.toContain("<x>");
+  });
+});
+
+describe("street paths (SIM-8)", () => {
+  it("joins segment shapes, falls back to straight segments, ignores stale shapes", async () => {
+    const { routePath } = await import("../src/geo");
+    const stops: [number, number][] = [
+      [0, 0],
+      [1, 0],
+      [2, 0],
+    ];
+    expect(routePath(stops)).toEqual(stops);
+    expect(
+      routePath(stops, [
+        [
+          [0, 0],
+          [0.5, 0.3],
+          [1, 0],
+        ],
+        [],
+      ]),
+    ).toEqual([
+      [0, 0],
+      [0.5, 0.3],
+      [1, 0],
+      [2, 0],
+    ]);
+    expect(routePath(stops, [[]])).toEqual(stops); // one shape for two segments: stale
+    // Stop 1 dragged to [1, 1] with the same stop count: both segments touching it go straight.
+    const moved: [number, number][] = [
+      [0, 0],
+      [1, 1],
+      [2, 0],
+    ];
+    const old: [number, number][][] = [
+      [
+        [0, 0],
+        [0.5, 0.3],
+        [1, 0],
+      ],
+      [
+        [1, 0],
+        [1.5, -0.2],
+        [2, 0],
+      ],
+    ];
+    expect(routePath(moved, old)).toEqual(moved);
+    expect(routePath(stops, old)).toEqual([
+      [0, 0],
+      [0.5, 0.3],
+      [1, 0],
+      [1.5, -0.2],
+      [2, 0],
+    ]);
   });
 });

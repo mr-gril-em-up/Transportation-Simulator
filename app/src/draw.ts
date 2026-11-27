@@ -79,14 +79,19 @@ export class LineDrawer {
     if (pts.length >= 2) this.onFinish(mode, pts);
   }
 
-  private render(): void {
+  /** Replace the draft's straight line with `path` (the street route from a preview) if the stops still match. */
+  showPath(stops: LngLat[], path: LngLat[]): void {
+    if (stops.length === this.pts.length && stops.every((p, i) => p === this.pts[i])) this.render(path);
+  }
+
+  private render(path: LngLat[] = this.pts): void {
     const f: GeoJSON.Feature[] = this.pts.map((c) => ({
       type: "Feature",
       properties: {},
       geometry: { type: "Point", coordinates: c },
     }));
     if (this.pts.length > 1)
-      f.push({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: this.pts } });
+      f.push({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: path } });
     setData(this.map, "draft", f);
   }
 }

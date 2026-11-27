@@ -28,11 +28,12 @@ interface LineResultOut {
   segment_loads: [number, number][];
   peak_hour_load: number;
   peak_hour_capacity: number;
+  segment_shapes?: [number, number][][]; // road modes only (SIM-8)
 }
 
 /** sim-core LinePreview (crates/sim-core/src/model.rs). */
 interface LinePreview {
-  line: { daily_boardings: number; operating_cost_per_day: number };
+  line: { daily_boardings: number; operating_cost_per_day: number; length_km: number; segment_shapes?: [number, number][][] };
   capital_cost: number;
   federal_grant: number;
   opens_day: number; // added by the shell (PreviewOut)
@@ -50,6 +51,7 @@ interface MonthStatement {
   bond_proceeds: number;
   debt_service: number;
   interest: number;
+  capitalized_interest: number;
   net: number;
 }
 
@@ -66,6 +68,8 @@ interface Ledger {
   bankruptcy_months: number;
   bond_rate: number;
   bond_term_months: number;
+  bond_capacity: number;
+  tax_capacity: number;
 }
 
 export const fromPreview = (p: LinePreview): RoutePreview => ({
@@ -74,6 +78,8 @@ export const fromPreview = (p: LinePreview): RoutePreview => ({
   federalGrant: p.federal_grant,
   operatingCostPerDay: p.line.operating_cost_per_day,
   opensDay: p.opens_day,
+  lengthKm: p.line.length_km,
+  ...(p.line.segment_shapes?.length && { shape: p.line.segment_shapes }),
 });
 
 const fromStatement = (m: MonthStatement): Statement => ({
@@ -87,6 +93,7 @@ const fromStatement = (m: MonthStatement): Statement => ({
   bondProceeds: m.bond_proceeds,
   debtService: m.debt_service,
   interest: m.interest,
+  capitalizedInterest: m.capitalized_interest,
   net: m.net,
 });
 
@@ -101,6 +108,8 @@ export const fromLedger = (l: Ledger): Budget => ({
   bankruptMonth: l.bankrupt_month,
   bondRate: l.bond_rate,
   bondTermMonths: l.bond_term_months,
+  bondCapacity: l.bond_capacity,
+  taxCapacity: l.tax_capacity,
   statements: l.history.slice(-STATEMENT_MONTHS).reverse().map(fromStatement),
 });
 
@@ -152,6 +161,7 @@ export function fromLineResult(o: LineResultOut, route: RouteSpec | undefined): 
       peakHourLoad: o.peak_hour_load,
       peakHourCapacity: o.peak_hour_capacity,
     },
+    ...(o.segment_shapes?.length && { shape: o.segment_shapes }),
   };
 }
 

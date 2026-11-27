@@ -138,6 +138,22 @@ And back (`fromLineResult`): `daily_boardings` becomes `dailyRiders`,
 required) already cross the IPC boundary and are ignored until the UI renders
 them.
 
+### Street paths for bus lines (SIM-8)
+
+sim-core routes bus, trolleybus and BRT segments on the road graph and
+returns `LineResult.segment_shapes` (also inside `LinePreview.line`). The
+app never routes: one router means the drawn path is the one that is
+charged and timed. `routePath(stops, shape)` in `src/geo.ts` joins the
+segments and falls back to a straight segment where a shape entry is empty,
+where its ends no longer sit on its two stops (sim-core starts and ends
+every segment on the stops, so a moved stop makes the touching segments
+stale), or for every segment when the shape count no longer matches.
+`busPath` in `main.ts` picks the shape: none while the line is being
+edited; the last build preview's shape (`drawnShape`) while the line is
+pending, because sim-core's result then describes the running version or
+nothing; otherwise the result's shape. The draft line in `LineDrawer` is
+replaced by the preview's path via `showPath` when the stops still match.
+
 ### Line inspector (F17)
 
 `fromLineResult` copies sim-core's `LineResult` length, run time, fleet,
@@ -153,8 +169,10 @@ and per-segment arrays describe the running version (see A25).
 
 All money rules are sim-core's (`Sim::issue_bond`, `Ledger::settle`). The
 shell's `LedgerOut` adds what the HUD needs to explain them without knowing
-sim-core's `Params`: total debt, monthly payments, the bankruptcy threshold
-and the rate and term a new bond would get. `renderBudget` turns
+sim-core's `Params`: total debt, monthly payments, the bankruptcy threshold,
+the rate and term a new bond would get, and `Sim::bond_capacity` /
+`Sim::tax_capacity`. The menu drops sizes above capacity, and the build
+preview compares capital after grant with cash plus capacity. `renderBudget` turns
 `distressed_months` and `bankrupt_month` into a warning or a game-over
 banner and offers bond sizes (deficit cover first). The bond button goes
 through the serial sim queue like every other call. The mock adds cash and

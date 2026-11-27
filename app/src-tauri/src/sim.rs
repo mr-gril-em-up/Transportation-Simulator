@@ -233,6 +233,10 @@ pub struct LedgerOut {
     /// Rate and term a new bond gets.
     bond_rate: f64,
     bond_term_months: u32,
+    /// Most a new bond may borrow now (`Sim::bond_capacity`, SIM-7/SIM-9).
+    bond_capacity: f64,
+    /// Annual local tax pledged to bonds: open and pending lines' tax area (`Sim::tax_capacity`).
+    tax_capacity: f64,
 }
 
 fn ledger_out(sim: &Sim) -> LedgerOut {
@@ -240,7 +244,9 @@ fn ledger_out(sim: &Sim) -> LedgerOut {
     let p = &sim.params;
     LedgerOut {
         debt: l.debt(),
-        debt_service_per_month: l.bonds.iter().map(|b| b.payment).sum(),
+        debt_service_per_month: l.monthly_debt_service(),
+        bond_capacity: sim.bond_capacity(),
+        tax_capacity: sim.tax_capacity(),
         bankruptcy_months: p.bankruptcy_months,
         bond_rate: p.bond_rate,
         bond_term_months: p.bond_term_months(),
@@ -685,6 +691,8 @@ mod tests {
         state.upsert("r1".into(), rail).unwrap();
         let cash0 = state.ledger().unwrap().ledger.cash;
         assert!(cash0 < 0.0);
+        let cap = state.ledger().unwrap().bond_capacity;
+        assert!(cap > 1e6, "a line pledges tax, so it can borrow: {cap}");
         let l = state.issue_bond(1e6).unwrap();
         assert!((l.ledger.cash - cash0 - 1e6).abs() < 1.0);
         assert!((l.debt - 1e6).abs() < 1.0);
