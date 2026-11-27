@@ -1,7 +1,16 @@
 use sim_core::synth::{generate, straight_line, SynthConfig};
 use sim_core::{Mode, ModeSplit, Params, Sim};
 
+/// Lines open at once, so ridership tests need not wait out construction.
 fn sim() -> Sim {
+    let p = Params {
+        instant_build: true,
+        ..Params::default()
+    };
+    Sim::new(generate(&SynthConfig::small()), p).unwrap()
+}
+
+fn building_sim() -> Sim {
     Sim::new(generate(&SynthConfig::small()), Params::default()).unwrap()
 }
 
@@ -270,4 +279,52 @@ fn month_settles_fares_costs_and_local_tax() {
     assert!(m.local_tax > 0.0 && l.served_population > 0.0);
     assert!(m.operating_cost > m.fare_revenue && m.fare_revenue > 0.0);
     assert!((l.cash - before - (m.net - capital)).abs() < 1e-3);
+}
+
+#[test]
+fn new_lines_open_after_compressed_construction() {
+    let mut s = building_sim();
+    let opens = s.opening_day(Mode::LightRail);
+    // 6 real years at 12x: about 6 game months.
+    assert_eq!(opens, (6.0_f64 * 365.0 / 12.0).ceil() as u64);
+    let p = s.preview_line(rail()).unwrap();
+    let id = s.add_line(rail()).unwrap();
+    assert!(s.results().lines.is_empty(), "no riders while building");
+    assert_eq!(s.results().pending_lines[0].opens_day, opens);
+    assert_eq!(s.lines().len(), 1);
+    // Capital and grant are charged at the start, on the forecast.
+    assert!((s.ledger().current.capital_spent - p.capital_cost).abs() < 1e-6);
+    while s.clock.day() < opens {
+        s.skip_to_next_month();
+    }
+    assert!(s.pending_lines().is_empty());
+    let r = &s.results().lines[0];
+    assert_eq!(r.id, id);
+    assert!(r.daily_boardings > 0.0);
+}
+
+#[test]
+fn service_changes_apply_now_and_realignments_wait() {
+    let mut s = building_sim();
+    s.params.instant_build = true;
+    let id = s.add_line(rail()).unwrap();
+    s.params.instant_build = false;
+    let base = s.results().lines[0].daily_boardings;
+    // Headway change: no construction, applies at once.
+    let mut faster = rail();
+    faster.headway_min = 4.0;
+    s.update_line(id, faster.clone()).unwrap();
+    assert!(s.pending_lines().is_empty());
+    let frequent = s.results().lines[0].daily_boardings;
+    assert!(frequent > base);
+    // Extension: the old version keeps running until the new one opens.
+    let mut longer = straight_line(Mode::LightRail, (0.0, -7.0), (0.0, 10.0), 1.0, 4.0);
+    longer.name = faster.name.clone();
+    s.update_line(id, longer).unwrap();
+    let pend = s.pending_lines();
+    assert!(pend[0].replaces_open_line);
+    assert!((s.results().lines[0].daily_boardings - frequent).abs() < 1e-6);
+    assert!(s.ledger().current.capital_spent > 0.0);
+    s.remove_line(id).unwrap();
+    assert!(s.pending_lines().is_empty() && s.lines().is_empty());
 }

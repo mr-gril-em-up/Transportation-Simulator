@@ -99,6 +99,8 @@ pub struct Params {
 
     /// Build and permitting times are divided by this (12x default, 1x-24x setting).
     pub construction_speedup: f64,
+    /// Open lines the moment they are drawn (no construction period). Off by default.
+    pub instant_build: bool,
 
     /// Transit authority cash at the start, dollars. 0: the first line is
     /// paid from grants and future tax (bonds arrive with F26).
@@ -158,6 +160,7 @@ impl Default for Params {
             feedback_iterations: 4,
             daily_iterations: 1,
             construction_speedup: 12.0,
+            instant_build: false,
             starting_cash: 0.0,
             federal_capital_share: 0.5,
             // Austin Light Rail Phase 1 (in the CIG pipeline): ~$7.1B for 18,700
@@ -244,6 +247,8 @@ pub struct ModeDefaults {
     pub capital_per_km: f64,
     /// Purchase price per car, dollars.
     pub vehicle_cost: f64,
+    /// Real-world planning and construction time, years (divided by `construction_speedup` in game).
+    pub build_years: f64,
 }
 
 impl ModeDefaults {
@@ -278,6 +283,7 @@ pub fn mode_defaults(m: Mode) -> ModeDefaults {
             span_hours,
             capital_per_km: 0.0,
             vehicle_cost: 0.0,
+            build_years: 0.0,
         }
     };
     // Bus, light rail and commuter rail cost per car hour and the CapMetro
@@ -317,9 +323,28 @@ pub fn mode_defaults(m: Mode) -> ModeDefaults {
         Mode::Maglev => (300.0e6, 60.0e6),
         Mode::Ferry => (0.0, 10.0e6),
     };
+    // Planning plus construction, real years. Light rail 6: the roadmap's F24
+    // check, and Austin Phase 1 (FTA engineering 2027, service 2033). Others
+    // are estimates from typical US and foreign projects.
+    let build_years = match m {
+        Mode::Bus => 0.5,
+        Mode::Trolleybus => 1.5,
+        Mode::Brt => 2.5,
+        Mode::Tram => 4.0,
+        Mode::LightRail => 6.0,
+        Mode::CommuterRail => 4.0,
+        Mode::Metro => 9.0,
+        Mode::HighSpeedRail => 10.0,
+        Mode::Monorail => 5.0,
+        Mode::PeopleMover => 4.0,
+        Mode::Gondola => 2.0,
+        Mode::Maglev => 10.0,
+        Mode::Ferry => 1.0,
+    };
     ModeDefaults {
         capital_per_km,
         vehicle_cost,
+        build_years,
         ..ops
     }
 }
