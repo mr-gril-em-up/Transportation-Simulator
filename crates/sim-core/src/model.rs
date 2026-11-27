@@ -7,6 +7,7 @@ use crate::economy::{self, Ledger};
 use crate::geo::dist_km;
 use crate::graph::{RoadGraph, Tree};
 use crate::params::*;
+use crate::roads::Router;
 use crate::schema::*;
 use crate::transit::{Access, LineLoads, Searcher, TOd, TransitNet, ZonePt};
 use crate::SimError;
@@ -109,6 +110,11 @@ pub struct LineResult {
     pub farebox_recovery: f64,
     /// Daily passengers per segment: [forward (stop k -> k+1), reverse].
     pub segment_loads: Vec<[f64; 2]>,
+    /// Street route per segment for bus, trolleybus and BRT: [lon, lat]
+    /// points from stop k to stop k+1 along the roads (SIM-8). An empty entry
+    /// means the segment fell back to a straight line (a stop over 500 m from
+    /// a road, or no path); the whole list is empty for other modes.
+    pub segment_shapes: Vec<Vec<[f64; 2]>>,
 }
 
 /// Region-wide results after the latest evaluation. Serialized to the app as JSON.
@@ -269,6 +275,8 @@ pub struct Sim {
     /// Per line slot: a version under construction and the game day it opens.
     /// `lines` holds the version in service (None while a new line is built).
     pending: Vec<Option<(TransitLine, u64)>>,
+    /// Road snapping and route cache for bus, trolleybus and BRT (SIM-8).
+    router: Router,
 }
 
 /// A line (or a new version of one) under construction.
@@ -388,7 +396,8 @@ impl Sim {
             graph,
             input,
             lines: initial_lines.into_iter().map(Some).collect(),
-            net: TransitNet::build(&[], &[], &Params::default()),
+            net: TransitNet::build(&[], &[], &Params::default(), &mut |_, _| None),
+            router: Router::default(),
             tsk_walk: vec![],
             tsk_drive: vec![],
             tsk_walk_off: vec![],
@@ -401,6 +410,7 @@ impl Sim {
             pending: vec![],
         };
         sim.ledger = Ledger::new(sim.params.starting_cash, sim.clock.month());
+        sim.router = Router::new(&sim.input, &sim.graph);
         sim.car_free = sim.skim_car(&sim.link_time.clone());
         sim.hbo = sim.gravity_other();
         sim.rebuild_transit();
@@ -926,7 +936,10 @@ impl Sim {
             .enumerate()
             .filter_map(|(i, l)| l.as_ref().map(|l| (i as u32, l)))
             .collect();
-        self.net = TransitNet::build(&active, &self.zpts, &self.params);
+        let (router, graph) = (&mut self.router, &self.graph);
+        self.net = TransitNet::build(&active, &self.zpts, &self.params, &mut |a, b| {
+            router.route(graph, a, b)
+        });
     }
 
     /// Mode choice on current skims, transit loading, and results.
@@ -1068,6 +1081,7 @@ impl Sim {
                         0.0
                     },
                     segment_loads: loads.seg[li].clone(),
+                    segment_shapes: l.seg_shape.clone(),
                 }
             })
             .collect()

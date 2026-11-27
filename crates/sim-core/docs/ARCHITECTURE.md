@@ -13,7 +13,8 @@ math is in [MODEL.md](MODEL.md); the API and schema are in the
 | `params.rs` | `Params` (every tunable number), per-mode defaults, road lane capacity | schema |
 | `geo.rs` | Equirectangular distance and offsets | none |
 | `graph.rs` | Road graph (CSR), Dijkstra tree, distance/toll along the tree, all-or-nothing loading | params, schema |
-| `transit.rs` | Transit platforms and edges, stop coverage, path search (`Searcher`), passenger loading (`LineLoads`) | geo, params, schema |
+| `transit.rs` | Transit platforms and edges, stop coverage, path search (`Searcher`), passenger loading (`LineLoads`) | geo, params, schema, roads (`Route`) |
+| `roads.rs` | Road routing for bus, trolleybus and BRT: snap stops to the contracted graph, A* by distance, route cache, street shapes (SIM-8) | geo, graph, schema |
 | `model.rs` | `Sim`: demand, skims, mode choice, feedback loop, results | everything above |
 | `clock.rs` | The one game clock | none |
 | `economy.rs` | Capital cost, federal grant gate, `Bond` amortization, `Ledger` with monthly settlement and the bankruptcy rule | model (`LineResult`), params |

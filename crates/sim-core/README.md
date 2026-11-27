@@ -124,7 +124,11 @@ let days_crossed = sim.tick(real_dt_seconds);
 boardings_by_stop` (aligned with the line's `stops`), `passenger_km,
 max_segment_load, peak_hour_load, peak_hour_capacity, vehicles_required,
 revenue_hours_per_day, operating_cost_per_day, fare_revenue_per_day,
-farebox_recovery, segment_loads` (`[forward, reverse]` per stop pair).
+farebox_recovery, segment_loads` (`[forward, reverse]` per stop pair),
+`segment_shapes` (bus, trolleybus and BRT: the street route per stop pair as
+`[lon, lat]` points from stop to stop; an empty entry means a straight
+fallback segment; empty for other modes, SIM-8). `LinePreview::line` carries
+it too, so a draft snaps to streets while it is drawn.
 
 Errors are `SimError(String)` with a readable message (bad JSON, dangling ids,
 a line with one stop, an unknown line id).

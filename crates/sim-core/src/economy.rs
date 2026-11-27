@@ -267,6 +267,7 @@ mod tests {
             fare_revenue_per_day: fares,
             farebox_recovery: 0.0,
             segment_loads: vec![],
+            segment_shapes: vec![],
         }
     }
 

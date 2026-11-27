@@ -111,8 +111,9 @@ soon as every zone's road node is reached. Same-zone or same-node trips use
 the intrazonal distance x `detour_factor [1.3]` at 25 km/h.
 
 **Transit graph.** One platform per (line, stop). Edges:
-- Ride: between consecutive stops in both directions. Time = straight-line
-  distance x mode alignment factor / running speed + dwell.
+- Ride: between consecutive stops in both directions. Time = segment km /
+  running speed + dwell. Segment km is the street route for road modes (see
+  below), else straight-line distance x the mode's `alignment_factor`.
 - Transfer: between platforms of different lines within `transfer_walk_km [0.4]`.
   Cost = walk + wait for the new line + `transfer_penalty_min [5]` + any fare
   difference.
@@ -120,6 +121,27 @@ the intrazonal distance x `detour_factor [1.3]` at 25 km/h.
 - Park-and-ride access: drive from the origin to stops flagged `park_ride`
   within `pnr_max_drive_min [25]`, plus `pnr_park_min [3]`. Drive time comes from
   the car skim to the zone nearest the stop.
+
+**Road routing for bus, trolleybus and BRT (SIM-8).** Code:
+[src/roads.rs](../src/roads.rs). Each stop snaps to the nearest routable road
+node (a node of the contracted graph) within `SNAP_KM [0.5]`. Between two
+snapped nodes, A* on free-flow distance (straight-line heuristic) finds the
+shortest directed path; its km, plus the two stop-to-node hops, replaces
+straight km x `alignment_factor`. The running speed stays the mode speed, so
+congestion does not slow buses yet. The segment falls back to the factor if a
+stop is over 0.5 km from a routable node, no path exists, or the route is over
+`MAX_DETOUR [2.5]` x the straight line (a bad snap onto a one-way loop or across
+a river). Routes are cached per node pair, so re-evaluating every line on an
+edit only routes new stop pairs (a 50-stop bus adds no measurable time on real
+Travis). Contracted edges are expanded through their member links back to node
+coordinates, giving `LineResult::segment_shapes` for the app to draw.
+
+Check on real Travis: routing 40 CapMetro bus routes from `transit.json` at
+their OSM stops snaps 95% of 1,498 segments, with overall circuity (route km /
+straight km) 1.27, median 1.22, 90th percentile 1.76. That is close to the bus
+`alignment_factor [1.25]` it replaces, so the factor stays as the fallback.
+Rail and other guided modes keep the factor: their alignments are not on the
+road graph.
 
 Expected wait `= h/2` for headways up to 12 minutes and `6 + (h - 12)/4` beyond:
 riders time their arrival for infrequent service, so a 60-minute headway costs
