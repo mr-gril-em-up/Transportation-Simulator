@@ -38,14 +38,14 @@ gantt
     v0.1.0                                     :milestone, r01, 2026-12-08, 0d
 
     section M1 The loop (Travis)
-    Car skims and road assignment (BPR)        :        f11, 2026-12-09, 6d
-    Transit skims and park-and-ride access     :        f12, 2026-12-09, 7d
-    Non-work trips (NHTS rates, gravity)       :        f13, 2026-12-09, 6d
-    Sim API and app message interface          :        f15, 2026-12-09, 5d
-    Logit mode split, ASC calibration          :        f14, after f11, 6d
+    Car skims and road assignment (BPR)        :done,   f11, 2026-11-27, 1d
+    Transit skims and park-and-ride access     :done,   f12, 2026-11-27, 1d
+    Non-work trips (NHTS rates, gravity)       :active, f13, 2026-12-09, 6d
+    Sim API and app message interface          :active, f15, 2026-12-09, 5d
+    Logit mode split, ASC calibration          :active, f14, after f11, 6d
     Line drawing tool                          :        f16, after f15, 6d
     Ridership readout                          :        f17, after f14, 3d
-    Incremental re-run under 2 s               :crit,   f18, after f14, 5d
+    Incremental re-run under 2 s               :active, crit, f18, after f14, 5d
     Red Line calibration (GTFS, NTD)           :crit,   f19, after f17, 5d
     Holiday slack                              :        f1h, 2026-12-24, 9d
     v0.2.0                                     :milestone, r02, 2027-01-05, 0d
@@ -116,14 +116,14 @@ Goal: the core loop. Draw a transit line, see ridership respond in under 2 secon
 
 | ID | Feature | Area | Depends on | Done when | Status |
 |---|---|---|---|---|---|
-| F11 | Car travel times: shortest paths on the road graph, static assignment with BPR congestion | core | F03 | Zone-to-zone car skims computed for Travis; congested times exceed free-flow on I-35 at peak | Planned |
-| F12 | Transit skims: walk access and egress, wait (half headway), in-vehicle, transfers; drive-to-transit (park-and-ride) access | core | F03 | Skims exist for every zone pair a line serves; park-and-ride stops offer drive access | Planned |
-| F13 | Non-work trips: NHTS rates by purpose (~3.5 trips/person/day), gravity destinations weighted by OSM POIs and LODES jobs by sector | core, pipeline | F04 | Daily trips per person and purpose split match NHTS within 10%. *Placed in M1 because Red Line calibration (F19) counts all riders, not only commuters.* | Planned |
-| F14 | Multinomial logit mode split on generalized cost (wait and walk weighted ~2x in-vehicle); ASCs calibrated per metro to ACS mode share | core | F11, F12, F13 | Baseline reproduces Travis ACS commute mode shares within 2 points | Planned |
-| F15 | Sim API (`Sim`: build, add/update/remove lines, read results, advance clock) and Tauri command/event interface | core, app | F01, F05 | App calls sim-core through the message interface only, no direct state access | Planned |
+| F11 | Car travel times: shortest paths on the road graph, static assignment with BPR congestion | core | F03 | Zone-to-zone car skims computed for Travis; congested times exceed free-flow on I-35 at peak | Done (#7) |
+| F12 | Transit skims: walk access and egress, wait (half headway), in-vehicle, transfers; drive-to-transit (park-and-ride) access | core | F03 | Skims exist for every zone pair a line serves; park-and-ride stops offer drive access | Done (#7) |
+| F13 | Non-work trips: NHTS rates by purpose (~3.5 trips/person/day), gravity destinations weighted by OSM POIs and LODES jobs by sector | core, pipeline | F04 | Daily trips per person and purpose split match NHTS within 10%. *Placed in M1 because Red Line calibration (F19) counts all riders, not only commuters.* | Partial (#7): single-purpose gravity model on car time, rate in `Params`; no NHTS purpose split or POI weights |
+| F14 | Multinomial logit mode split on generalized cost (wait and walk weighted ~2x in-vehicle); ASCs calibrated per metro to ACS mode share | core | F11, F12, F13 | Baseline reproduces Travis ACS commute mode shares within 2 points | Partial (#7): six-way logit and `calibrate_mode_shares`; not yet calibrated to Travis ACS shares |
+| F15 | Sim API (`Sim`: build, add/update/remove lines, read results, advance clock) and Tauri command/event interface | core, app | F01, F05 | App calls sim-core through the message interface only, no direct state access | Partial (#7): sim-core `Sim` API done; Tauri commands not wired |
 | F16 | Line drawing tool: place stops, pick mode, set headway and fare; preview cost and forecast before commit | app | F15 | A line can be drawn, edited and deleted in the app | Partial (#2): drawing, headway and delete work against the mock sim; no cost preview |
 | F17 | Ridership readout per line and stop | app, core | F14, F16 | Boardings per line and stop shown after each edit | Partial (#2): panel works, mock-backed |
-| F18 | Incremental re-evaluation after a line edit | core | F14 | **A line edit updates ridership in under 2 seconds** on Travis | Planned |
+| F18 | Incremental re-evaluation after a line edit | core | F14 | **A line edit updates ridership in under 2 seconds** on Travis | Partial (#7): line edit re-evaluates in ~20 ms on a synthetic Travis-sized region; confirm on real Travis data |
 | F19 | Calibration harness: CapMetro Red Line replica from GTFS, compared against NTD ridership | core, pipeline | F17 | **Red Line replica forecasts within 30% of reported ridership** | Planned |
 
 MVP transit modes (bus, BRT, tram/light rail, commuter rail, metro, HSR) are entries in one mode table, not separate systems. F12 and F14 must work for all of them from M1; HSR only gets a real test in M3 (F37).
@@ -134,11 +134,11 @@ Goal: turn the loop into a game. Costs and a budget, one shared clock, people yo
 
 | ID | Feature | Area | Depends on | Done when | Status |
 |---|---|---|---|---|---|
-| F21 | One game clock for every tier (1 real s ≈ 1 game min); time-lapse 2x, 10x, 60x and skip-to-next-month; zoom never changes speed | core, app | F15 | Clock rate is identical at every zoom; time-lapse applies to all tiers | Prototype (#2): client clock, 1/2/10/60x, no skip-to-month; moves to sim-core with F15 |
-| F22 | Desired arrival times and departure-time choice (ACS departure-time distributions, late/early penalties) | core | F14, F21 | Jamming the 8:00 peak shifts some trips earlier (peak spreading visible) | Planned |
+| F21 | One game clock for every tier (1 real s ≈ 1 game min); time-lapse 2x, 10x, 60x and skip-to-next-month; zoom never changes speed | core, app | F15 | Clock rate is identical at every zoom; time-lapse applies to all tiers | Prototype (#2, #7): client clock in the app; sim-core `Clock` (1/2/10/60x, skip-to-next-month) and `Sim::tick` ready to replace it |
+| F22 | Desired arrival times and departure-time choice (ACS departure-time distributions, late/early penalties) | core | F14, F21 | Jamming the 8:00 peak shifts some trips earlier (peak spreading visible) | Partial (#7): desired-arrival profile sets the peak-hour share and a transit schedule-delay penalty; no departure-time choice |
 | F23 | Capital cost model from the design doc's cost table; terrain (USGS 3DEP DEM) and land cover (NLCD) multipliers; right-of-way priced by block-group density | core, pipeline | F03 | Build preview shows cost; same line costs more through wetlands, water or dense block groups | Planned |
-| F24 | Construction time compressed 12x by default, realism setting 1x to 24x; bond terms and vehicle lifetimes compress by the same factor; capacity degraded on affected roads during construction | core | F21 | A 6-year light rail line builds in 6 game months at default | Planned |
-| F25 | Operating costs (per revenue hour; road maintenance 2–3% of capital/yr), fares (flat, distance, zone), tolls (per-mile, dynamic), monthly budget settlement | core | F23, F21 | Budget settles monthly; fare change moves riders through the logit model | Planned |
+| F24 | Construction time compressed 12x by default, realism setting 1x to 24x; bond terms and vehicle lifetimes compress by the same factor; capacity degraded on affected roads during construction | core | F21 | A 6-year light rail line builds in 6 game months at default | Partial (#7): `Params::construction_speedup` (12x) and `build_days` only |
+| F25 | Operating costs (per revenue hour; road maintenance 2–3% of capital/yr), fares (flat, distance, zone), tolls (per-mile, dynamic), monthly budget settlement | core | F23, F21 | Budget settles monthly; fare change moves riders through the logit model | Partial (#7): per-line operating cost per revenue hour, flat and distance fares, farebox recovery; no budget or settlement |
 | F26 | Funding: cash, bonds (20–30 yr debt service), federal grants (50–80% match, ridership-per-dollar gate), state appropriation by served population; bankruptcy fail state | core | F25 | Debt service exceeding revenue for 12 months ends the game. *Bankruptcy placed here; elections and loss of mandate are out of the MVP.* | Planned |
 | F27 | Approval score from travel-time savings, construction disruption, fare/toll changes, tax burden | core | F26 | Approval responds to each of the four inputs | Planned |
 | F2e | Tunable exaggeration factor on mode shifts (design doc risk: believability vs fun) | core | F22 | Factor exposed in settings; default chosen from playtest feedback | Planned |
