@@ -14,7 +14,7 @@ use crate::transit::{Access, LineLoads, Searcher, TOd, TransitNet, ZonePt};
 use crate::SimError;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 /// Stable handle for a transit line. Never reused within a `Sim`.
@@ -248,6 +248,23 @@ struct TransitState {
     results: Results,
     pnr_cars: Vec<f64>,
     pnr_penalty: HashMap<(LineId, usize), f64>,
+    loads: LineLoads,
+}
+
+/// What a line edit can change (SIM-21). A transit search only explores the
+/// components (see `TransitNet::comp`) its access platforms are in, so an
+/// origin whose components are the same before and after the edit keeps
+/// its skim row, and a line no re-searched origin reaches keeps its load.
+struct EditScope {
+    /// Origins to re-search; the rest keep their rows.
+    search: Vec<bool>,
+    /// Origins to re-load: those reaching a line whose load can change.
+    load: Vec<bool>,
+    /// Per line of the new net: its index in the old net when its load
+    /// carries over unchanged.
+    keep: Vec<Option<usize>>,
+    /// Old platform index -> new, for park-and-ride ids in kept rows.
+    plat_map: Vec<u32>,
 }
 
 /// Congested shortest-path trees stop at this multiple of the strategic
@@ -372,6 +389,9 @@ pub struct Sim {
     /// Cars parked per platform on the last loading (drive-access commuters
     /// plus half the drive-access other trips).
     pnr_cars: Vec<f64>,
+    /// Daily loads per line of `net` from the last loading (peak and
+    /// off-peak merged), carried over for lines an edit cannot reach (SIM-21).
+    loads: LineLoads,
     /// Mode-choice totals of origins no transit reaches, reused by line
     /// edits while car times and params are unchanged (SIM-17). Keyed by
     /// the params as JSON; `pass` clears the key when car times move.
@@ -571,6 +591,7 @@ impl Sim {
             router: Router::default(),
             pnr_penalty: HashMap::new(),
             pnr_cars: vec![],
+            loads: LineLoads::default(),
             idle_rows: vec![],
             idle_key: None,
             day_job: None,
@@ -1415,9 +1436,18 @@ impl Sim {
             results: self.results.clone(),
             pnr_cars: std::mem::take(&mut self.pnr_cars),
             pnr_penalty: self.pnr_penalty.clone(),
+            loads: std::mem::take(&mut self.loads),
         };
-        self.transit_skims();
-        self.finish(t0, true, None);
+        match self.edit_scope(&saved) {
+            Some(scope) => {
+                self.transit_skims_scoped(&scope, &saved.tsk);
+                self.finish_scoped(t0, true, None, Some((&scope, &saved.loads)));
+            }
+            None => {
+                self.transit_skims();
+                self.finish(t0, true, None);
+            }
+        }
         self.fit_park_and_ride(t0);
         saved
     }
@@ -1436,6 +1466,107 @@ impl Sim {
         self.results = s.results;
         self.pnr_cars = s.pnr_cars;
         self.pnr_penalty = s.pnr_penalty;
+        self.loads = s.loads;
+    }
+
+    /// Which origins and lines the edit from `old` to `self.net` can change,
+    /// or None when it can change all of them (off-peak skims switch on or
+    /// off, or the old state is incomplete).
+    fn edit_scope(&self, old: &TransitState) -> Option<EditScope> {
+        let (on, nn) = (&old.net, &self.net);
+        let z = self.nz;
+        if on.offpeak_differs() != nn.offpeak_differs()
+            || old.tsk[0].len() != z
+            || old.tsk[1].len() != z
+            || old.loads.boardings.len() != on.lines.len()
+        {
+            return None;
+        }
+        let (so, sn) = (on.comp_sigs(), nn.comp_sigs());
+        let (set_o, set_n): (HashSet<u64>, HashSet<u64>) =
+            (so.iter().copied().collect(), sn.iter().copied().collect());
+        let gone: Vec<bool> = so.iter().map(|h| !set_n.contains(h)).collect();
+        let fresh: Vec<bool> = sn.iter().map(|h| !set_o.contains(h)).collect();
+        let search: Vec<bool> = (0..z)
+            .into_par_iter()
+            .map(|i| {
+                self.seed_comps(nn, i).any(|c| fresh[c as usize])
+                    || self.seed_comps(on, i).any(|c| gone[c as usize])
+            })
+            .collect();
+        // Components a re-searched origin reaches: their lines' loads change.
+        let mut touched = fresh.clone();
+        for i in (0..z).filter(|&i| search[i]) {
+            for c in self.seed_comps(nn, i) {
+                touched[c as usize] = true;
+            }
+        }
+        let load = (0..z)
+            .into_par_iter()
+            .map(|i| self.seed_comps(nn, i).any(|c| touched[c as usize]))
+            .collect();
+        let old_line: HashMap<u32, usize> = on
+            .lines
+            .iter()
+            .enumerate()
+            .map(|(k, l)| (l.id, k))
+            .collect();
+        let keep = nn
+            .lines
+            .iter()
+            .map(|l| {
+                let c = nn.comp[l.first_platform as usize] as usize;
+                if touched[c] {
+                    None
+                } else {
+                    old_line.get(&l.id).copied()
+                }
+            })
+            .collect();
+        let new_plat: HashMap<(u32, u32), u32> = nn
+            .platforms
+            .iter()
+            .enumerate()
+            .map(|(k, p)| {
+                let l = &nn.lines[p.line as usize];
+                ((l.id, k as u32 - l.first_platform), k as u32)
+            })
+            .collect();
+        let plat_map = on
+            .platforms
+            .iter()
+            .enumerate()
+            .map(|(k, p)| {
+                let l = &on.lines[p.line as usize];
+                new_plat
+                    .get(&(l.id, k as u32 - l.first_platform))
+                    .copied()
+                    .unwrap_or(NONE)
+            })
+            .collect();
+        Some(EditScope {
+            search,
+            load,
+            keep,
+            plat_map,
+        })
+    }
+
+    /// Components origin `i`'s searches on `net` can seed: those of its walk
+    /// access platforms and of the park-and-ride platforms within the drive
+    /// limit (the same test `Searcher::run` applies).
+    fn seed_comps<'a>(&'a self, net: &'a TransitNet, i: usize) -> impl Iterator<Item = u32> + 'a {
+        let walk = net.walk_access[i]
+            .iter()
+            .map(|&(p, _)| net.comp[p as usize]);
+        let p = &self.params;
+        let drive = net.pnr.iter().filter_map(move |&pl| {
+            let zn = net.platforms[pl as usize].zone_near as usize;
+            let k = self.pairs.find(i, zn)?;
+            let dm = self.car_peak.time[k] as f64 + p.pnr_park_min;
+            (dm.is_finite() && dm <= p.pnr_max_drive_min).then_some(net.comp[pl as usize])
+        });
+        walk.chain(drive)
     }
 
     /// Rebuild the transit network from the active lines; returns the old one.
@@ -1461,6 +1592,18 @@ impl Sim {
 
     /// Mode choice on current skims, transit loading, and results.
     fn finish(&mut self, t0: Instant, stale: bool, rows: Option<Vec<Row>>) {
+        self.finish_scoped(t0, stale, rows, None);
+    }
+
+    /// `finish`; with a scope, only its origins are loaded and the other
+    /// lines keep their old loads (SIM-21).
+    fn finish_scoped(
+        &mut self,
+        t0: Instant,
+        stale: bool,
+        rows: Option<Vec<Row>>,
+        scope: Option<(&EditScope, &LineLoads)>,
+    ) {
         let idle = self.transit_idle();
         let rows = match rows {
             Some(r) => r,
@@ -1519,9 +1662,13 @@ impl Sim {
                 }
             }
         }
-        let mut loads = self.load_transit(&d_walk, &d_drive, false);
+        let only = scope.map(|(s, _)| &s.load[..]);
+        let mut loads = self.load_transit(&d_walk, &d_drive, false, only);
         if off {
-            loads = loads.merge(self.load_transit(&o_walk, &o_drive, true));
+            loads = loads.merge(self.load_transit(&o_walk, &o_drive, true, only));
+        }
+        if let Some((s, old)) = scope {
+            loads.carry(old, &s.keep);
         }
         // Built fresh (not written in place) so `evaluate_in_slot` can move
         // the previous vector aside and back.
@@ -1560,6 +1707,7 @@ impl Sim {
             0.0
         };
         let lines = self.line_results(&loads, transit_peak_factor);
+        self.loads = loads;
 
         let (mut vkm, mut vhr) = (0.0, 0.0);
         for (e, ed) in self.graph.edges.iter().enumerate() {
@@ -1821,6 +1969,66 @@ impl Sim {
         rows.concat()
     }
 
+    /// `transit_skims` for the origins `scope` marks; the others keep their
+    /// rows from `old` (park-and-ride ids renumbered).
+    fn transit_skims_scoped(&mut self, scope: &EditScope, old: &[TSkim; 4]) {
+        let z = self.nz;
+        let (net, p, car, pairs) = (&self.net, &self.params, &self.car_peak, &self.pairs);
+        let off = net.offpeak_differs();
+        let identity = scope
+            .plat_map
+            .iter()
+            .enumerate()
+            .all(|(k, &v)| v == NONE || v as usize == k);
+        let keep_row = |v: &TSkim, i: usize| -> Vec<TOd> {
+            let mut row = v.get(i).cloned().unwrap_or_default();
+            if !identity {
+                for o in &mut row {
+                    if o.pnr_plat != NONE {
+                        o.pnr_plat = scope.plat_map[o.pnr_plat as usize];
+                    }
+                }
+            }
+            row
+        };
+        let rows: Vec<[Vec<TOd>; 4]> = (0..z)
+            .into_par_iter()
+            .map_init(
+                || Searcher::new(net, p, z),
+                |s, i| {
+                    if !scope.search[i] {
+                        return std::array::from_fn(|k| keep_row(&old[k], i));
+                    }
+                    let r = pairs.row(i);
+                    let (cm, ck) = dense_row(pairs.dests(i), &car.time[r.clone()], &car.km[r], z);
+                    let (w, d) = transit_row(s, i, &cm, &ck, false, pairs.dests(i));
+                    let (wo, dofp) = if off {
+                        transit_row(s, i, &cm, &ck, true, pairs.dests(i))
+                    } else {
+                        (vec![], vec![])
+                    };
+                    [w, d, wo, dofp]
+                },
+            )
+            .collect();
+        self.store_tsk(rows, off);
+    }
+
+    fn store_tsk(&mut self, rows: Vec<[Vec<TOd>; 4]>, off: bool) {
+        self.tsk_walk.clear();
+        self.tsk_drive.clear();
+        self.tsk_walk_off.clear();
+        self.tsk_drive_off.clear();
+        for [w, d, wo, dofp] in rows {
+            self.tsk_walk.push(w);
+            self.tsk_drive.push(d);
+            if off {
+                self.tsk_walk_off.push(wo);
+                self.tsk_drive_off.push(dofp);
+            }
+        }
+    }
+
     fn transit_skims(&mut self) {
         let z = self.nz;
         self.tsk_walk_off.clear();
@@ -1849,20 +2057,18 @@ impl Sim {
                 },
             )
             .collect();
-        self.tsk_walk.clear();
-        self.tsk_drive.clear();
-        for [w, d, wo, dofp] in rows {
-            self.tsk_walk.push(w);
-            self.tsk_drive.push(d);
-            if off {
-                self.tsk_walk_off.push(wo);
-                self.tsk_drive_off.push(dofp);
-            }
-        }
+        self.store_tsk(rows, off);
     }
 
     /// Load daily transit demand on peak (`offpeak = false`) or off-peak paths.
-    fn load_transit(&self, d_walk: &[f64], d_drive: &[f64], offpeak: bool) -> LineLoads {
+    /// Only origins `only` marks are loaded (all when None).
+    fn load_transit(
+        &self,
+        d_walk: &[f64],
+        d_drive: &[f64],
+        offpeak: bool,
+        only: Option<&[bool]>,
+    ) -> LineLoads {
         let z = self.nz;
         let net = &self.net;
         if net.is_empty() {
@@ -1878,6 +2084,9 @@ impl Sim {
                     (s, LineLoads::new(net))
                 },
                 |(mut s, mut acc), i| {
+                    if only.is_some_and(|o| !o[i]) {
+                        return (s, acc);
+                    }
                     let r = pairs.row(i);
                     let dests = pairs.dests(i);
                     let mut car_rows = None;
@@ -2377,6 +2586,101 @@ fn same_alignment(a: &TransitLine, b: &TransitLine) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// After each scoped edit, redo the skims and loading in full: skims must
+    /// match exactly and loads to rounding (SIM-21).
+    #[test]
+    fn scoped_line_edits_match_a_full_recompute() {
+        use crate::synth::{generate, straight_line, SynthConfig};
+        // A short drive limit, so park-and-ride users stay on their side
+        // and a removal renumbers rows that are kept.
+        let p = Params {
+            instant_build: true,
+            pnr_max_drive_min: 8.0,
+            ..Params::default()
+        };
+        let mut s = Sim::new(generate(&SynthConfig::small()), p).unwrap();
+        let check = |s: &mut Sim, what: &str| {
+            let skims = format!("{:?}", [&s.tsk_walk, &s.tsk_drive]);
+            let lines = s.results.lines.clone();
+            s.transit_skims();
+            s.finish(Instant::now(), true, None);
+            assert_eq!(
+                format!("{:?}", [&s.tsk_walk, &s.tsk_drive]),
+                skims,
+                "{what}: skims"
+            );
+            assert_eq!(lines.len(), s.results.lines.len(), "{what}");
+            for (a, b) in lines.iter().zip(&s.results.lines) {
+                let close = |x: f64, y: f64| (x - y).abs() <= 1e-9 * (1.0 + y.abs());
+                assert!(
+                    close(a.daily_boardings, b.daily_boardings),
+                    "{what}: {} {} vs {}",
+                    b.name,
+                    a.daily_boardings,
+                    b.daily_boardings
+                );
+                for (x, y) in a
+                    .park_ride_cars_by_stop
+                    .iter()
+                    .zip(&b.park_ride_cars_by_stop)
+                {
+                    assert!(close(*x, *y), "{what}: {} park-and-ride", b.name);
+                }
+                for (x, y) in a.segment_loads.iter().zip(&b.segment_loads) {
+                    assert!(
+                        close(x[0], y[0]) && close(x[1], y[1]),
+                        "{what}: {} segments",
+                        b.name
+                    );
+                }
+            }
+        };
+        // Two networks far apart: rail with park-and-ride in the west, a bus in the east.
+        let rail = s
+            .add_line(straight_line(
+                Mode::LightRail,
+                (-6.0, -6.0),
+                (-6.0, 6.0),
+                1.0,
+                8.0,
+            ))
+            .unwrap();
+        let east = s
+            .add_line(straight_line(Mode::Bus, (6.0, -6.0), (6.0, 6.0), 0.8, 10.0))
+            .unwrap();
+        check(&mut s, "second network");
+        s.add_line(straight_line(Mode::Bus, (3.0, 0.0), (7.0, 0.0), 0.8, 12.0))
+            .unwrap();
+        check(&mut s, "crossing bus joins the east network");
+        let mut slower = straight_line(Mode::Bus, (6.0, -6.0), (6.0, 6.0), 0.8, 10.0);
+        slower.headway_min = 20.0;
+        s.update_line(east, slower).unwrap();
+        check(&mut s, "east headway change");
+        s.remove_line(rail).unwrap();
+        check(&mut s, "first line removed (platforms renumbered)");
+        s.add_line(straight_line(
+            Mode::LightRail,
+            (-5.0, -6.0),
+            (-5.0, 6.0),
+            1.0,
+            8.0,
+        ))
+        .unwrap();
+        check(
+            &mut s,
+            "west rail back, park-and-ride ids after the east lines",
+        );
+        s.preview_line(straight_line(
+            Mode::Bus,
+            (-7.0, 2.0),
+            (-3.0, 2.0),
+            0.8,
+            10.0,
+        ))
+        .unwrap();
+        check(&mut s, "after a preview");
+    }
 
     #[test]
     fn logit_sums_to_one_and_respects_availability() {
