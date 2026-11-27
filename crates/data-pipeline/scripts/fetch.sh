@@ -54,16 +54,21 @@ if [[ ! -s "$RAW/tl_2020_48_bg.dbf" ]]; then
     echo "warning: TIGER download failed; zones will have no land area" >&2
   fi
 fi
-# CapMetro GTFS (weekday headways for existing routes). Optional, small.
-if [[ -z "${SKIP_OSM:-}" && ! -s "$RAW/gtfs_capmetro/routes.txt" ]]; then
-  echo "get  CapMetro GTFS"
-  if curl -fsSL --retry 5 --retry-all-errors --retry-delay 15 -o "$RAW/capmetro_gtfs.zip" \
-       https://data.austintexas.gov/download/r4v4-vz24/application/zip \
-     && unzip -o -q -j "$RAW/capmetro_gtfs.zip" '*routes.txt' '*trips.txt' '*stop_times.txt' '*calendar*.txt' -d "$RAW/gtfs_capmetro"; then
-    echo "     $(($(wc -l < "$RAW/gtfs_capmetro/trips.txt") - 1)) GTFS trips"
-  else
-    echo "warning: CapMetro GTFS download failed; routes have no headways" >&2
-  fi
+# GTFS static feeds, one per agency in reference/gtfs_feeds.csv (headways and
+# stops for today's network, DATA-6/DATA-9). Optional, small; a feed that
+# fails to download only drops that agency's lines.
+if [[ -z "${SKIP_OSM:-}" ]]; then
+  while IFS=, read -r id agency url fallback _; do
+    dir="$RAW/gtfs/$id"
+    if [[ -s "$dir/routes.txt" ]]; then echo "have $dir"; continue; fi
+    if get "gtfs_$id.zip" "$url" ${fallback:+"$fallback"} \
+       && { unzip -o -q -j "$RAW/gtfs_$id.zip" '*routes.txt' '*trips.txt' '*stop_times.txt' '*stops.txt' '*calendar*.txt' -d "$dir" \
+            || [[ -s "$dir/routes.txt" && -s "$dir/stop_times.txt" ]]; }; then
+      echo "     $agency: $(($(wc -l < "$dir/trips.txt") - 1)) GTFS trips"
+    else
+      echo "warning: $agency GTFS download failed; its routes have no headways" >&2
+    fi
+  done < <(tail -n +2 reference/gtfs_feeds.csv)
 fi
 # OpenStreetMap Texas extract (ODbL, attribution required).
 [[ -n "${SKIP_OSM:-}" ]] || get texas-latest.osm.pbf https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf

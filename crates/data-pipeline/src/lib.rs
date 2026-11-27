@@ -80,6 +80,8 @@ pub struct Manifest {
     pub existing_lines: usize,
     /// OSM transit routes given GTFS headways (`null` without a GTFS feed).
     pub gtfs_routes_matched: Option<usize>,
+    /// GTFS feeds read, with their route counts (DATA-9).
+    pub gtfs_feeds: Vec<String>,
     /// `all` or `highway` (`--roads`).
     pub road_classes: &'static str,
     /// `block_group`, `tract` or `county`.
@@ -172,6 +174,7 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         area_zones: None,
         commute_mode_shares: None,
         gtfs_routes_matched: None,
+        gtfs_feeds: Vec::new(),
         existing_lines: 0,
         road_classes: if cfg.highway_only { "highway" } else { "all" },
         zone_level: cfg.level.name(),
@@ -252,17 +255,42 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
                 ]
             });
         let (r, mut transit) = osm::read_osm(&pbf, &bbox, cfg.highway_only)?;
-        let gtfs_dir = raw.join("gtfs_capmetro");
-        if gtfs_dir.join("routes.txt").exists() {
-            let hw = gtfs::read_headways(&gtfs_dir)?;
+        let mut feeds = Vec::new();
+        for feed in gtfs::feeds() {
+            let dir = raw.join("gtfs").join(&feed.id);
+            if !dir.join("routes.txt").exists() {
+                continue;
+            }
+            let hw = match gtfs::read_headways(&dir) {
+                Ok(hw) => hw,
+                Err(e) => {
+                    eprintln!("warning: {} GTFS unreadable, skipped: {e:#}", feed.agency);
+                    continue;
+                }
+            };
             let mut keys: Vec<_> = hw.iter().collect();
             keys.sort_by(|a, b| a.0.cmp(b.0));
             for (k, h) in keys {
-                eprintln!("gtfs route {k}: {h:?}");
+                eprintln!(
+                    "gtfs {} {k}: type {:?} peak {:?} midday {:?} span {} stops {}",
+                    feed.id,
+                    h.route_type,
+                    h.peak_headway_min,
+                    h.midday_headway_min,
+                    h.span_hours,
+                    h.stops.len()
+                );
             }
-            m.gtfs_routes_matched = Some(gtfs::apply(&mut transit, &hw));
+            if feed.id == "capmetro" {
+                m.gtfs_routes_matched = Some(gtfs::apply(&mut transit, &hw));
+            }
+            m.gtfs_feeds
+                .push(format!("{} ({} routes)", feed.agency, hw.len()));
+            feeds.push((feed, hw));
+        }
+        if !feeds.is_empty() {
             m.sources
-                .push("Capital Metro GTFS static feed, via data.austintexas.gov");
+                .push("Agency GTFS static feeds listed in reference/gtfs_feeds.csv");
         }
         m.bbox = Some(bbox);
         m.road_nodes = Some(r.nodes.len());
@@ -272,7 +300,7 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         m.transit_routes = Some(transit.routes.len());
         m.rail_routes = Some(rail_summary(&transit));
         write_json(&cfg.out, "roads.json", &r)?;
-        existing = lines::existing_lines(&transit);
+        existing = lines::existing_lines(&feeds, &bbox);
         write_json(&cfg.out, "existing_lines.json", &existing)?;
         write_json(&cfg.out, "transit.json", &transit)?;
         roads = Some(r);

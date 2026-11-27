@@ -1,0 +1,9 @@
+id,agency,url,fallback_url,source
+capmetro,CapMetro,https://data.austintexas.gov/download/r4v4-vz24/application/zip,,data.austintexas.gov dataset r4v4-vz24
+dart,DART,https://www.dart.org/transitdata/latest/google_transit.zip,https://files.mobilitydatabase.org/mdb-152/mdb-152-202611190146/mdb-152-202611190146.zip,DART developer resources; Mobility Database mdb-152
+metro,METRO,https://metro.resourcespace.com/pages/download.php?ref=4835&ext=zip,https://files.mobilitydatabase.org/mdb-2060/mdb-2060-202611210008/mdb-2060-202611210008.zip,Houston METRO digital assets; Mobility Database mdb-2060
+trinity,Trinity Metro,https://gtfsdata.ridetm.org/gtfs/fwtatransitdata.zip,https://files.mobilitydatabase.org/mdb-2890/mdb-2890-202610150019/mdb-2890-202610150019.zip,ridetrinitymetro.org/gtfs-data; Mobility Database mdb-2890
+dcta,DCTA,https://gtfs.remix.com/dcta_denton_tx_us.zip,,dcta.net GTFS data for developers
+via,VIA,https://via.madcollective.com/wp-content/uploads/2025/06/google_transit.zip,,VIA developer resources (data files)
+ccrta,CCRTA,https://www.ccrta.org/gtfs/ccrta-gtfs.zip,https://files.mobilitydatabase.org/mdb-315/mdb-315-202505020237/mdb-315-202505020237.zip,Corpus Christi RTA; Mobility Database mdb-315
+epct,El Paso County Transit,https://rapid.nationalrtap.org/GTFSFileManagement/UserUploadFiles/11511/GTFS_EPCT.zip,https://files.mobilitydatabase.org/mdb-3419/mdb-3419-202611150120/mdb-3419-202611150120.zip,Mobility Database mdb-3419
