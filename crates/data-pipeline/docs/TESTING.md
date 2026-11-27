@@ -41,3 +41,20 @@ After `./scripts/fetch.sh && cargo run --release` (or the Actions workflow), ope
 6. `transit_routes` includes the CapMetro Red Line (`mode` `train`) and MetroRapid routes; grep `transit.json` for `"Red Line"`.
 
 `scenario.json` is validated during the build, so a successful run already guarantees referential integrity.
+
+## First real build (2026-11-27)
+
+Actions run [45932728431](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45932728431), Travis County, LODES 2023, Geofabrik extract of that day. Download 695 MB; build 58 s on a GitHub runner; `validate()` passed.
+
+| Manifest field | Value | Check |
+|---|---|---|
+| `zones` | 766 | Plausible for 1.29M people |
+| `population` | 1,290,188 | Exact match to the 2020 census Travis County total |
+| `resident_workers` / `jobs` | 646,869 / 947,590 | Travis is a net job importer |
+| `internal_commuters` | 442,116 | 68% of resident workers stay in the county |
+| `commute_out` / `commute_in` | 197,805 / 498,758 | Large inflow from Williamson, Hays and Bastrop |
+| `flows` | 148,257 block-group pairs | |
+| `road_nodes` / `road_edges` / `road_km` | 93,461 / 121,367 / 18,530 km | The rectangular clip box includes parts of neighboring counties, so road km exceeds Travis alone |
+| `transit_routes` | 158 | Red Line presence not yet checked (artifact not inspected) |
+
+Largest flow: 183 workers from block group 484530003081 to 484530004013 (downtown). Not yet done: comparing the top 20 against OnTheMap independently (F07).
