@@ -271,6 +271,8 @@ impl TransitNet {
             }
         }
         // Zone access and egress. `coverage` is zero beyond radius + big_r.
+        // Keep the two lists symmetric: SIM-21's scoped edits are exact only
+        // because a zone's access platforms are the ones that egress to it.
         let mut walk_access = vec![Vec::new(); zones.len()];
         let mut egress = vec![Vec::new(); platforms.len()];
         let mut cov = vec![0.0f64; zones.len()];
