@@ -433,7 +433,7 @@ impl Sim {
     }
 
     /// Road volumes to save and pass to `new_warm` next time. Small: one
-    /// number per contracted road edge (~2 MB statewide as JSON).
+    /// number per contracted road edge (~3.5 MB statewide as JSON).
     pub fn road_state(&self) -> RoadState {
         RoadState {
             fingerprint: self.graph.fingerprint(),

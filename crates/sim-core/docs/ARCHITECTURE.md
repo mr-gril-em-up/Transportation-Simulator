@@ -11,7 +11,7 @@ math is in [MODEL.md](MODEL.md); the API and schema are in the
 | `schema.rs` | Input types (serde). The contract with `data-pipeline`. | serde |
 | `lib.rs` | Re-exports, `SimError`, `ScenarioInput::validate` | all |
 | `params.rs` | `Params` (every tunable number), per-mode defaults, road lane capacity | schema |
-| `geo.rs` | Equirectangular distance and offsets | none |
+| `geo.rs` | Equirectangular distance and offsets, `PointGrid` radius and nearest-point queries (SIM-20) | none |
 | `graph.rs` | Road graph (CSR), Dijkstra tree, distance/toll along the tree, all-or-nothing loading | params, schema |
 | `transit.rs` | Transit platforms and edges, stop coverage, path search (`Searcher`), passenger loading (`LineLoads`) | geo, params, schema, roads (`Route`) |
 | `roads.rs` | Road routing for bus, trolleybus and BRT: snap stops to the contracted graph, A* by distance, route cache, street shapes (SIM-8) | geo, graph, schema |
@@ -324,6 +324,38 @@ free-flow time and capacity, so it is stable across Rust versions);
 peak 40 km/h (cold: 70.9 s, 33 km/h). A state whose fingerprint or length
 does not match is ignored, so a rebuilt scenario starts cold. The app can
 ship a state with each scenario release, or save one when a game closes.
+The fingerprint covers the road graph only, not demand: a state saved under
+other params, mode constants, existing lines or a recalibrated release on the
+same roads is accepted. It is a starting guess, not a checked result: the
+warm day's Frank-Wolfe step moves it toward the new demand, so a mismatched
+save costs accuracy on day 1, not correctness.
+
+**Transit network build at statewide scale (SIM-20).** With every Texas
+agency's GTFS loaded (455 lines, 19.5k stops) a line edit took 8.2 s, and
+4.5 s of it was `TransitNet::build` comparing every stop with every other
+stop (transfers) and with every tract (access, egress, nearest zone).
+`geo::PointGrid` buckets points by lon/lat cell; `near` returns every point
+that can lie within a radius, sorted by index, and the caller keeps its exact
+distance test, so the lists and their order are the same as the all-pairs
+scans. The longitude span is widened by the smallest cosine inside the
+query's latitude band, so no point within the radius is missed. `nearest`
+grows the radius until the best hit lies inside it. `Searcher` also stops
+clearing every platform and zone before each search: it resets only what the
+last run touched, and sorts the touched platforms before egress so ties
+resolve in the same order. Statewide, 455 lines, 4 cores:
+
+| | Network rebuild | Line edit (preview / add) | Longest budgeted-day call |
+|---|---|---|---|
+| Before | 4.5 s | 8.2 s / 8.1 s | 3.7 s |
+| After | **0.15 s** | **4.9 s / 4.6 s** | 3.1 s |
+
+Travis results are bit-identical (`DUMP=` output of `examples/statewide.rs`
+with one rayon thread; with more threads parallel float sums already differ
+in the last bit between runs). What is left of the edit: transit skims
+1.8 s, ridership loading 1.8 s (both re-search every origin with transit),
+and 0.75 s flattening per-pair vectors; the longest day call is the same
+loading in the day's final slice. Next: re-search and re-load only the
+transit networks an edit can reach.
 
 ## Testing
 
@@ -333,7 +365,7 @@ ship a state with each scenario release, or save one when a game closes.
 | `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), warm start from saved roads matches and rejects another graph (SIM-19), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share, bond rate and term) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
-| unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit, grant gate and settlement arithmetic |
+| unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, `PointGrid` matches brute force, clock rates, logit, grant gate and settlement arithmetic |
 | `examples/bench.rs` | Travis-sized timing (synthetic, or a real `scenario.json`); asserts a line edit < 2 s |
 | `examples/redline.rs` | F19 probe: Red Line from real stops on a real build, boardings per stop |
 
