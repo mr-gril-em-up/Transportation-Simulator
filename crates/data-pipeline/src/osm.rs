@@ -312,6 +312,9 @@ fn build_transit(
                     r#ref: r.r#ref,
                     name: r.name,
                     operator: r.operator,
+                    peak_headway_min: None,
+                    midday_headway_min: None,
+                    span_hours: None,
                     stops,
                 })
         })

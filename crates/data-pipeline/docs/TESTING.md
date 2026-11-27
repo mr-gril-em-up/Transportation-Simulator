@@ -19,6 +19,8 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `county_level_merges_block_groups` | `tests/sample.rs` | `--level county` on the whole sample: 5 block groups become 2 counties, totals unchanged, 5-digit GEOIDs, manifest `zone_level` and `block_groups`, `scenario.json` validates |
 | `tracts_merge_counts_weights_and_flows` | `src/aggregate.rs` | Tract merge: sums, population-weighted centroid and income, area only when complete, unpopulated tract, flows summed with intrazonal kept; county merge |
 | `commute_shares_sum_listed_block_groups` | `src/acs.rs` | B08301 shares sum only the listed block groups, skip county rows, and add to 1 |
+| `headways_from_a_tiny_feed` | `src/gtfs.rs` | Busiest-Wednesday service selection with a calendar_dates removal, weekend service ignored, busier direction chosen, peak and midday headways, span, empty windows give `None` |
+| `dates_and_weekdays` | `src/gtfs.rs` | GTFS date to day number, Wednesday test, times past 24:00 |
 | `acs_parses_and_flags_suppressed` | `src/acs.rs` | Summary-file table parsing (block-group rows only, state row skipped), suppressed sentinels, blanks and zero-household rows become `None` |
 | `zones_without_header_row` | `src/census.rs` | Centers of Population file without a header |
 | `simplify_contracts_chains_and_prunes_dead_ends` | `src/scenario.rs` | Dead-end pruning, fragment removal, contraction only across equal speed and lanes, one-way contraction only when traffic flows through, summed lengths |

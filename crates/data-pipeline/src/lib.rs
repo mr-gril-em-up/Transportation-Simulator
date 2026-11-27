@@ -4,6 +4,7 @@
 pub mod acs;
 pub mod aggregate;
 pub mod census;
+pub mod gtfs;
 pub mod model;
 pub mod osm;
 pub mod scenario;
@@ -68,6 +69,8 @@ pub struct Manifest {
     /// Area-wide ACS commute mode shares (B08301), for calibration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commute_mode_shares: Option<acs::CommuteShares>,
+    /// OSM transit routes given GTFS headways (`null` without a GTFS feed).
+    pub gtfs_routes_matched: Option<usize>,
     /// `block_group`, `tract` or `county`.
     pub zone_level: &'static str,
     /// Block groups merged into `zones` (equals `zones` at block group level).
@@ -157,6 +160,7 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         acs_zero_car_zones: None,
         area_zones: None,
         commute_mode_shares: None,
+        gtfs_routes_matched: None,
         zone_level: cfg.level.name(),
         block_groups: zones.len(),
     };
@@ -233,7 +237,14 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
                     b[3].max(z.lat + mg),
                 ]
             });
-        let (r, transit) = osm::read_osm(&pbf, &bbox)?;
+        let (r, mut transit) = osm::read_osm(&pbf, &bbox)?;
+        let gtfs_dir = raw.join("gtfs_capmetro");
+        if gtfs_dir.join("routes.txt").exists() {
+            let hw = gtfs::read_headways(&gtfs_dir)?;
+            m.gtfs_routes_matched = Some(gtfs::apply(&mut transit, &hw));
+            m.sources
+                .push("Capital Metro GTFS static feed, via data.austintexas.gov");
+        }
         m.bbox = Some(bbox);
         m.road_nodes = Some(r.nodes.len());
         m.road_edges = Some(r.edges.len());
