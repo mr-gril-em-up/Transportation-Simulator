@@ -18,7 +18,7 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `whole_state_area_keeps_both_counties` | `tests/sample.rs` | `--area 48` keeps both counties; flows between them become internal; census-only build (no PBF) still validates |
 | `zones_without_header_row` | `src/census.rs` | Centers of Population file without a header |
 | `simplify_contracts_chains_and_prunes_dead_ends` | `src/scenario.rs` | Dead-end pruning, fragment removal, contraction only across equal speed and lanes, one-way contraction only when traffic flows through, summed lengths |
-| `speeds`, `distance` | `src/osm.rs` | `maxspeed` parsing; haversine length |
+| `speeds`, `distance` | `src/osm.rs` | `maxspeed` parsing, including rejecting 0, negative, NaN, inf and >200 km/h; haversine length |
 
 ## The synthetic Travis sample
 
