@@ -30,3 +30,9 @@ button.on { background: #1b1d22; color: #fff; border-color: #1b1d22; }
 #budget .warn { color: #8a5a00; margin-top: 4px; }
 #budget .alert { color: #fff; background: #b00; padding: 4px 6px; border-radius: 4px; margin-top: 4px; }
 #budget .row { margin-top: 4px; }
+#budget details { margin-top: 6px; }
+#budget summary { cursor: pointer; }
+#budget table { border-collapse: collapse; margin-top: 4px; width: 100%; }
+#budget th, #budget td { padding: 1px 4px; text-align: right; white-space: nowrap; }
+#budget td:first-child { text-align: left; }
+#budget tr.total td { border-top: 1px solid #ccc; font-weight: 600; }

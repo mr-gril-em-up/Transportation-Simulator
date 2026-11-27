@@ -151,6 +151,7 @@ export class MockSim implements SimClient {
     bankruptMonth: null,
     bondRate: 0.0543,
     bondTermMonths: 360,
+    statements: [], // the mock never settles a month
   };
 
   async upsertRoute(route: RouteSpec): Promise<RouteResult[]> {

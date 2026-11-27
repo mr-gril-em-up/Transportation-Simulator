@@ -149,6 +149,14 @@ banner and offers bond sizes (deficit cover first). The bond button goes
 through the serial sim queue like every other call. The mock adds cash and
 debt but never settles months, so it shows no payments or distress.
 
+Monthly statements come from `Ledger.history` (oldest first in sim-core).
+`fromLedger` keeps the last `STATEMENT_MONTHS` (12), newest first, as
+camelCase `Statement`s; `renderStatements` shows two of them and derives
+the operating surplus the same way as sim-core's
+`MonthStatement::operating_surplus`. The budget is re-rendered on every day
+change, so the open state of the `<details>` lives in `statementsOpen`,
+updated by a capture-phase `toggle` listener (the event does not bubble).
+
 ### Construction period (F24)
 
 The shell builds the Sim with `Params { instant_build: false, ..default }`

@@ -2,7 +2,7 @@
 // app/src-tauri/src/sim.rs. Converts the app's RouteSpec to sim-core's
 // TransitLine and LineResult back to RouteResult.
 import { invoke } from "@tauri-apps/api/core";
-import { isRegional, type Budget, type PendingRoute, type ClockState, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
+import { isRegional, STATEMENT_MONTHS, type Budget, type Statement, type PendingRoute, type ClockState, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 /** sim-core TransitLine (crates/sim-core/src/schema.rs). Omitted fields take mode defaults. */
 interface TransitLine {
@@ -31,10 +31,26 @@ interface LinePreview {
   opens_day: number; // added by the shell (PreviewOut)
 }
 
+/** sim-core MonthStatement (crates/sim-core/src/economy.rs). */
+interface MonthStatement {
+  month: number;
+  fare_revenue: number;
+  operating_cost: number;
+  operating_assistance: number;
+  local_tax: number;
+  capital_spent: number;
+  federal_capital_grants: number;
+  bond_proceeds: number;
+  debt_service: number;
+  interest: number;
+  net: number;
+}
+
 /** sim-core Ledger (crates/sim-core/src/economy.rs), fields used here. */
 interface Ledger {
   cash: number;
   current: { capital_spent: number; federal_capital_grants: number };
+  history: MonthStatement[]; // oldest first
   distressed_months: number;
   bankrupt_month: number | null;
   // Added by the shell (LedgerOut):
@@ -53,6 +69,20 @@ export const fromPreview = (p: LinePreview): RoutePreview => ({
   opensDay: p.opens_day,
 });
 
+const fromStatement = (m: MonthStatement): Statement => ({
+  month: m.month,
+  fares: m.fare_revenue,
+  operatingCost: m.operating_cost,
+  operatingAssistance: m.operating_assistance,
+  localTax: m.local_tax,
+  capitalSpent: m.capital_spent,
+  federalGrants: m.federal_capital_grants,
+  bondProceeds: m.bond_proceeds,
+  debtService: m.debt_service,
+  interest: m.interest,
+  net: m.net,
+});
+
 export const fromLedger = (l: Ledger): Budget => ({
   cash: l.cash,
   capitalSpentThisMonth: l.current.capital_spent,
@@ -64,6 +94,7 @@ export const fromLedger = (l: Ledger): Budget => ({
   bankruptMonth: l.bankrupt_month,
   bondRate: l.bond_rate,
   bondTermMonths: l.bond_term_months,
+  statements: l.history.slice(-STATEMENT_MONTHS).reverse().map(fromStatement),
 });
 
 /** sim-core Clock (crates/sim-core/src/clock.rs) plus `day`, from the shell's ClockOut. */

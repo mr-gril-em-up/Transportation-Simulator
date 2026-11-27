@@ -14,6 +14,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
 ![Editing a line: stops ringed in black can be dragged, added or deleted](docs/img/stop-editing.png)
 ![Budget after a bond: debt, payments and the distress count toward bankruptcy](docs/img/bonds.png)
+![Monthly statements: two closed months of fares, costs, tax, debt and capital](docs/img/statements.png)
 ![A line under construction: faded on the map, opening day in the panel](docs/img/under-construction.png)
 ![Sim-driven clock after Skip to next month: Day 31, budget settled, ridership re-run](docs/img/sim-clock.png)
 ![Drawing a rail line: the hint box previews capital cost, grant and riders before you build](docs/img/cost-preview.png)
@@ -85,6 +86,12 @@ then waits for the build. The terminal prints
   month's capital spend and federal grants. Building charges capital less any grant; extending a
   line charges only the added cost; shrinking or deleting refunds nothing (sim-core rules, F26).
   Cash starts at $0, so the first line puts it below zero.
+- **Monthly statements** (F26, under the budget, click to open): the last two closed months side
+  by side, newest first. Rows: fares, operating assistance, local sales tax, operating cost,
+  operating surplus, debt payments, capital spent, federal capital grants, bonds issued, change in
+  cash; the interest part of the last month's payments shows below. Fares, operating cost and tax
+  are booked only when a month ends, so the table is empty until the first one closes. It stays
+  open across the daily refresh.
 - **Bonds and bankruptcy** (F26, in the budget panel): pick an amount (the first option covers the
   current deficit, rounded up to $10M) and **Issue bond**. Cash arrives at once; monthly payments
   (30-year level payment at 5.43%, the rates in the button tooltip) start next month. The panel
@@ -165,7 +172,9 @@ interface SimClient {
   daily rider exceeds $600k), optional `operatingCostPerDay`.
 - `Budget`: `cash`, `capitalSpentThisMonth`, `grantsThisMonth`, `debt`, `debtServicePerMonth` (all
   USD), `distressedMonths`, `bankruptcyMonths` (12), `bankruptMonth` (game month or `null`),
-  `bondRate`, `bondTermMonths`.
+  `bondRate`, `bondTermMonths`, `statements` (settled months, newest first, at most 12: `month`,
+  `fares`, `operatingCost`, `operatingAssistance`, `localTax`, `capitalSpent`, `federalGrants`,
+  `bondProceeds`, `debtService`, `interest`, `net`).
 
 - `RouteSpec`: `id` (client string, `r1`, `r2`, ...), `name`, `mode`, `color`, `stops[]`
   (`id`, `name`, `lngLat` as WGS84 `[lon, lat]` in degrees), `headwayMin` (peak minutes), optional `offpeakHeadwayMin` (midday and evening; absent means
@@ -253,7 +262,6 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | Desire lines are straight zone-to-zone chords capped at 300 pairs; no filtering by purpose or mode | F06 follow-up if playtests want it |
 | The browser mock builds instantly (no construction period) | Not planned: construction rules live in sim-core |
 | Cost preview only while drawing; a stop edit is charged on release with no preview first (the budget shows what it cost) | F16 follow-up if it matters in play |
-| No monthly statement view; settlement shows only as the cash change | Budget panel (M2) |
 | A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (well under a second on the synthetic region, about 2 s on real Travis) | Fine for M1; revisit with the statewide scenario (M3) |
 | `npm run tauri build` bundles no scenario: an installed app on another machine opens on the synthetic region | Bundle the build as a Tauri resource when packaging matters (M3 release) |
 | Startup on real Travis takes about 11 s in `tauri dev` (measured before SIM-2 and DATA-2 merged; expect less now) | Re-measure; further gains are sim-core startup work |
@@ -274,7 +282,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | F16 Line drawing | Partial: draw with capital cost, grant and ridership preview; edit stops (move, insert, delete), rename, headway, delete line. Missing: mode and fare pickers |
 | F17 Ridership readout | Done for line totals and per-stop boardings, plus cost and farebox from sim-core |
 | F24 Construction period | Done (app): lines under construction draw faded, opening day in panel and drawing hint; rebuilds keep the old version running |
-| F26 Funding | Partial (app): bonds, debt and payments, distress count and bankruptcy banner. Missing: monthly statement view, state appropriation (sim-core) |
+| F26 Funding | Partial (app): bonds, debt and payments, distress count, bankruptcy banner, monthly statements. Missing: state appropriation (sim-core) |
 | F21 Clock and time-lapse | Done (app): sim-core's clock driven by a shell worker; pause, 1/2/10/60x, skip to next month; daily re-run refreshes ridership |
 | F41 / F42 Schematic and morph | Prototype: heuristic layout, no pins |
 | F06 Desire lines | Done (app): layer from `Sim::desire_lines`; the M0 exit check (F07) is the pipeline's |

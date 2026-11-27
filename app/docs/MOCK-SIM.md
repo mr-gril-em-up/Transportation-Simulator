@@ -63,7 +63,8 @@ or commuter rail row. Fleet = round trip at the mock's speed divided by the
 headway, plus one. The grant is 50% when capital per daily rider is at most
 $600k, else 0. `MockSim` keeps a ledger with the same rules as sim-core:
 charge capital less grant on build, charge only the increase on an edit,
-refund nothing. There is no operating settlement in the mock.
+refund nothing. There is no operating settlement in the mock, so
+`statements` is always empty.
 
 The mock ignores `offpeakHeadwayMin` and uses the peak headway for every trip.
 
