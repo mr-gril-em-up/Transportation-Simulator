@@ -224,3 +224,11 @@ shrinks to the capacity ("all you can borrow"). The build preview warns,
 but does not block, when capital after grant exceeds cash plus capacity:
 sim-core charges capital regardless (SIM-9), and the line's own stops raise
 capacity once built, so blocking would stop the first line on every map.
+
+### A31. Existing lines are client routes with shell-chosen ids
+The shell names lines present at start `e0..en` and maps them to sim-core's
+LineIds, so the client edits, deletes, inspects and draws them through the
+same paths as lines the player drew. A separate read-only layer would need
+its own results mapping and would stop the player changing a real route.
+They are grouped in a collapsed section because 61 rows would bury the
+player's own lines.

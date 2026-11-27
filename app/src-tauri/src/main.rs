@@ -3,6 +3,7 @@
 // interface (app/src/sim/tauri.ts).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod network;
 mod sim;
 
 fn main() {
@@ -16,6 +17,7 @@ fn main() {
             sim::preview_route,
             sim::ledger,
             sim::issue_bond,
+            sim::existing_routes,
             sim::clock,
             sim::set_clock,
             sim::skip_to_next_month,

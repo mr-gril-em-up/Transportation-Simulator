@@ -26,11 +26,15 @@ doc.
   opening day in the panel and the drawing hint (F24) (#27)
 - Real Red Line preset: OSM route 550 stations, $3.50 fare, 32/51-minute
   peak/off-peak headways (`offpeakHeadwayMin`); about 870 riders/day alone on an empty map
-  since SIM-10 (APTA 1,500; sim-core 1,917 inside today's network) (#31, #38)
+  (858 measured; APTA 1,500; 1,373 inside today's network) (#31, #38, #54)
 - Monthly statements: last two closed months under the budget (F26)
 - Line inspector: boardings by stop, segment loads both ways, peak load vs capacity (F17)
 - Bus lines drawn along the streets from sim-core's `segment_shapes`, draft included (SIM-8, A29)
 - Bond menu capped at borrowing capacity; financing warning in the build preview (SIM-9, A30)
+- Starts with today's CapMetro network from `existing_lines.json` (61 lines, 79k riders/day,
+  $7.7M monthly surplus), grouped under "Today's network"; `TRANSPO_EXISTING_NETWORK=0` for a
+  blank map (F44, APP-4, A31).
+  Next: an in-app new-game choice instead of an environment variable
 - Bonds (issue from the budget panel), debt and payments, distress count and
   bankruptcy banner (F26)
 

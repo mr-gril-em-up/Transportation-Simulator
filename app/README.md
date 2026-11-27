@@ -14,6 +14,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
 ![Editing a line: stops ringed in black can be dragged, added or deleted](docs/img/stop-editing.png)
 ![Budget after a bond: debt, payments and the distress count toward bankruptcy](docs/img/bonds.png)
+![Today's CapMetro network loaded at start, grouped in the panel](docs/img/existing-network.png)
 ![A bus line drawn along the streets, with borrowing capacity in the budget](docs/img/road-snapping.png)
 ![Line inspector: boardings by stop, segment loads both ways, peak load against capacity](docs/img/inspector.png)
 ![Monthly statements: two closed months of fares, costs, tax, debt and capital](docs/img/statements.png)
@@ -53,6 +54,18 @@ npm run dev         # browser only at http://localhost:1420, mock sim, no Rust n
 3. sim-core's synthetic Travis-sized region.
 
 The panel header names the source: `sim-core · Travis data` or `sim-core · synthetic region`.
+
+**Starting network** (F44, decision APP-4): the game starts with today's CapMetro network,
+which the data pipeline writes to `existing_lines.json` beside `scenario.json` (DATA-7: 61
+lines, GTFS weekday headways). If the scenario itself carries `lines`, those are used instead.
+`TRANSPO_EXISTING_NETWORK=0` (or `off`, `false`) starts on a blank map. On by default as an
+interim call while Collins decides the starting state; it balances since sim-core SIM-12 (see
+"Scenario input" below for the figures). The lines are open from day 1 and already paid for.
+They appear grouped under **Today's network** in the panel (collapsed: line count and total
+riders; rail first, then busiest first), the Red Line in red and buses in gray, named
+"Route 801" from their route number. They can be edited, inspected or deleted like your own.
+**Add Red Line demo** is hidden when the Red Line is already running. A build without
+`existing_lines.json` starts blank.
 
 On startup, sim-core builds the scenario on a background thread. Measured in `tauri dev` (sim-core
 optimized even in dev builds, decision A16): about 11 s on the real Travis build (766 zones,
@@ -179,6 +192,7 @@ interface SimClient {
   previewRoute(route: RouteSpec): Promise<RoutePreview>; // cost + forecast, nothing charged
   budget(): Promise<Budget>;                             // cash, month, debt, distress, bankruptcy
   issueBond(principal: number): Promise<Budget>;         // borrow; rejects once bankrupt
+  existingRoutes(): Promise<RouteSpec[]>;                 // lines present at start (F44)
   results(): Promise<RouteResult[]>;                     // re-read after the daily re-run
   clock(): Promise<ClockState>;                          // { gameSeconds, timelapse, paused, day }
   setClock(c: { paused?; timelapse? }): Promise<ClockState>;
@@ -224,6 +238,7 @@ interface SimClient {
 | `preview_route` | `line: TransitLine` | sim-core `LinePreview` plus `opens_day`: `{ line: LineResult, capital_cost, federal_grant, capital_per_daily_boarding, opens_day }`. Runs under the Sim lock (sim-core adds and removes the line while it evaluates, 40 to 80 ms) |
 | `ledger` | none | sim-core `Ledger` (`cash`, `current`, `history`, `served_population`, `bonds`, `distressed_months`, `bankrupt_month`) plus `debt`, `debt_service_per_month`, `bankruptcy_months`, `bond_rate`, `bond_term_months` |
 | `issue_bond` | `principal: number` | Same as `ledger`, after borrowing. Errors on a non-positive amount or once bankrupt |
+| `existing_routes` | none | Lines present at start: `{ route_id, line: TransitLine }[]` with ids `e0`, `e1`, ...; empty on a blank map |
 | `clock` | none | `{ game_seconds, timelapse, paused, day }` (sim-core `Clock` plus whole days) |
 | `set_clock` | `paused?: boolean`, `timelapse?: number` | Same as `clock`; omitted fields unchanged, non-positive time-lapse ignored |
 | `skip_to_next_month` | none | Same as `clock`, after re-running the day and settling the month |
@@ -247,16 +262,21 @@ A `ScenarioInput` JSON file
 "Which scenario loads" above. The default is the data pipeline's real Travis County build (766
 block-group zones, 1.29M people, 948k jobs, LODES 2023 commutes, OSM roads). Without it the shell
 uses `sim_core::synth::generate(&SynthConfig::default())`, a Travis-sized synthetic region (676
-zones, 1.3M people) centered on downtown Austin. On the real build, the Red Line demo returns
-about 870 riders/day once open (Day 181) with MetroRail's real 32/51-minute headways and $3.50
-fare, against APTA's about 1,500 a weekday. That is low because the map starts empty: with mode
-constants fitted to Travis ACS commute shares (sim-core SIM-10), a rail line with no bus feeders
-loses riders. That matches sim-core's 861/day for the line alone at the same headways; inside
-today's CapMetro network it gets 1,917/day. An older data build without ACS income (every
-zone at $70k) gave about 640; re-run `npm run data` if your figure is that low. At 870 riders the line costs about $1.2M per daily rider, over
-the $600k grant gate, so it gets no federal grant: cash drops to about -$1.0B, more than the
-about $440M the line lets you borrow, and the demo heads to bankruptcy. A line edit takes under
-100 ms.
+zones, 1.3M people) centered on downtown Austin. Measured on the real build after sim-core
+SIM-12 (tax rate calibrated to CapMetro, constants refit on today's network):
+
+- **With today's network** (the default): 61 lines, 79,417 riders/day, the Red Line at 1,373
+  (APTA about 1,500; sim-core 1,367). Each month settles at fares $3.1M, operating assistance
+  $4.5M and local tax $31.9M against $31.8M operating cost: a $7.7M surplus. Borrowing capacity
+  $2.83B on $382M/year of pledged tax. Startup about 17 s in `tauri dev`.
+- **Blank map, Red Line demo alone** (`TRANSPO_EXISTING_NETWORK=0`): 858 riders/day at Day 181
+  (sim-core 861 to 893). A rail line with no bus feeders loses riders. At about $1.2M per daily
+  rider it misses the $600k grant gate, so cash drops to about -$1.0B. The line pledges $114M/year
+  of tax and can borrow $840M, which still leaves cash below zero, and its $8.2M monthly surplus
+  cannot close the gap within the 12 distressed months, so the demo still heads to bankruptcy.
+
+An older data build without ACS income (every zone at $70k) gives far lower ridership; re-run
+`npm run data` if your figures are well below these. A line edit takes under 100 ms.
 
 ## Design and rationale
 

@@ -57,7 +57,7 @@ const TRIPS_PER_PERSON = 2.5; // daily trips that leave home or return to it
 const decay = (d: number) => 1 / Math.max(d, 1) ** 1.2;
 // Binary logit: utility per generalized-cost minute, and the car's constant.
 // ASC tuned so the Red Line demo (30-min headway, $3.50) lands near 2,000/day, a little above
-// APTA's ~1,500 a weekday; sim-core (SIM-10) gives 861 alone, 1,917 in today's network (docs/MOCK-SIM.md).
+// APTA's ~1,500 a weekday; sim-core (SIM-10) gives 861 alone, 1,367 in today's network (SIM-12) (docs/MOCK-SIM.md).
 const COST_COEF = 0.06;
 const ASC_CAR = 2.0;
 
@@ -172,6 +172,11 @@ export class MockSim implements SimClient {
   async previewRoute(route: RouteSpec): Promise<RoutePreview> {
     const { dailyRiders } = simulateRoute(route, this.zones);
     return { dailyRiders, ...mockCapital(route, dailyRiders) };
+  }
+
+  /** The mock always starts on a blank map. */
+  async existingRoutes(): Promise<RouteSpec[]> {
+    return [];
   }
 
   /** The mock builds instantly: nothing is ever under construction. */

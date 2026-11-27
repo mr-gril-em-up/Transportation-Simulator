@@ -16,6 +16,8 @@ export type Mode =
  *  Everything else is "regional" and draws as the tube-style schematic when zoomed out. */
 export const LOCAL_MODES: ReadonlySet<Mode> = new Set<Mode>(["bus", "trolleybus", "brt"]);
 export const isRegional = (m: Mode) => !LOCAL_MODES.has(m);
+/** CapMetro fares (sim-core figures fare_capmetro_*): MetroRail $3.50, local bus $1.25. */
+export const defaultFare = (m: Mode) => (m === "commuter_rail" ? 3.5 : 1.25);
 
 /** A stop; `id` is client-unique and keys per-stop results. */
 export interface Stop {
@@ -150,6 +152,12 @@ export interface SimClient {
   issueBond(principal: number): Promise<Budget>;
   /** Routes under construction and their opening days. */
   pendingRoutes(): Promise<PendingRoute[]>;
+  /**
+   * Lines present at start (today's network, F44), as routes with ids the backend chose. The network
+   * start is the provisional default (APP-4); empty on a blank map (`TRANSPO_EXISTING_NETWORK=0`).
+   * The client may edit or delete them like its own.
+   */
+  existingRoutes(): Promise<RouteSpec[]>;
   /** Results for every route without changing anything (re-read after the day re-runs). */
   results(): Promise<RouteResult[]>;
   /** The simulation's clock (F21): the client polls it and interpolates in between. */
