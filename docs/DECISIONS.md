@@ -28,6 +28,7 @@ If two PRs in the same stream still pick the same number, the one that merges se
 
 | # | Date | Decision | Why | Status | Source |
 |---|---|---|---|---|---|
+| SIM-1 | 2026-11-27 | Lines build before opening: `build_years` per mode / `construction_speedup` (light rail 6 years, ~183 game days). Capital and the grant decision happen at the start; a realignment keeps the old version running; service changes apply at once; `instant_build` turns construction off and defaults to true until the app shows pending lines | The approved 12x compression (D9) only matters if building takes time; charging up front on the forecast mirrors FTA rating projects before construction; keeping the old line running avoids punishing extensions | As built | [sim-core MODEL.md](../crates/sim-core/docs/MODEL.md#construction-period-f24) |
 
 ## Data pipeline (DATA)
 

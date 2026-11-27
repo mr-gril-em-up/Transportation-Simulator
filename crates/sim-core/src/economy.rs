@@ -68,7 +68,7 @@ pub struct Ledger {
     pub current: MonthStatement,
     /// Settled months, oldest first.
     pub history: Vec<MonthStatement>,
-    /// Residents of zones within walking range of a stop (the taxing area), at last settlement.
+    /// Residents within walking range of a stop (population x coverage share), at last settlement.
     pub served_population: f64,
 }
 

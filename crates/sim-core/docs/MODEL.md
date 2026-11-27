@@ -307,10 +307,45 @@ Simplifications and why:
   not worth a second constant.
 - No terrain, land cover or right-of-way multipliers yet (rest of F23). The
   same line costs the same through wetlands or downtown.
-- Capital is charged the moment a line is added or extended: no construction
-  period yet (F24). An edit pays only the cost above what the line already paid
+- Capital is charged when construction starts, all at once rather than spread
+  over the build. An edit pays only the cost above what the line already paid
   (`capital_paid` per line); shortening or removing a line refunds nothing,
   because sunk construction is gone.
+
+### Construction period (F24)
+
+Decision SIM-1. A new line, or a new alignment of an existing one, opens on
+`clock.day() + ceil(build_years x 365 / construction_speedup [12])`.
+
+| Mode | Real years | Game days at 12x |
+|---|---|---|
+| Bus | 0.5 | 16 |
+| Trolleybus, ferry | 1.5, 1 | 46, 31 |
+| BRT, gondola | 2.5, 2 | 77, 61 |
+| Tram, commuter rail, people mover | 4 | 122 |
+| Monorail | 5 | 153 |
+| Light rail | 6 | 183 |
+| Metro | 9 | 274 |
+| High-speed rail, maglev | 10 | 305 |
+
+Light rail's 6 years is the roadmap's F24 check and matches Austin Phase 1
+(FTA engineering 2027, revenue service 2033); the rest are estimates.
+
+- Until it opens, a line carries no riders and is listed in `pending_lines`.
+  The federal grant is decided at the start on the forecast ridership (what
+  `preview_line` shows), as FTA rates projects before construction.
+- `update_line` treats a change of mode or stop locations as construction (the
+  old version keeps running until the new one opens). Headway, fare, speed,
+  span and name changes apply at once, to the running version and to any
+  version under construction. Every edit charges capital above what the line
+  already paid, so a headway cut pays for its extra vehicles.
+- `params.instant_build` skips construction. It defaults to **true** until the
+  app shows lines under construction (its build panel reads `pending_lines`
+  and the `preview_line` forecast); the app then sets it false. Defaulting it
+  false now would make newly drawn lines vanish from the app's ridership
+  readout for months of game time.
+- Simplifications: build time does not grow with length, and roads under
+  works keep full capacity. Both are F24 follow-ups.
 - Lines in the input (present at start) are treated as already paid for.
 
 ### Federal capital grants
@@ -337,9 +372,14 @@ closes the month using that day's line results:
 | Operating assistance | operating cost x `operating_assistance_share [0.143]` (federal formula funds; Texas gives big-city transit authorities no state operating money) |
 | Local tax | served population x `taxable_sales_per_capita [$20,600]` x `local_sales_tax_rate [1%]` / 12 |
 
-Served population is the residents of every zone with any walking coverage of
-a stop. Texas transit authorities (CapMetro, DART, Houston METRO) levy a 1%
-sales tax in their member cities; growing the network grows the taxing area.
+Served population is each zone's residents times its stop coverage share (the
+part of the zone within walking range of a stop, section 5), summed. Texas
+transit authorities (CapMetro, DART, Houston METRO) levy a 1% sales tax in their
+member cities; growing the network grows the taxing area. Weighting by coverage
+rather than counting any zone a stop touches keeps a stop clipping a zone's
+edge from taxing all of it. It understates real service areas, which tax whole
+member cities including streets far from a stop; city-level membership is a
+later refinement.
 Sources (figures.csv rows of the same names): the 1% rate is the Comptroller's
 MTA table (the statutory cap). Taxable sales per capita is derived from
 CapMetro's NTD 2023 local funds divided by 1% and by its 1.36M service-area
@@ -350,7 +390,7 @@ is an upper bound, and small agencies run far higher (El Paso 57%).
 Cash starts at `starting_cash [0]` and may go negative: bonds, debt service and
 the bankruptcy rule are F26. On the synthetic Travis bench, a 28 km light rail
 line costs about $16B and fails the grant gate at its uncalibrated ridership;
-it then needs local tax of about $4M a month against $8.6M operating cost.
+with 67k residents in walking range it collects about $1.2M a month in local tax against $8.6M operating cost.
 
 ## Known gaps
 
@@ -366,5 +406,6 @@ In rough priority for M1 tuning:
    700 zones, not for 6,900 tracts (M3 needs sparse or blocked storage and a
    contracted highway graph).
 7. Park-and-ride car trips are not added to road volumes.
-8. Capital cost has no terrain or right-of-way multipliers and no construction
-   period; funding has no bonds or state appropriation yet (F23, F24, F26).
+8. Capital cost has no terrain or right-of-way multipliers; construction time
+   ignores length and roads under works keep full capacity; funding has no
+   bonds or state appropriation yet (F23, F24, F26).

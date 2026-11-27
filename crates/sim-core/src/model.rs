@@ -136,6 +136,8 @@ pub struct Results {
     pub car_times_stale: bool,
     /// Wall time of the last evaluation, milliseconds.
     pub eval_ms: f64,
+    /// Lines under construction (see `Sim::pending_lines`).
+    pub pending_lines: Vec<PendingLine>,
 }
 
 /// Per-zone results, for heatmaps.
@@ -255,6 +257,24 @@ pub struct Sim {
     ledger: Ledger,
     /// Capital already paid per line slot, so an extension pays only the difference.
     capital_paid: Vec<f64>,
+    /// Per line slot: a version under construction and the game day it opens.
+    /// `lines` holds the version in service (None while a new line is built).
+    pending: Vec<Option<(TransitLine, u64)>>,
+}
+
+/// A line (or a new version of one) under construction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingLine {
+    /// Line id.
+    pub id: LineId,
+    /// Display name.
+    pub name: String,
+    /// Transit technology.
+    pub mode: Mode,
+    /// Game day (`Clock::day`) the new version enters service.
+    pub opens_day: u64,
+    /// True if an older version of the line keeps running until then.
+    pub replaces_open_line: bool,
 }
 
 /// What a line would cost and carry, from `Sim::preview_line`. Nothing is charged.
@@ -367,6 +387,7 @@ impl Sim {
             results: Results::default(),
             ledger: Ledger::new(0.0, 0),
             capital_paid: vec![],
+            pending: vec![],
         };
         sim.ledger = Ledger::new(sim.params.starting_cash, sim.clock.month());
         sim.car_free = sim.skim_car(&sim.link_time.clone());
@@ -377,6 +398,7 @@ impl Sim {
         sim.capital_paid = (0..sim.lines.len())
             .map(|i| sim.line_capital(i as LineId).unwrap_or(0.0))
             .collect();
+        sim.pending = vec![None; sim.lines.len()];
         Ok(sim)
     }
 
@@ -397,24 +419,94 @@ impl Sim {
         &self.input
     }
 
-    /// Active lines with their ids.
+    /// Every line with its id, as the player last drew it: the version under
+    /// construction if there is one, else the version in service.
     pub fn lines(&self) -> Vec<(LineId, &TransitLine)> {
         self.lines
             .iter()
+            .zip(&self.pending)
             .enumerate()
-            .filter_map(|(i, l)| l.as_ref().map(|l| (i as LineId, l)))
+            .filter_map(|(i, (l, p))| {
+                p.as_ref()
+                    .map(|p| &p.0)
+                    .or(l.as_ref())
+                    .map(|l| (i as LineId, l))
+            })
             .collect()
     }
 
-    /// Add a line and re-evaluate ridership (car times held fixed). Target < 2 s per county.
+    /// Lines under construction and the day each opens.
+    pub fn pending_lines(&self) -> Vec<PendingLine> {
+        self.pending
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| {
+                p.as_ref().map(|(l, day)| PendingLine {
+                    id: i as LineId,
+                    name: l.name.clone(),
+                    mode: l.mode,
+                    opens_day: *day,
+                    replaces_open_line: self.lines[i].is_some(),
+                })
+            })
+            .collect()
+    }
+
+    /// Game day a line drawn today would open: real-world build time for its
+    /// mode divided by `construction_speedup`. Today if `instant_build`.
+    pub fn opening_day(&self, mode: Mode) -> u64 {
+        if self.params.instant_build {
+            return self.clock.day();
+        }
+        let days = self
+            .params
+            .build_days(mode_defaults(mode).build_years * 365.0);
+        self.clock.day() + days.ceil().max(0.0) as u64
+    }
+
+    /// Add a line. Its capital is charged now (less any federal grant on its
+    /// forecast ridership) and it enters service on `opening_day(mode)`; until
+    /// then it is in `pending_lines()` and carries no riders. With
+    /// `params.instant_build` it opens at once and ridership is re-evaluated
+    /// (car times held fixed). Target < 2 s per county.
     pub fn add_line(&mut self, line: TransitLine) -> Result<LineId, SimError> {
         line.validate()?;
-        self.lines.push(Some(line));
+        let opens = self.opening_day(line.mode);
+        let id = self.lines.len() as LineId;
         self.capital_paid.push(0.0);
-        self.on_lines_changed();
-        let id = (self.lines.len() - 1) as LineId;
-        self.charge_capital(id);
+        self.pending.push(None);
+        if opens <= self.clock.day() {
+            self.lines.push(Some(line));
+            self.on_lines_changed();
+            self.charge_capital(id);
+        } else {
+            self.lines.push(None);
+            let (r, capital) = self.evaluate_in_slot(id, &line)?;
+            self.charge(id, capital, r.daily_boardings);
+            self.pending[id as usize] = Some((line, opens));
+            self.refresh_pending();
+        }
         Ok(id)
+    }
+
+    /// Evaluate `line` as slot `id`'s version in service, read its result and
+    /// capital cost, then put the slot back. Leaves results as they were.
+    fn evaluate_in_slot(
+        &mut self,
+        id: LineId,
+        line: &TransitLine,
+    ) -> Result<(LineResult, f64), SimError> {
+        let stale = self.results.car_times_stale;
+        let old = self.lines[id as usize].replace(line.clone());
+        self.on_lines_changed();
+        let r = self.line_result(id).cloned();
+        let capital = self.line_capital(id);
+        self.lines[id as usize] = old;
+        self.on_lines_changed();
+        // Same lines and car times as before, so the flag is too.
+        self.results.car_times_stale = stale;
+        r.zip(capital)
+            .ok_or_else(|| SimError("line evaluation failed".into()))
     }
 
     /// Cost and ridership of `line` without building it: evaluates it as a new
@@ -422,16 +514,11 @@ impl Sim {
     /// line ids are unchanged.
     pub fn preview_line(&mut self, line: TransitLine) -> Result<LinePreview, SimError> {
         line.validate()?;
-        self.lines.push(Some(line));
-        self.on_lines_changed();
-        let id = (self.lines.len() - 1) as LineId;
-        let r = self.line_result(id).cloned();
-        let capital = self.line_capital(id);
+        let id = self.lines.len() as LineId;
+        self.lines.push(None);
+        let r = self.evaluate_in_slot(id, &line);
         self.lines.pop();
-        self.on_lines_changed();
-        let (line, capital_cost) = r
-            .zip(capital)
-            .ok_or_else(|| SimError("preview failed".into()))?;
+        let (line, capital_cost) = r?;
         let federal_grant = economy::federal_grant(
             capital_cost,
             capital_cost,
@@ -466,22 +553,49 @@ impl Sim {
         let Some(total) = self.line_capital(id) else {
             return;
         };
+        let boardings = self.line_result(id).map_or(0.0, |l| l.daily_boardings);
+        self.charge(id, total, boardings);
+    }
+
+    /// Charge `total - already paid` (if positive), less the federal grant
+    /// that `boardings` earns.
+    fn charge(&mut self, id: LineId, total: f64, boardings: f64) {
         let paid = &mut self.capital_paid[id as usize];
         let spend = (total - *paid).max(0.0);
         *paid = paid.max(total);
-        let boardings = self.line_result(id).map_or(0.0, |l| l.daily_boardings);
         let grant = economy::federal_grant(spend, total, boardings, &self.params);
         self.ledger.charge_capital(spend, grant);
     }
 
-    /// Residents of zones within walking range of any stop: the transit tax base.
+    /// Put lines whose construction finished into service. Returns true if any opened.
+    fn open_finished_lines(&mut self) -> bool {
+        let today = self.clock.day();
+        let mut opened = false;
+        for (slot, p) in self.lines.iter_mut().zip(self.pending.iter_mut()) {
+            if p.as_ref().is_some_and(|(_, day)| *day <= today) {
+                *slot = p.take().map(|(l, _)| l);
+                opened = true;
+            }
+        }
+        if opened {
+            self.rebuild_transit();
+        }
+        opened
+    }
+
+    fn refresh_pending(&mut self) {
+        self.results.pending_lines = self.pending_lines();
+    }
+
+    /// Residents within walking range of a stop (population x stop coverage
+    /// share per zone): the transit tax base. Weighting by coverage stops a
+    /// stop that clips a zone's edge from taxing the whole zone.
     fn served_population(&self) -> f64 {
         self.input
             .zones
             .iter()
             .zip(&self.net.coverage)
-            .filter(|(_, c)| **c > 0.0)
-            .map(|(z, _)| z.population)
+            .map(|(z, c)| z.population * c)
             .sum()
     }
 
@@ -497,30 +611,76 @@ impl Sim {
     /// Jump the clock to the start of next month, re-run the day and settle the month.
     pub fn skip_to_next_month(&mut self) -> u64 {
         let days = self.clock.skip_to_next_month();
+        self.open_finished_lines();
         self.equilibrate_warm();
         self.settle_months();
         days
     }
 
-    /// Replace line `id` in place (same id) and re-evaluate. Errors if the id is unknown or removed.
+    /// Replace line `id` (same id). Errors if the id is unknown or removed.
+    ///
+    /// A service change (headway, fare, speed, span, name, park-and-ride
+    /// flags) applies at once. A change of mode or stop locations is new
+    /// construction: capital above what the line already paid is charged now,
+    /// the old version keeps running, and the new one opens on
+    /// `opening_day(mode)` (at once with `instant_build`).
     pub fn update_line(&mut self, id: LineId, line: TransitLine) -> Result<(), SimError> {
         line.validate()?;
-        match self.lines.get_mut(id as usize) {
-            Some(slot @ Some(_)) => *slot = Some(line),
+        let i = id as usize;
+        let drawn = match (self.lines.get(i), self.pending.get(i)) {
+            (_, Some(Some((p, _)))) => p,
+            (Some(Some(l)), _) => l,
             _ => return Err(SimError(format!("no line {id}"))),
+        };
+        let rebuild = !same_alignment(drawn, &line);
+        if let Some((_, day)) = self.pending[i].take() {
+            if !rebuild {
+                // Service change to a line with construction under way: the
+                // running version (if any) takes the new service at once, the
+                // version being built keeps its opening day.
+                if let Some(open) = self.lines[i].as_mut() {
+                    copy_service(&line, open);
+                    self.on_lines_changed();
+                    self.charge_capital(id);
+                }
+                // More vehicles for the version being built cost capital too.
+                let (r, capital) = self.evaluate_in_slot(id, &line)?;
+                self.charge(id, capital, r.daily_boardings);
+                self.pending[i] = Some((line, day));
+                self.refresh_pending();
+                return Ok(());
+            }
         }
-        self.on_lines_changed();
-        self.charge_capital(id);
+        let opens = self.opening_day(line.mode);
+        if !rebuild || opens <= self.clock.day() {
+            self.lines[i] = Some(line);
+            self.on_lines_changed();
+            // Charges only positive deltas, so a shorter headway's extra
+            // vehicles are paid for and cuts refund nothing (D31).
+            self.charge_capital(id);
+        } else {
+            let (r, capital) = self.evaluate_in_slot(id, &line)?;
+            self.charge(id, capital, r.daily_boardings);
+            self.pending[i] = Some((line, opens));
+        }
+        self.refresh_pending();
         Ok(())
     }
 
     /// Remove line `id` and re-evaluate. The id is retired, never reused.
     pub fn remove_line(&mut self, id: LineId) -> Result<(), SimError> {
-        match self.lines.get_mut(id as usize) {
-            Some(slot @ Some(_)) => *slot = None,
-            _ => return Err(SimError(format!("no line {id}"))),
+        let i = id as usize;
+        let open = self.lines.get(i).is_some_and(|l| l.is_some());
+        let building = self.pending.get(i).is_some_and(|p| p.is_some());
+        if !open && !building {
+            return Err(SimError(format!("no line {id}")));
         }
-        self.on_lines_changed();
+        self.lines[i] = None;
+        self.pending[i] = None;
+        if open {
+            self.on_lines_changed();
+        }
+        self.refresh_pending();
         Ok(())
     }
 
@@ -531,6 +691,7 @@ impl Sim {
     pub fn tick(&mut self, real_dt: f64) -> u64 {
         let days = self.clock.advance(real_dt);
         if days > 0 {
+            self.open_finished_lines();
             self.equilibrate_warm();
             self.settle_months();
         }
@@ -751,6 +912,7 @@ impl Sim {
             work_peak_hour_share: wph,
             car_times_stale: stale,
             eval_ms: t0.elapsed().as_secs_f64() * 1000.0,
+            pending_lines: self.pending_lines(),
         };
     }
 
@@ -1267,6 +1429,27 @@ pub fn logit(
     }
     p.iter_mut().for_each(|x| *x /= s);
     Some(p)
+}
+
+/// Copy the service settings (not the alignment) of `from` onto `to`.
+fn copy_service(from: &TransitLine, to: &mut TransitLine) {
+    to.name = from.name.clone();
+    to.headway_min = from.headway_min;
+    to.fare = from.fare;
+    to.fare_per_km = from.fare_per_km;
+    to.speed_kph = from.speed_kph;
+    to.span_hours = from.span_hours;
+}
+
+/// True if two versions of a line share mode and stop locations, so moving
+/// from one to the other needs no construction.
+fn same_alignment(a: &TransitLine, b: &TransitLine) -> bool {
+    a.mode == b.mode
+        && a.stops.len() == b.stops.len()
+        && a.stops
+            .iter()
+            .zip(&b.stops)
+            .all(|(x, y)| x.lon == y.lon && x.lat == y.lat)
 }
 
 #[cfg(test)]

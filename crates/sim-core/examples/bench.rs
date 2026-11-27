@@ -23,6 +23,7 @@ fn main() {
         rayon::current_num_threads()
     );
     let t = Instant::now();
+    // Default params open lines at once, so timings measure the line-edit path.
     let mut sim = Sim::new(input, Params::default()).unwrap();
     println!("baseline equilibrium: {:.2} s", t.elapsed().as_secs_f64());
     let r = sim.results();

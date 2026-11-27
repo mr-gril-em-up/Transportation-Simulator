@@ -36,7 +36,7 @@ cargo test -p sim-core
 cargo doc -p sim-core --no-deps      # public items are documented (missing_docs is on)
 ```
 
-27 tests, under a second in debug builds. `tests/schema.rs` loads the fixture
+29 tests, under a second in debug builds. `tests/schema.rs` loads the fixture
 [tests/fixtures/tiny.json](tests/fixtures/tiny.json) and checks defaults and
 validation errors. `tests/model.rs` runs the full model on
 `SynthConfig::small()` (64 zones) and checks trip conservation, that a line adds
@@ -61,7 +61,11 @@ use sim_core::{Params, ScenarioInput, Sim, TransitLine, Mode};
 
 let mut sim = Sim::from_json(&std::fs::read_to_string("travis.json")?, Params::default())?;
 
-// Draw a line: returns a stable id. Results for ALL lines are refreshed.
+// Draw a line: returns a stable id. Capital is charged now. With
+// params.instant_build = false (the game's setting; the default stays true until
+// the app shows pending lines, SIM-1) the line is under construction until
+// sim.opening_day(mode) (light rail: 6 real years / 12 = ~183 game days),
+// listed in results().pending_lines, then carries riders.
 let id = sim.add_line(line)?;
 for l in &sim.results().lines {
     println!("{} riders/day, per stop {:?}", l.daily_boardings, l.boardings_by_stop);
@@ -82,20 +86,22 @@ let days_crossed = sim.tick(real_dt_seconds);
 | Call | Cost | What it does |
 |---|---|---|
 | `Sim::new(input, params)` / `Sim::from_json(json, params)` | seconds | Validates input, builds networks, runs the baseline to equilibrium. Lines in the input become lines 0..n. |
-| `add_line(TransitLine) -> LineId` | 20-40 ms | Adds a line, refreshes `results()`. Ids are never reused. |
-| `update_line(LineId, TransitLine)` | 20-40 ms | Replaces a line in place (same id). |
-| `remove_line(LineId)` | 20-40 ms | Removes a line. Its id is retired. |
+| `add_line(TransitLine) -> LineId` | 40-80 ms (20-40 ms with `instant_build`) | Adds a line and charges its capital (less any federal grant on its forecast). It enters service on `opening_day(mode)`; until then it is in `pending_lines()` with no riders. With `params.instant_build` (default true for now, SIM-1) it opens at once and `results()` is refreshed. Ids are never reused. |
+| `opening_day(Mode) -> u64` | free | Game day a line drawn today would open: `build_years` for the mode / `construction_speedup`. |
+| `pending_lines() -> Vec<PendingLine>` | free | Lines (or new versions) under construction: `id, name, mode, opens_day, replaces_open_line`. Also in `results().pending_lines`. |
+| `update_line(LineId, TransitLine)` | 20-80 ms | Replaces a line (same id). Service changes (headway, fare, speed, span, name) apply at once, also to a running version during a rebuild; extra vehicles from a shorter headway are charged. Moving, adding or removing stops, or changing mode, is construction: the extra capital is charged now, the old version keeps running, the new one opens on `opening_day`. |
+| `remove_line(LineId)` | 20-40 ms | Removes a line, open or under construction. Its id is retired. No refund. |
 | `preview_line(TransitLine) -> LinePreview` | 40-80 ms | Build preview: ridership (`line: LineResult`), `capital_cost`, `federal_grant`, `capital_per_daily_boarding`. Evaluates the line, then removes it; ledger and ids unchanged. |
 | `ledger() -> &Ledger` | free | Transit authority books: `cash`, `current` month, settled `history` (`MonthStatement`), `served_population`. `add_line`/`update_line` charge capital (net of any federal grant); month boundaries settle fares, operating cost, assistance and local tax. |
 | `skip_to_next_month() -> u64` | ~2 s | Jumps the clock to next month, re-runs the day, settles the month. Use this, not `sim.clock.skip_to_next_month()`, so the ledger settles. |
-| `lines() -> Vec<(LineId, &TransitLine)>` | free | Active lines. |
+| `lines() -> Vec<(LineId, &TransitLine)>` | free | Every line as last drawn (the version under construction if any). `results().lines` has only lines in service. |
 | `results() -> &Results` | free | Latest results (see below). |
 | `zone_results() -> Vec<ZoneResult>` | ms | Per zone: daily trips, transit trips and share, stop coverage. For heatmaps. |
 | `link_flows() -> Vec<LinkFlow>` | ms | Per directed road edge: peak-hour volume, v/c, congested speed. For congestion bands. |
 | `desire_lines(n) -> Vec<DesireLine>` | ms | Top n zone pairs by daily trips, with transit trips. For the M0 desire-line view. |
 | `equilibrate()` | seconds | Full mode choice and congested car assignment from free-flow times. Call after changing `params`. |
 | `equilibrate_warm()` | ~2 s at Travis size | Daily re-run starting from the previous day's road volumes (`daily_iterations` rounds). |
-| `tick(real_dt) -> u64` | free or ~2 s | Advances `sim.clock`; runs `equilibrate_warm` once if any game day was crossed, and settles the ledger at month boundaries. Call from a worker thread. |
+| `tick(real_dt) -> u64` | free or ~2 s | Advances `sim.clock`; at a day boundary opens lines whose construction finished, runs `equilibrate_warm` once, and settles the ledger at month boundaries. Call from a worker thread. |
 | `calibrate_mode_shares(ModeSplit, iters)` | ~0.1 s/iter | Fits the logit constants to target mode shares. |
 | `input() -> &ScenarioInput` | free | The scenario as loaded (lines live in `lines()`). |
 | `sim.params`, `sim.clock` | | Public fields. Change params then call `equilibrate()`. |
@@ -243,7 +249,8 @@ choices a reader is most likely to question:
 | All-or-nothing transit assignment | Parallel lines on one corridor do not share riders by frequency | F14 follow-up |
 | Fare revenue counts each boarding at full fare | Overstates revenue when transfers are free | F25 |
 | Park-and-ride car legs are not loaded on roads | Slight undercount of road volume near P&R lots | F14 follow-up |
-| Capital cost has no terrain or right-of-way multipliers; capital is charged at once (no construction period) | Same cost everywhere; lines open the moment they are drawn | F23, F24 |
+| Capital cost has no terrain or right-of-way multipliers; all capital is charged when construction starts | Same cost everywhere; no spending spread over the build | F23, F24 follow-up |
+| No road capacity loss during construction; build time does not grow with length | A 5 km and a 30 km line take the same time | F24 follow-up |
 | No bonds, state appropriation or bankruptcy | Cash can go negative without consequence | F26 |
 | Dense matrices | Memory grows with zones squared | F34 |
 
@@ -261,6 +268,6 @@ choices a reader is most likely to question:
 | F21 One clock | Partial: `Clock` with time-lapse and skip-to-next-month in sim-core; app still runs its own client clock |
 | F22 Desired arrival times | Partial: arrival profile drives peak share and transit schedule delay; no departure-time choice |
 | F23 Capital cost | Partial: per-km guideway plus vehicles from sourced figures, `preview_line` for the build preview; no terrain or right-of-way multipliers |
-| F24 Construction compression | Partial: `construction_speedup` and `build_days` only |
+| F24 Construction compression | Partial: lines build for `build_years` / 12 before opening (light rail ~6 game months), old version runs during a rebuild; no road capacity loss during works |
 | F25 Operating costs and fares | Partial: per-line op cost from NTD cost per car hour x cars, CapMetro fares, distance fares, farebox, monthly budget settlement in `Ledger` |
 | F26 Funding | Partial: federal capital grants with a cost-per-rider gate, operating assistance, local 1% sales tax over the served area; no bonds, state appropriation or bankruptcy |

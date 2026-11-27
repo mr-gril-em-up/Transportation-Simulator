@@ -1,8 +1,18 @@
 use sim_core::synth::{generate, straight_line, SynthConfig};
 use sim_core::{Mode, ModeSplit, Params, Sim};
 
+/// Default params: lines open at once (`instant_build`).
 fn sim() -> Sim {
     Sim::new(generate(&SynthConfig::small()), Params::default()).unwrap()
+}
+
+/// Lines build before opening, as in the game.
+fn building_sim() -> Sim {
+    let p = Params {
+        instant_build: false,
+        ..Params::default()
+    };
+    Sim::new(generate(&SynthConfig::small()), p).unwrap()
 }
 
 fn rail() -> sim_core::TransitLine {
@@ -215,7 +225,12 @@ fn warm_daily_rerun_stays_at_the_cold_equilibrium() {
 #[test]
 fn preview_matches_build_and_charges_nothing() {
     let mut s = sim();
+    assert!(!s.results().car_times_stale);
     let p = s.preview_line(rail()).unwrap();
+    assert!(
+        !s.results().car_times_stale,
+        "preview must not mark car times stale"
+    );
     assert_eq!(s.ledger().cash, 0.0);
     assert!(s.lines().is_empty());
     assert!(p.capital_cost > 0.0 && p.line.daily_boardings > 0.0);
@@ -265,4 +280,63 @@ fn month_settles_fares_costs_and_local_tax() {
     assert!(m.local_tax > 0.0 && l.served_population > 0.0);
     assert!(m.operating_cost > m.fare_revenue && m.fare_revenue > 0.0);
     assert!((l.cash - before - (m.net - capital)).abs() < 1e-3);
+}
+
+#[test]
+fn new_lines_open_after_compressed_construction() {
+    let mut s = building_sim();
+    let opens = s.opening_day(Mode::LightRail);
+    // 6 real years at 12x: about 6 game months.
+    assert_eq!(opens, (6.0_f64 * 365.0 / 12.0).ceil() as u64);
+    let p = s.preview_line(rail()).unwrap();
+    let id = s.add_line(rail()).unwrap();
+    assert!(s.results().lines.is_empty(), "no riders while building");
+    assert_eq!(s.results().pending_lines[0].opens_day, opens);
+    assert_eq!(s.lines().len(), 1);
+    // Capital and grant are charged at the start, on the forecast.
+    assert!((s.ledger().current.capital_spent - p.capital_cost).abs() < 1e-6);
+    while s.clock.day() < opens {
+        s.skip_to_next_month();
+    }
+    assert!(s.pending_lines().is_empty());
+    let r = &s.results().lines[0];
+    assert_eq!(r.id, id);
+    assert!(r.daily_boardings > 0.0);
+}
+
+#[test]
+fn service_changes_apply_now_and_realignments_wait() {
+    let mut s = building_sim();
+    s.params.instant_build = true;
+    let id = s.add_line(rail()).unwrap();
+    s.params.instant_build = false;
+    let base = s.results().lines[0].daily_boardings;
+    let paid = s.ledger().current.capital_spent;
+    // Headway change: no construction, applies at once, extra vehicles are paid for.
+    let mut faster = rail();
+    faster.headway_min = 4.0;
+    s.update_line(id, faster.clone()).unwrap();
+    assert!(s.pending_lines().is_empty());
+    assert!(
+        s.ledger().current.capital_spent > paid,
+        "more vehicles cost capital"
+    );
+    let frequent = s.results().lines[0].daily_boardings;
+    assert!(frequent > base);
+    // Extension: the old version keeps running until the new one opens.
+    let mut longer = straight_line(Mode::LightRail, (0.0, -7.0), (0.0, 10.0), 1.0, 4.0);
+    longer.name = faster.name.clone();
+    s.update_line(id, longer).unwrap();
+    let pend = s.pending_lines();
+    assert!(pend[0].replaces_open_line);
+    assert!((s.results().lines[0].daily_boardings - frequent).abs() < 1e-6);
+    assert!(s.ledger().current.capital_spent > 0.0);
+    // A service change during the rebuild reaches the running version too.
+    let mut slower = s.lines()[0].1.clone();
+    slower.headway_min = 15.0;
+    s.update_line(id, slower).unwrap();
+    assert!(s.results().lines[0].daily_boardings < frequent);
+    assert_eq!(s.pending_lines()[0].opens_day, pend[0].opens_day);
+    s.remove_line(id).unwrap();
+    assert!(s.pending_lines().is_empty() && s.lines().is_empty());
 }

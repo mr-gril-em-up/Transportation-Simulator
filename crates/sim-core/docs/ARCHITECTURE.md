@@ -40,6 +40,7 @@ All zone-pair data is dense row-major `Z x Z` (`index = i * Z + j`).
 | `tsk_walk`, `tsk_drive` | Z x Z transit components | every line edit and `equilibrate` | |
 | `results`, `transit_od`, `zone_trips` | | every state change | |
 | `ledger`, `capital_paid` | books; capital paid per line slot | `new` | capital on `add_line`/`update_line`; settlement at month boundaries |
+| `lines`, `pending` | per line slot: version in service; version under construction and its opening day | `new` | line edits; `tick` moves finished `pending` into `lines` |
 
 ## What is recomputed when
 
@@ -59,15 +60,20 @@ equilibrate_warm  (once per game day via tick; keeps yesterday's link volumes)
 pass  (one parallel loop over origins, ONE shortest-path tree each)
   tree -> car skim row -> transit skim row -> mode choice row -> [AON load of the row's car demand on the same tree]
 
-add_line / update_line / remove_line  (20-40 ms)
+add_line / update_line (construction)  (40-80 ms)
+  evaluate the new version in its slot (as below) -> charge capital on that forecast
+  -> put the slot back -> store in pending with its opening day
+
+add_line / update_line (instant_build or service change) / remove_line  (20-40 ms)
   rebuild transit net -> transit skims -> finish        (car times held; results.car_times_stale = true)
   add/update then: charge capital above what the line already paid, less federal grant
 
 preview_line  (40-80 ms)
-  push line -> as add_line (no charge) -> read result and capital -> pop line -> as remove_line
+  push empty slot -> evaluate the line in it, read result and capital, restore -> pop slot
 
 tick / skip_to_next_month
-  clock -> equilibrate_warm at a day boundary -> ledger.settle once per month boundary crossed
+  clock -> at a day boundary: open finished pending lines -> equilibrate_warm
+  -> ledger.settle once per month boundary crossed
 
 finish
   mode choice -> transit loading -> line economics -> Results
@@ -101,7 +107,8 @@ is Z x Z x 2 purposes x 4 segments of a 6-way logit, parallel by origin.
 - New scenarios start at 05:00 on day 0, just before the AM peak.
 - `Params::construction_speedup [12]` and `Params::build_days(real_days)`
   compress build and permitting times (the doc's 12x default, 1x to 24x
-  setting). Demand, costs and capacities are never compressed.
+  setting); `Sim::opening_day` applies them to a mode's `build_years`.
+  Demand, costs and capacities are never compressed.
 
 The clock lives on `Sim` as a public field so saves can serialize it
 (`Clock: Serialize`) and the app can read the time of day for lighting and
@@ -140,8 +147,8 @@ module boundaries above are where those changes go; the API does not change.
 | Test | Covers |
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
-| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement |
-| `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
+| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
+| `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit, grant gate and settlement arithmetic |
 | `examples/bench.rs` | Travis-sized timing; asserts a line edit < 2 s |
 
