@@ -87,7 +87,7 @@ Zero-length links and self-loops are dropped from `scenario.json` (they remain i
 
 ## `existing_lines.json`
 
-A JSON array of sim-core `TransitLine`s: today's network, built by `lines::existing_lines` (DATA-7, DATA-9) from every agency GTFS feed read, whenever roads are built. Names start with the agency (`CapMetro`, `DART`, `METRO`, `Trinity Metro`, `DCTA`, `VIA`, `CCRTA`, `El Paso County Transit`), then the route's short and long name. sim-core's calibration reads it, and a future app setting "start with today's network" can too; `scenario.json` `lines` holds the same array only with `--existing-lines`.
+A JSON array of sim-core `TransitLine`s: today's network, built by `lines::existing_lines` (DATA-7, DATA-9) from every agency GTFS feed read, whenever roads are built. Names start with the agency (`CapMetro`, `DART`, `METRO`, `Trinity Metro`, `DCTA`, `VIA`, `CCRTA`, `El Paso County Transit`, `Sun Metro`), then the route's short and long name. sim-core's calibration reads it, and a future app setting "start with today's network" can too; `scenario.json` `lines` holds the same array only with `--existing-lines`.
 
 ## `transit.json`
 

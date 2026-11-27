@@ -114,13 +114,14 @@ The feed list is `reference/gtfs_feeds.csv` (`id,agency,url,fallback_url,source`
 | via | VIA Metropolitan Transit (San Antonio) | https://via.madcollective.com/wp-content/uploads/2025/06/google_transit.zip | none |
 | ccrta | Corpus Christi Regional Transportation Authority | https://www.ccrta.org/gtfs/ccrta-gtfs.zip | Mobility Database mdb-315 (service dates end June 2025) |
 | epct | El Paso County Transit | https://rapid.nationalrtap.org/GTFSFileManagement/UserUploadFiles/11511/GTFS_EPCT.zip | Mobility Database mdb-3419 |
+| sunmetro | Sun Metro (El Paso city buses; the streetcar is not in the feed) | http://transit.sunmetro.net/google_transit/google_transit.zip | Mobility Database mdb-148 (latest copy May 2026, service dates end June 2026) |
 
 | | |
 |---|---|
 | Columns used | `route_short_name`, `route_long_name`, `route_type`; trip `service_id`, `direction_id`; `stop_id`, `stop_sequence` and first `departure_time` per trip; stop name and coordinates; calendar days and exceptions |
 | Gives the game | Today's network for every listed agency as existing lines (stops, mode, weekday peak and midday headway, span), and headways on CapMetro routes in `transit.json` |
 | Not reachable | From the cloud sandbox (proxy); the Actions runner downloads them |
-| Not yet listed | El Paso Sun Metro (city buses and streetcar), Lubbock Citibus, other small-city and rural agencies: no stable static URL found yet |
+| Not yet listed | El Paso Streetcar (absent from Sun Metro's feed), Lubbock Citibus, other small-city and rural agencies: no stable static URL found yet |
 
 **Citation:** each agency's GTFS static feed as listed above; Mobility Database (MobilityData) for fallback copies.
 

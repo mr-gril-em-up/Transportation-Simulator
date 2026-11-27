@@ -7,3 +7,4 @@ dcta,DCTA,https://gtfs.remix.com/dcta_denton_tx_us.zip,,dcta.net GTFS data for d
 via,VIA,https://via.madcollective.com/wp-content/uploads/2025/06/google_transit.zip,,VIA developer resources (data files)
 ccrta,CCRTA,https://www.ccrta.org/gtfs/ccrta-gtfs.zip,https://files.mobilitydatabase.org/mdb-315/mdb-315-202505020237/mdb-315-202505020237.zip,Corpus Christi RTA; Mobility Database mdb-315
 epct,El Paso County Transit,https://rapid.nationalrtap.org/GTFSFileManagement/UserUploadFiles/11511/GTFS_EPCT.zip,https://files.mobilitydatabase.org/mdb-3419/mdb-3419-202611150120/mdb-3419-202611150120.zip,Mobility Database mdb-3419
+sunmetro,Sun Metro,http://transit.sunmetro.net/google_transit/google_transit.zip,https://files.mobilitydatabase.org/mdb-148/mdb-148-202605280000/mdb-148-202605280000.zip,Mobility Database mdb-148 (official feed; producer URL transit.sunmetro.net)
