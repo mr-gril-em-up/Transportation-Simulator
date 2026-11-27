@@ -48,6 +48,8 @@ fn sourced_defaults_match_figures_csv() {
         "operating_assistance_share",
         p.operating_assistance_share,
     );
+    check(&f, "bond_rate", p.bond_rate);
+    check(&f, "bond_term_years", p.bond_term_years);
 
     let bus = mode_defaults(Mode::Bus);
     let lrt = mode_defaults(Mode::LightRail);
