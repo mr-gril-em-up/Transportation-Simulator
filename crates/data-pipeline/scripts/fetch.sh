@@ -8,16 +8,6 @@ cd "$(dirname "$0")/.."
 YEAR="${YEAR:-2023}"
 RAW=data/raw
 mkdir -p "$RAW"
-# PROBE (temporary)
-B=https://services.arcgis.com/KTcxiTD9dsQw4r7Z/arcgis/rest/services
-for svc in "TxDOT_AADT_Annuals_(Public_View)" TxDOT_AADT "TxDOT_TPP_Annual_AADT_Data_(SPM_View)"; do
-  echo "== $svc"
-  curl -sS "$B/$svc/FeatureServer?f=json" | python3 -c "import json,sys; d=json.load(sys.stdin); print('LAYERS',[(l['id'],l['name']) for l in d.get('layers',[])], d.get('error'))"
-  curl -sS "$B/$svc/FeatureServer/0?f=json" | python3 -c "import json,sys; d=json.load(sys.stdin); print('META',d.get('name'),d.get('geometryType'),d.get('maxRecordCount')); print('FIELDS',[(f['name'],f['type'][13:]) for f in d.get('fields',[])])"
-  curl -sS "$B/$svc/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json"; echo
-  curl -sS "$B/$svc/FeatureServer/0/query?where=1%3D1&outFields=*&resultRecordCount=2&outSR=4326&f=json" | head -c 2500; echo
-done
-exit 0
 
 get() { # get NAME URL [FALLBACK_URL]: saves data/raw/NAME, skipped if present
   local out="$RAW/$1"; shift
@@ -80,6 +70,14 @@ if [[ -z "${SKIP_OSM:-}" ]]; then
       echo "warning: $agency GTFS download failed; its routes have no headways" >&2
     fi
   done < <(tail -n +2 reference/gtfs_feeds.csv)
+fi
+# TxDOT AADT Annuals (one point per traffic count station, latest annual
+# AADT; F38 calibration). ArcGIS feature service, paged 2,000 at a time.
+# Optional: without it no counts.json is written.
+if [[ -z "${SKIP_OSM:-}" && ! -s "$RAW/txdot_aadt.csv" ]]; then
+  echo "get  TxDOT AADT Annuals"
+  python3 scripts/txdot_aadt.py "$RAW/txdot_aadt.csv" \
+    || echo "warning: TxDOT AADT download failed; no counts.json" >&2
 fi
 # OpenStreetMap Texas extract (ODbL, attribution required).
 [[ -n "${SKIP_OSM:-}" ]] || get texas-latest.osm.pbf https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
