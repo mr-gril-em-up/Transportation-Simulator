@@ -311,11 +311,16 @@ fn service_changes_apply_now_and_realignments_wait() {
     let id = s.add_line(rail()).unwrap();
     s.params.instant_build = false;
     let base = s.results().lines[0].daily_boardings;
-    // Headway change: no construction, applies at once.
+    let paid = s.ledger().current.capital_spent;
+    // Headway change: no construction, applies at once, extra vehicles are paid for.
     let mut faster = rail();
     faster.headway_min = 4.0;
     s.update_line(id, faster.clone()).unwrap();
     assert!(s.pending_lines().is_empty());
+    assert!(
+        s.ledger().current.capital_spent > paid,
+        "more vehicles cost capital"
+    );
     let frequent = s.results().lines[0].daily_boardings;
     assert!(frequent > base);
     // Extension: the old version keeps running until the new one opens.
@@ -326,6 +331,12 @@ fn service_changes_apply_now_and_realignments_wait() {
     assert!(pend[0].replaces_open_line);
     assert!((s.results().lines[0].daily_boardings - frequent).abs() < 1e-6);
     assert!(s.ledger().current.capital_spent > 0.0);
+    // A service change during the rebuild reaches the running version too.
+    let mut slower = s.lines()[0].1.clone();
+    slower.headway_min = 15.0;
+    s.update_line(id, slower).unwrap();
+    assert!(s.results().lines[0].daily_boardings < frequent);
+    assert_eq!(s.pending_lines()[0].opens_day, pend[0].opens_day);
     s.remove_line(id).unwrap();
     assert!(s.pending_lines().is_empty() && s.lines().is_empty());
 }

@@ -336,8 +336,9 @@ Light rail's 6 years is the roadmap's F24 check and matches Austin Phase 1
   `preview_line` shows), as FTA rates projects before construction.
 - `update_line` treats a change of mode or stop locations as construction (the
   old version keeps running until the new one opens). Headway, fare, speed,
-  span and name changes apply at once. A service change to a line that is
-  still being built applies to the version under construction.
+  span and name changes apply at once, to the running version and to any
+  version under construction. Every edit charges capital above what the line
+  already paid, so a headway cut pays for its extra vehicles.
 - `params.instant_build` skips construction. It defaults to **true** until the
   app shows lines under construction (its build panel reads `pending_lines`
   and the `preview_line` forecast); the app then sets it false. Defaulting it

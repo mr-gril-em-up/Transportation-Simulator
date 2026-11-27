@@ -635,7 +635,17 @@ impl Sim {
         let rebuild = !same_alignment(drawn, &line);
         if let Some((_, day)) = self.pending[i].take() {
             if !rebuild {
-                // Service change to a line still being built: keep its date.
+                // Service change to a line with construction under way: the
+                // running version (if any) takes the new service at once, the
+                // version being built keeps its opening day.
+                if let Some(open) = self.lines[i].as_mut() {
+                    copy_service(&line, open);
+                    self.on_lines_changed();
+                    self.charge_capital(id);
+                }
+                // More vehicles for the version being built cost capital too.
+                let (r, capital) = self.evaluate_in_slot(id, &line)?;
+                self.charge(id, capital, r.daily_boardings);
                 self.pending[i] = Some((line, day));
                 self.refresh_pending();
                 return Ok(());
@@ -645,9 +655,9 @@ impl Sim {
         if !rebuild || opens <= self.clock.day() {
             self.lines[i] = Some(line);
             self.on_lines_changed();
-            if rebuild {
-                self.charge_capital(id);
-            }
+            // Charges only positive deltas, so a shorter headway's extra
+            // vehicles are paid for and cuts refund nothing (D31).
+            self.charge_capital(id);
         } else {
             let (r, capital) = self.evaluate_in_slot(id, &line)?;
             self.charge(id, capital, r.daily_boardings);
@@ -1419,6 +1429,16 @@ pub fn logit(
     }
     p.iter_mut().for_each(|x| *x /= s);
     Some(p)
+}
+
+/// Copy the service settings (not the alignment) of `from` onto `to`.
+fn copy_service(from: &TransitLine, to: &mut TransitLine) {
+    to.name = from.name.clone();
+    to.headway_min = from.headway_min;
+    to.fare = from.fare;
+    to.fare_per_km = from.fare_per_km;
+    to.speed_kph = from.speed_kph;
+    to.span_hours = from.span_hours;
 }
 
 /// True if two versions of a line share mode and stop locations, so moving

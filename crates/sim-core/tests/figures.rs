@@ -41,6 +41,13 @@ fn sourced_defaults_match_figures_csv() {
     check(&f, "trips_per_person_day_2022", p.trips_per_person);
     check(&f, "walk_wait_time_multiplier", p.wait_weight);
     check(&f, "walk_wait_time_multiplier", p.walk_weight);
+    check(&f, "transit_sales_tax_rate", p.local_sales_tax_rate);
+    check(&f, "taxable_sales_per_capita", p.taxable_sales_per_capita);
+    check(
+        &f,
+        "operating_assistance_share",
+        p.operating_assistance_share,
+    );
 
     let bus = mode_defaults(Mode::Bus);
     let lrt = mode_defaults(Mode::LightRail);
