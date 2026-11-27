@@ -116,7 +116,7 @@ Goal: the core loop. Draw a transit line, see ridership respond in under 2 secon
 
 | ID | Feature | Area | Depends on | Done when | Status |
 |---|---|---|---|---|---|
-| F11 | Car travel times: shortest paths on the road graph, static assignment with BPR congestion | core | F03 | Zone-to-zone car skims computed for Travis; congested times exceed free-flow on I-35 at peak | Done (#7) |
+| F11 | Car travel times: shortest paths on the road graph, static assignment with BPR congestion | core | F03 | Zone-to-zone car skims computed for Travis; congested times exceed free-flow on I-35 at peak | Built (#7); exit check on real Travis data (I-35 peak) pending |
 | F12 | Transit skims: walk access and egress, wait (half headway), in-vehicle, transfers; drive-to-transit (park-and-ride) access | core | F03 | Skims exist for every zone pair a line serves; park-and-ride stops offer drive access | Done (#7) |
 | F13 | Non-work trips: NHTS rates by purpose (~3.5 trips/person/day), gravity destinations weighted by OSM POIs and LODES jobs by sector | core, pipeline | F04 | Daily trips per person and purpose split match NHTS within 10%. *Placed in M1 because Red Line calibration (F19) counts all riders, not only commuters.* | Partial (#7): single-purpose gravity model on car time, rate in `Params`; no NHTS purpose split or POI weights |
 | F14 | Multinomial logit mode split on generalized cost (wait and walk weighted ~2x in-vehicle); ASCs calibrated per metro to ACS mode share | core | F11, F12, F13 | Baseline reproduces Travis ACS commute mode shares within 2 points | Partial (#7): six-way logit and `calibrate_mode_shares`; not yet calibrated to Travis ACS shares |
