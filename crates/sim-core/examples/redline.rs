@@ -27,7 +27,12 @@ fn main() {
             park_ride: true,
         })
         .collect();
-    let mut sim = Sim::from_json(&input, Params::default()).unwrap();
+    // The real line exists today, so it opens at once.
+    let params = Params {
+        instant_build: true,
+        ..Params::default()
+    };
+    let mut sim = Sim::from_json(&input, params).unwrap();
     let line = TransitLine {
         name: "Red Line".into(),
         mode: Mode::CommuterRail,

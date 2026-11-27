@@ -350,11 +350,10 @@ Light rail's 6 years is the roadmap's F24 check and matches Austin Phase 1
   span and name changes apply at once, to the running version and to any
   version under construction. Every edit charges capital above what the line
   already paid, so a headway cut pays for its extra vehicles.
-- `params.instant_build` skips construction. It defaults to **true** until the
-  app shows lines under construction (its build panel reads `pending_lines`
-  and the `preview_line` forecast); the app then sets it false. Defaulting it
-  false now would make newly drawn lines vanish from the app's ridership
-  readout for months of game time.
+- `params.instant_build` skips construction. It defaults to **false** (SIM-4):
+  the app shows lines under construction from `pending_lines` and the
+  `preview_line` forecast (APP-3). Tests, the bench and the Red Line probe set
+  it true.
 - Simplifications: build time does not grow with length, and roads under
   works keep full capacity. Both are F24 follow-ups.
 - Lines in the input (present at start) are treated as already paid for.
