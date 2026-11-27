@@ -193,6 +193,42 @@ pub struct LinkFlow {
 /// off-peak skims means "same as peak".
 type TSkim = Vec<Vec<TOd>>;
 
+/// A game day's road re-run, spread over `tick_budgeted` calls (SIM-18):
+/// round 0 re-prices park-and-ride, rounds 1..=`assign_rounds` load slices of
+/// origins on the roads and step toward that load, and the last round skims
+/// and chooses on the new car times and commits.
+struct DayJob {
+    round: usize,
+    assign_rounds: usize,
+    /// Next origin of the current pass.
+    next: usize,
+    vol: Vec<f64>,
+    outs: Vec<(usize, OriginOut)>,
+    /// `Sim::lines_version` when the final pass began.
+    lines_at_start: u64,
+}
+
+impl DayJob {
+    fn new(assign_rounds: usize) -> DayJob {
+        DayJob {
+            round: 0,
+            assign_rounds,
+            next: 0,
+            vol: Vec::new(),
+            outs: Vec::new(),
+            lines_at_start: 0,
+        }
+    }
+
+    fn progress(&self, z: usize) -> f64 {
+        let passes = (self.assign_rounds + 1) as f64;
+        if self.round == 0 {
+            return 0.0;
+        }
+        ((self.round - 1) as f64 + self.next as f64 / z.max(1) as f64) / passes
+    }
+}
+
 /// Transit-side state a line evaluation replaces (see `Sim::on_lines_changed`).
 struct TransitState {
     net: TransitNet,
@@ -331,6 +367,11 @@ pub struct Sim {
     /// the params as JSON; `pass` clears the key when car times move.
     idle_rows: Vec<Option<IdleRow>>,
     idle_key: Option<String>,
+    /// A game day's re-run in progress (`tick_budgeted`, SIM-18).
+    day_job: Option<DayJob>,
+    /// Bumped on every line change, so a day job can tell its transit rows
+    /// went stale.
+    lines_version: u64,
 }
 
 /// A line (or a new version of one) under construction.
@@ -486,6 +527,8 @@ impl Sim {
             pnr_cars: vec![],
             idle_rows: vec![],
             idle_key: None,
+            day_job: None,
+            lines_version: 0,
             tsk_walk: vec![],
             tsk_drive: vec![],
             tsk_walk_off: vec![],
@@ -762,6 +805,7 @@ impl Sim {
             }
         }
         if opened {
+            self.lines_version += 1;
             self.rebuild_transit();
         }
         opened
@@ -888,11 +932,108 @@ impl Sim {
     pub fn tick(&mut self, real_dt: f64) -> u64 {
         let days = self.clock.advance(real_dt);
         if days > 0 {
+            self.day_job = None;
             self.open_finished_lines();
             self.equilibrate_warm();
             self.settle_months();
         }
         days
+    }
+
+    /// `tick` for a caller that must stay responsive (SIM-18): a day
+    /// boundary starts the day's re-run (`equilibrate_warm`'s work) as a job,
+    /// and each call runs at most about `budget` of it, so line edits can go
+    /// in between calls. Until the job finishes, results and car times are
+    /// the previous day's. Lines due to open open at the boundary; months
+    /// settle when the job finishes, on that day's results. A boundary that
+    /// comes while a job runs is folded into it (the warm start makes days
+    /// cumulative). Returns game days crossed. Do not mix with `tick`.
+    pub fn tick_budgeted(&mut self, real_dt: f64, budget: std::time::Duration) -> u64 {
+        let days = self.clock.advance(real_dt);
+        if days > 0 {
+            if self.open_finished_lines() {
+                // Keep transit consistent with the new network until the job ends.
+                self.on_lines_changed();
+            }
+            if self.day_job.is_none() {
+                self.day_job = Some(DayJob::new(self.params.daily_iterations.max(1)));
+            }
+        }
+        if self.day_job.is_some() {
+            self.run_day_job(budget);
+        }
+        days
+    }
+
+    /// Share of the running day job done, 0 to 1; None when no job runs.
+    pub fn day_progress(&self) -> Option<f64> {
+        self.day_job.as_ref().map(|j| j.progress(self.nz))
+    }
+
+    /// Run the day job for about `budget` (at least one slice of origins).
+    fn run_day_job(&mut self, budget: std::time::Duration) {
+        let t0 = Instant::now();
+        let Some(mut job) = self.day_job.take() else {
+            return;
+        };
+        let z = self.nz;
+        // Origins per slice: enough to keep every core busy, and at least
+        // eight slices per pass so a small region still interleaves.
+        let slice = (rayon::current_num_threads() * 32)
+            .min(z.div_ceil(8))
+            .max(1);
+        loop {
+            match job.round {
+                0 => {
+                    // Yesterday's lot use sets today's park-and-ride prices (SIM-11).
+                    if self.update_pnr_penalties() {
+                        self.transit_skims();
+                    }
+                    job.round = 1;
+                }
+                r if r <= job.assign_rounds => {
+                    let range = job.next..(job.next + slice).min(z);
+                    let (vol, _) = self.pass_range(range.clone(), true);
+                    if job.vol.is_empty() {
+                        job.vol = vol;
+                    } else {
+                        job.vol.iter_mut().zip(&vol).for_each(|(a, b)| *a += b);
+                    }
+                    job.next = range.end;
+                    if job.next >= z {
+                        let aon = std::mem::take(&mut job.vol);
+                        self.step_toward(&aon, self.params.feedback_iterations + r);
+                        job.round += 1;
+                        job.next = 0;
+                        job.lines_at_start = self.lines_version;
+                    }
+                }
+                _ => {
+                    let range = job.next..(job.next + slice).min(z);
+                    let (_, outs) = self.pass_range(range.clone(), false);
+                    job.outs.extend(outs);
+                    job.next = range.end;
+                    if job.next >= z {
+                        // A line edit during this pass left some transit rows
+                        // stale: keep the car skims, redo transit at once.
+                        let fresh = job.lines_at_start == self.lines_version;
+                        let rows = self.commit_outs(std::mem::take(&mut job.outs), fresh);
+                        if fresh {
+                            self.finish(t0, false, Some(rows));
+                        } else {
+                            self.transit_skims();
+                            self.finish(t0, false, None);
+                        }
+                        self.settle_months();
+                        return;
+                    }
+                }
+            }
+            if t0.elapsed() >= budget {
+                break;
+            }
+        }
+        self.day_job = Some(job);
     }
 
     /// Full run from free-flow: mode choice <-> congested car assignment to a
@@ -901,6 +1042,7 @@ impl Sim {
     /// trees per zone.
     pub fn equilibrate(&mut self) {
         let t0 = Instant::now();
+        self.day_job = None;
         self.link_time = self.graph.free_flow_times();
         self.link_vol.iter_mut().for_each(|v| *v = 0.0);
         let k = self.params.feedback_iterations.max(1);
@@ -957,6 +1099,7 @@ impl Sim {
     /// `daily_iterations` rounds suffice. `tick` calls it at day boundaries.
     pub fn equilibrate_warm(&mut self) {
         let t0 = Instant::now();
+        self.day_job = None;
         // The previous solution counts as `feedback_iterations` rounds of
         // history: that sets the floor under each day's line-searched step.
         let prior = self.params.feedback_iterations;
@@ -978,17 +1121,23 @@ impl Sim {
     fn feedback(&mut self, rounds: usize, prior: usize) {
         for n in 1..=rounds {
             let (_, aon) = self.pass(true);
-            let msa = 1.0 / (prior + n) as f64;
-            let step = if msa >= 1.0 {
-                1.0
-            } else {
-                self.fw_step(&aon).max(0.1 * msa)
-            };
-            for (v, a) in self.link_vol.iter_mut().zip(&aon) {
-                *v += step * (a - *v);
-            }
-            self.update_link_times();
+            self.step_toward(&aon, prior + n);
         }
+    }
+
+    /// Move link volumes toward the all-or-nothing load `aon` as round `n`
+    /// of history (the whole load when `n` is 1), then update BPR times.
+    fn step_toward(&mut self, aon: &[f64], n: usize) {
+        let msa = 1.0 / n as f64;
+        let step = if msa >= 1.0 {
+            1.0
+        } else {
+            self.fw_step(aon).max(0.1 * msa)
+        };
+        for (v, a) in self.link_vol.iter_mut().zip(aon) {
+            *v += step * (a - *v);
+        }
+        self.update_link_times();
     }
 
     /// Frank-Wolfe step: the `λ` in [0, 1] that minimizes the Beckmann
@@ -1193,6 +1342,7 @@ impl Sim {
     /// results and park-and-ride prices, which are small.
     fn on_lines_changed(&mut self) -> TransitState {
         let t0 = Instant::now();
+        self.lines_version += 1;
         let saved = TransitState {
             net: self.rebuild_transit(),
             tsk: [
@@ -1732,8 +1882,18 @@ impl Sim {
     /// Updates `car_peak`, `tsk_walk`, `tsk_drive`. One tree per origin
     /// instead of two (skim, then assign).
     fn pass(&mut self, assign: bool) -> (Vec<Row>, Vec<f64>) {
-        // Car times change: stored idle-origin totals no longer hold.
-        self.idle_key = None;
+        let (vol, outs) = self.pass_range(0..self.nz, assign);
+        (self.commit_outs(outs, true), vol)
+    }
+
+    /// The fused pass for origins `origins` only: their all-or-nothing road
+    /// volumes (empty unless `assign`) and outputs. Reads state, changes
+    /// nothing, so a game day can run it a slice at a time (SIM-18).
+    fn pass_range(
+        &self,
+        origins: std::ops::Range<usize>,
+        assign: bool,
+    ) -> (Vec<f64>, Vec<(usize, OriginOut)>) {
         let z = self.nz;
         let g = &self.graph;
         let ne = if assign { g.edges.len() } else { 0 };
@@ -1749,7 +1909,7 @@ impl Sim {
             Vec<f64>,
             Vec<(usize, OriginOut)>,
         );
-        let (vol, mut outs) = (0..z)
+        origins
             .into_par_iter()
             .fold(
                 || -> (Vec<f64>, Option<Acc>) { (vec![0.0; ne], None) },
@@ -1827,16 +1987,25 @@ impl Sim {
                     oa.extend(ob);
                     (va, oa)
                 },
-            );
+            )
+    }
+
+    /// Store a whole pass's outputs: car skims, and transit skims when
+    /// `transit` (else the current ones stay). Returns the choice rows.
+    fn commit_outs(&mut self, mut outs: Vec<(usize, OriginOut)>, transit: bool) -> Vec<Row> {
+        // Car times change: stored idle-origin totals no longer hold.
+        self.idle_key = None;
         outs.sort_by_key(|(i, _)| *i);
-        let mut rows = Vec::with_capacity(z);
+        let mut rows = Vec::with_capacity(outs.len());
         self.car_peak.time.clear();
         self.car_peak.km.clear();
         self.car_peak.toll.clear();
-        self.tsk_walk.clear();
-        self.tsk_drive.clear();
-        self.tsk_walk_off.clear();
-        self.tsk_drive_off.clear();
+        if transit {
+            self.tsk_walk.clear();
+            self.tsk_drive.clear();
+            self.tsk_walk_off.clear();
+            self.tsk_drive_off.clear();
+        }
         let off_rows = outs
             .iter()
             .any(|(_, o)| !o.w_off.is_empty() || !o.d_off.is_empty())
@@ -1845,15 +2014,17 @@ impl Sim {
             self.car_peak.time.extend(o.t);
             self.car_peak.km.extend(o.k);
             self.car_peak.toll.extend(o.tl);
-            self.tsk_walk.push(o.w);
-            self.tsk_drive.push(o.d);
-            if off_rows {
-                self.tsk_walk_off.push(o.w_off);
-                self.tsk_drive_off.push(o.d_off);
+            if transit {
+                self.tsk_walk.push(o.w);
+                self.tsk_drive.push(o.d);
+                if off_rows {
+                    self.tsk_walk_off.push(o.w_off);
+                    self.tsk_drive_off.push(o.d_off);
+                }
             }
             rows.push(o.row);
         }
-        (rows, vol)
+        rows
     }
 
     /// Car skim row for origin `i` from its shortest-path tree.

@@ -84,6 +84,27 @@ fn main() {
             t.elapsed().as_secs_f64()
         );
     }
+    // One more day through `tick_budgeted` (SIM-18): the longest single call
+    // is how long a line edit can wait behind the day.
+    let t = Instant::now();
+    sim.clock.set_timelapse(60.0);
+    let budget = std::time::Duration::from_millis(100);
+    let (mut calls, mut longest) = (0, 0.0f64);
+    let mut step = |sim: &mut Sim, dt| {
+        let c = Instant::now();
+        sim.tick_budgeted(dt, budget);
+        longest = longest.max(c.elapsed().as_secs_f64());
+    };
+    step(&mut sim, 24.0);
+    calls += 1;
+    while sim.day_progress().is_some() {
+        step(&mut sim, 0.0);
+        calls += 1;
+    }
+    println!(
+        "budgeted day: {:.1} s in {calls} calls of 100 ms budget, longest call {longest:.2} s",
+        t.elapsed().as_secs_f64()
+    );
     let r = sim.results();
     let sh = r.mode_share;
     println!(

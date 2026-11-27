@@ -702,3 +702,56 @@ fn edits_after_a_params_change_re_choose_origins_without_transit() {
         );
     }
 }
+
+#[test]
+fn budgeted_day_matches_the_blocking_one() {
+    // SIM-18: the day's re-run spread over many short calls lands where
+    // `tick` does, and results stay the previous day's until it finishes.
+    let mut a = sim();
+    a.add_line(rail()).unwrap();
+    let mut b = sim();
+    b.add_line(rail()).unwrap();
+    a.clock.set_timelapse(60.0);
+    b.clock.set_timelapse(60.0);
+    assert_eq!(a.tick(24.0), 1);
+    assert_eq!(b.tick_budgeted(24.0, std::time::Duration::ZERO), 1);
+    let mut calls = 1;
+    while b.day_progress().is_some() {
+        assert!(
+            b.results().car_times_stale,
+            "results moved before the day ended"
+        );
+        b.tick_budgeted(0.0, std::time::Duration::ZERO);
+        calls += 1;
+    }
+    assert!(calls > 3, "the day ran in {calls} calls");
+    let (ra, rb) = (a.results(), b.results());
+    assert!(!rb.car_times_stale);
+    let close = |x: f64, y: f64| (x - y).abs() <= 1e-6 * x.abs().max(1.0);
+    assert!(close(ra.peak_vehicle_km, rb.peak_vehicle_km));
+    assert!(close(ra.daily_trips.transit(), rb.daily_trips.transit()));
+    assert!(close(
+        ra.lines[0].daily_boardings,
+        rb.lines[0].daily_boardings
+    ));
+}
+
+#[test]
+fn line_edit_during_a_budgeted_day_is_kept() {
+    // SIM-18: a line added while the day runs is in the day's final results.
+    let mut s = sim();
+    s.clock.set_timelapse(60.0);
+    s.tick_budgeted(24.0, std::time::Duration::ZERO);
+    for _ in 0..3 {
+        s.tick_budgeted(0.0, std::time::Duration::ZERO);
+    }
+    assert!(s.day_progress().is_some());
+    s.add_line(rail()).unwrap();
+    let during = s.results().lines[0].daily_boardings;
+    while s.day_progress().is_some() {
+        s.tick_budgeted(0.0, std::time::Duration::ZERO);
+    }
+    let after = s.results().lines[0].daily_boardings;
+    assert!(during > 0.0 && after > 0.0);
+    assert!((after - during).abs() / during < 0.2, "{during} -> {after}");
+}
