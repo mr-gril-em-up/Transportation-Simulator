@@ -138,6 +138,17 @@ And back (`fromLineResult`): `daily_boardings` becomes `dailyRiders`,
 required) already cross the IPC boundary and are ignored until the UI renders
 them.
 
+### Line inspector (F17)
+
+`fromLineResult` copies sim-core's `LineResult` length, run time, fleet,
+passenger-km, `segment_loads` and peak-hour load and capacity into
+`RouteResult.detail`. `src/inspector.ts` turns that and the per-stop
+boardings into HTML with two inline SVG charts; it is pure (no DOM, no sim
+calls), so `test/core.test.ts` checks its text and escaping directly. Open
+inspectors are kept in the `inspecting` set because the panel is rebuilt on
+every result. A route with a pending build has no inspector: its per-stop
+and per-segment arrays describe the running version (see A25).
+
 ### Bonds and bankruptcy (F26)
 
 All money rules are sim-core's (`Sim::issue_bond`, `Ledger::settle`). The

@@ -45,6 +45,20 @@ export interface RouteResult {
   /** Economics, when the backend provides them (sim-core does, the mock does not). */
   operatingCostPerDay?: number;
   fareboxRecovery?: number; // fare revenue / operating cost, 0..n
+  /** Line inspector figures (sim-core only). */
+  detail?: LineDetail;
+}
+
+/** What the line inspector shows, from sim-core's `LineResult`. */
+export interface LineDetail {
+  lengthKm: number; // route length sim-core charges and times
+  runMin: number; // one way, end to end, dwell included
+  vehicles: number; // vehicles (trains) needed for the headway
+  passengerKm: number; // per day
+  /** Daily riders on each segment (stop k to k+1): [outbound, inbound]. */
+  segmentLoads: [number, number][];
+  peakHourLoad: number; // riders in the peak hour on the busiest segment and direction
+  peakHourCapacity: number; // places per hour per direction at the peak headway
 }
 
 /** A zone pair and its daily travel demand (F06 desire lines). */

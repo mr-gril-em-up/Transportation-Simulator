@@ -21,6 +21,13 @@ interface LineResultOut {
   boardings_by_stop: number[]; // aligned with the line's stops
   operating_cost_per_day: number;
   farebox_recovery: number;
+  length_km: number;
+  run_min: number;
+  vehicles_required: number;
+  passenger_km: number;
+  segment_loads: [number, number][];
+  peak_hour_load: number;
+  peak_hour_capacity: number;
 }
 
 /** sim-core LinePreview (crates/sim-core/src/model.rs). */
@@ -136,6 +143,15 @@ export function fromLineResult(o: LineResultOut, route: RouteSpec | undefined): 
     boardingsByStop,
     operatingCostPerDay: o.operating_cost_per_day,
     fareboxRecovery: o.farebox_recovery,
+    detail: {
+      lengthKm: o.length_km,
+      runMin: o.run_min,
+      vehicles: o.vehicles_required,
+      passengerKm: o.passenger_km,
+      segmentLoads: o.segment_loads,
+      peakHourLoad: o.peak_hour_load,
+      peakHourCapacity: o.peak_hour_capacity,
+    },
   };
 }
 
