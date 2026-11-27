@@ -167,3 +167,11 @@ Not committed (27 MB of JSON, DATA-1 keeps generated data out of git) and not
 bundled yet (installers are not an M1 need). The synthetic fallback keeps a
 fresh clone and CI working with no network. The panel names the source so a
 synthetic run is never mistaken for real numbers.
+
+### A25. Construction period on in the game, new lines drawn faded
+SIM-1 left `instant_build` on until the app could show lines under
+construction; with the panel line and faded drawing in place, the shell turns
+it off. Faded (opacity) rather than dashed because MapLibre's `line-dasharray`
+is not data-driven, and a second pair of layers for one state is more code
+than it is worth. Rebuilds draw normally: a line the player can ride should not
+look unbuilt. The mock stays instant; it exists for UI work without Rust.

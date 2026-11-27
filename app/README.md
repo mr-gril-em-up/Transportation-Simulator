@@ -13,6 +13,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Browser client (mock sim): Red Line demo and a drawn bus line](docs/img/city-view.png)
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
 ![Editing a line: stops ringed in black can be dragged, added or deleted](docs/img/stop-editing.png)
+![A line under construction: faded on the map, opening day in the panel](docs/img/under-construction.png)
 ![Sim-driven clock after Skip to next month: Day 31, budget settled, ridership re-run](docs/img/sim-clock.png)
 ![Drawing a rail line: the hint box previews capital cost, grant and riders before you build](docs/img/cost-preview.png)
 ![Desire lines from sim-core with the Red Line; pairs along the line turn green as transit share rises](docs/img/desire-lines.png)
@@ -81,6 +82,14 @@ then waits for the build. The terminal prints
   month's capital spend and federal grants. Building charges capital less any grant; extending a
   line charges only the added cost; shrinking or deleting refunds nothing (sim-core rules, F26).
   Cash starts at $0 and can go negative until bonds exist.
+- **Construction** (F24): a new line is paid for when you draw it but opens only after its
+  mode's build time divided by 12 (light rail about 6 months, so about 183 game days; the Red
+  Line demo, commuter rail, about 122). Until then the panel says "Under construction, opens Day
+  N (in X days)", the line draws faded on the map and carries no riders. The drawing hint shows
+  the opening day before you commit. Moving, adding or deleting stops on an open line is a
+  rebuild: the old version keeps running and the panel shows when the new one opens (per-stop
+  numbers are hidden until then, since the running stops differ from the drawn ones). Headway
+  changes apply at once. Use **Skip to next month** or time-lapse to get there.
 - **Ridership panel** (top right): weekday boardings per line. With sim-core it also shows
   operating cost per day and farebox recovery. The header shows which backend answered and the
   round-trip time of the last call (M1 target: under 2 s). Changing the headway dropdown re-runs
@@ -162,7 +171,8 @@ interface SimClient {
 | `upsert_route` | `routeId: string`, `line: TransitLine` | `RouteResultOut[]` for every client route |
 | `remove_route` | `routeId: string` | `RouteResultOut[]` |
 | `desire_lines` | `n: number` | Top `n` zone pairs by daily trips: `{ from: [lon,lat], to: [lon,lat], trips, transit_trips }[]`, largest first |
-| `preview_route` | `line: TransitLine` | sim-core `LinePreview`: `{ line: LineResult, capital_cost, federal_grant, capital_per_daily_boarding }`. Runs under the Sim lock (sim-core adds and removes the line while it evaluates, 40 to 80 ms) |
+| `pending_routes` | none | Routes under construction: `{ route_id, opens_day, replaces_open_line }[]` (sim-core `PendingLine` with client ids) |
+| `preview_route` | `line: TransitLine` | sim-core `LinePreview` plus `opens_day`: `{ line: LineResult, capital_cost, federal_grant, capital_per_daily_boarding, opens_day }`. Runs under the Sim lock (sim-core adds and removes the line while it evaluates, 40 to 80 ms) |
 | `ledger` | none | sim-core `Ledger`: `{ cash, current: MonthStatement, history: MonthStatement[], served_population }` |
 | `clock` | none | `{ game_seconds, timelapse, paused, day }` (sim-core `Clock` plus whole days) |
 | `set_clock` | `paused?: boolean`, `timelapse?: number` | Same as `clock`; omitted fields unchanged, non-positive time-lapse ignored |
@@ -221,6 +231,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 |---|---|
 | Lines are straight from stop to stop, not snapped to roads | Road graph from the pipeline plus a router (F16 follow-up) |
 | Desire lines are straight zone-to-zone chords capped at 300 pairs; no filtering by purpose or mode | F06 follow-up if playtests want it |
+| The browser mock builds instantly (no construction period) | Not planned: construction rules live in sim-core |
 | Cost preview only while drawing; a stop edit is charged on release with no preview first (the budget shows what it cost) | F16 follow-up if it matters in play |
 | No monthly statement view; settlement shows only as the cash change | Budget panel (M2) |
 | A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (well under a second on the synthetic region, about 2 s on real Travis) | Fine for M1; revisit with the statewide scenario (M3) |
@@ -242,6 +253,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | F15 Tauri command interface | Done (app side): `upsert_route`, `remove_route`, `sim_status`. Clock advance not wired |
 | F16 Line drawing | Partial: draw with capital cost, grant and ridership preview; edit stops (move, insert, delete), rename, headway, delete line. Missing: mode and fare pickers |
 | F17 Ridership readout | Done for line totals and per-stop boardings, plus cost and farebox from sim-core |
+| F24 Construction period | Done (app): lines under construction draw faded, opening day in panel and drawing hint; rebuilds keep the old version running |
 | F21 Clock and time-lapse | Done (app): sim-core's clock driven by a shell worker; pause, 1/2/10/60x, skip to next month; daily re-run refreshes ridership |
 | F41 / F42 Schematic and morph | Prototype: heuristic layout, no pins |
 | F06 Desire lines | Done (app): layer from `Sim::desire_lines`; the M0 exit check (F07) is the pipeline's |

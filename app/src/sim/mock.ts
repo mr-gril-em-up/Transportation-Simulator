@@ -2,7 +2,7 @@
 // Travis County zones. Deterministic, responds to stop placement, headway and
 // fare, and runs in a few ms. Numbers are plausible, not calibrated.
 import { km } from "../geo";
-import { isRegional, type Budget, type ClockState, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
+import { isRegional, type Budget, type PendingRoute, type ClockState, type DesireLine, type RoutePreview, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 interface Zone {
   lngLat: LngLat;
@@ -157,6 +157,11 @@ export class MockSim implements SimClient {
   async previewRoute(route: RouteSpec): Promise<RoutePreview> {
     const { dailyRiders } = simulateRoute(route, this.zones);
     return { dailyRiders, ...mockCapital(route, dailyRiders) };
+  }
+
+  /** The mock builds instantly: nothing is ever under construction. */
+  async pendingRoutes(): Promise<PendingRoute[]> {
+    return [];
   }
 
   async budget(): Promise<Budget> {

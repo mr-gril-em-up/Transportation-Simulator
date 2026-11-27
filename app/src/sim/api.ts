@@ -59,6 +59,16 @@ export interface RoutePreview {
   capitalCost: number; // USD: guideway per km plus vehicles
   federalGrant: number; // USD back from the federal government; 0 if it fails the cost-per-rider gate
   operatingCostPerDay?: number;
+  /** Game day (sim-core `Clock::day`) it would open if built now; absent means at once. */
+  opensDay?: number;
+}
+
+/** A route under construction (F24). Until `opensDay` it carries no riders, or,
+ *  for a rebuild (`replacesOpenLine`), its previous version keeps running. */
+export interface PendingRoute {
+  routeId: string;
+  opensDay: number; // game day, sim-core numbering (day 0 = "Day 1")
+  replacesOpenLine: boolean;
 }
 
 /** The transit authority's books, as the HUD shows them. */
@@ -81,6 +91,8 @@ export interface SimClient {
   /** Cost and ridership of `route` without building it. */
   previewRoute(route: RouteSpec): Promise<RoutePreview>;
   budget(): Promise<Budget>;
+  /** Routes under construction and their opening days. */
+  pendingRoutes(): Promise<PendingRoute[]>;
   /** Results for every route without changing anything (re-read after the day re-runs). */
   results(): Promise<RouteResult[]>;
   /** The simulation's clock (F21): the client polls it and interpolates in between. */
