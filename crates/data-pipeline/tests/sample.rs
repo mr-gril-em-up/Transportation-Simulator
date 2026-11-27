@@ -221,6 +221,11 @@ fn builds_travis_sample() {
     // Transit: the bus route survives with ordered named stops; the Dallas train does not.
     let transit: Transit = read(&out, "transit.json");
     assert_eq!(transit.routes.len(), 1);
+    assert_eq!(
+        m.rail_routes.as_deref(),
+        Some(&[][..]),
+        "the only kept route is a bus"
+    );
     let r = &transit.routes[0];
     assert_eq!((r.mode.as_str(), r.r#ref.as_deref()), ("bus", Some("801")));
     let stops: Vec<&str> = r.stops.iter().map(|s| s.name.as_deref().unwrap()).collect();

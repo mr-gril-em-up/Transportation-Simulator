@@ -90,7 +90,11 @@ Zero-length links and self-loops are dropped from `scenario.json` (they remain i
 
 ## `manifest.json`
 
-Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`.
+Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, and `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, sorted, so known lines can be checked from the manifest alone).
+
+## Distribution
+
+The workflow publishes each build as GitHub Release `data-<area>-<year>` with two assets: `tsim-data-<area>-<year>.tar.gz` (all five files) and `manifest-<area>-<year>.json`. `scripts/download-build.sh` unpacks the archive into `data/out/<area>-<year>/`. Roads and transit in the archive are derived from OpenStreetMap and stay under ODbL with attribution; the release notes say so.
 
 ## Changing the format
 

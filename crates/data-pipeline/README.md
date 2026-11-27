@@ -13,7 +13,21 @@ cargo run --release                                  # Travis County -> data/out
 cargo run --release -- --area 48 --out data/out/texas  # all of Texas
 ```
 
-No network where you are? Open the repo's **Actions** tab, pick the **data-pipeline** workflow, click **Run workflow** (area `48453`, year `2023`). It downloads the data, builds, and attaches the output files to the run as a downloadable artifact.
+### Use a published build (no raw downloads)
+
+Every manual run of the **data-pipeline** workflow publishes its output as GitHub Release `data-<area>-<year>` (DATA-1; prerelease, assets replaced on re-run). To use the latest Travis build in the app or sim-core:
+
+```sh
+cd crates/data-pipeline
+eval "$(./scripts/download-build.sh)"        # Travis, LODES 2023 -> data/out/48453-2023, sets TRANSPO_SCENARIO
+cd ../../app && npm run tauri dev             # the app loads $TRANSPO_SCENARIO (app decision A14)
+```
+
+`AREA=48 YEAR=2023 ./scripts/download-build.sh` fetches a statewide build once one is published. The release also carries `manifest-<area>-<year>.json` for a quick look without the archive.
+
+### Publish a new build
+
+Actions tab → **data-pipeline** → **Run workflow** (area `48453`, year `2023`). It downloads the raw data, builds, uploads a run artifact, and publishes or updates the release.
 
 ## Test
 
@@ -86,6 +100,7 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 | `src/scenario.rs` | Converts the layers to `sim_core::ScenarioInput`, picks each zone's road node |
 | `src/model.rs` | Serde types for the detail files (`zones.json`, `roads.json`, `transit.json`) |
 | `scripts/fetch.sh` | Downloads the raw inputs |
+| `scripts/download-build.sh` | Downloads a published build from GitHub Releases and prints the `TRANSPO_SCENARIO` export |
 | `tests/sample.rs` | End-to-end build on a synthetic Travis sample |
 | `tests/reference.rs` | Checks `reference/figures.csv` is well formed and cited |
 | `reference/figures.csv` | Sourced reference figures with citations |
@@ -105,5 +120,5 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 ## Status
 
 - F02 done (#3). F03 done (#3).
-- Real-data Travis build: run through the Actions workflow; see [docs/TESTING.md](docs/TESTING.md) for the checks.
+- Real-data Travis build: published as release `data-48453-2023` by the Actions workflow; checks in [docs/TESTING.md](docs/TESTING.md).
 - F04, F31, F32, F33 not started.
