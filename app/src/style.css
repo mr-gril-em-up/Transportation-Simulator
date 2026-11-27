@@ -1,0 +1,21 @@
+html, body { margin: 0; height: 100%; font: 13px/1.4 system-ui, sans-serif; color: #1b1d22; }
+#map { position: absolute; inset: 0; }
+#hud { position: absolute; inset: 0; pointer-events: none; }
+.panel {
+  position: absolute; pointer-events: auto; background: rgba(255, 255, 255, 0.94);
+  border-radius: 8px; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2); padding: 8px 10px;
+}
+button, select { font: inherit; padding: 3px 8px; border: 1px solid #c4c8cf; border-radius: 5px; background: #fff; cursor: pointer; }
+button:hover { background: #f1f3f6; }
+#clock { top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; }
+#clock-time { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 96px; }
+#tools { top: 12px; left: 12px; display: flex; flex-direction: column; gap: 6px; max-width: 190px; }
+#draw-hint { color: #b2391b; font-size: 12px; }
+#routes { top: 12px; right: 12px; width: 250px; max-height: 70vh; overflow: auto; }
+#routes h3 { margin: 0 0 6px; font-size: 14px; }
+#routes small { color: #7a808a; font-weight: 400; }
+.route { padding: 6px 0; border-top: 1px solid #eceef1; }
+.route .row { display: flex; gap: 6px; margin-top: 4px; }
+.riders { font-variant-numeric: tabular-nums; font-weight: 600; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+#zoom-badge { bottom: 12px; left: 12px; display: flex; gap: 6px; align-items: center; }
