@@ -15,6 +15,7 @@ math is in [MODEL.md](MODEL.md); the API and schema are in the
 | `graph.rs` | Road graph (CSR), Dijkstra tree, distance/toll along the tree, all-or-nothing loading | params, schema |
 | `transit.rs` | Transit platforms and edges, stop coverage, path search (`Searcher`), passenger loading (`LineLoads`) | geo, params, schema, roads (`Route`) |
 | `roads.rs` | Road routing for bus, trolleybus and BRT: snap stops to the contracted graph, A* by distance, route cache, street shapes (SIM-8) | geo, graph, schema |
+| `intercity.rs` | Intercity cells, gravity demand past the strategic cutoff, car loading on free-flow trees (F37, SIM-24) | graph, params |
 | `pairs.rs` | `Pairs`: the kept zone pairs in compressed rows, with reverse-pair index (F34, SIM-13) | none |
 | `model.rs` | `Sim`: demand, skims, mode choice, feedback loop, results | everything above |
 | `clock.rs` | The one game clock | none |
@@ -45,6 +46,8 @@ minutes (both directions, intrazonal always) are kept. Per-origin rows
 | `hbw` | per pair: daily work trips | `new` | never |
 | `hbo` | per pair: daily other trips | `new` (free-flow car times) | never |
 | `car_free` | per-pair skim | `new` | never |
+| `intercity`, `bg_vol` | intercity cells and pairs past the cutoff; peak-hour intercity cars per edge (SIM-24) | `new`, only with a strategic cutoff | never (free-flow, fixed shares) |
+| `loads` | per line: last loading, carried over by scoped edits (SIM-21) | each `finish` | cleared while a day job loads (SIM-22) |
 | `car_peak`, `link_time`, `link_vol` | skim / per edge | `equilibrate` | each game day (`equilibrate_warm`) |
 | `net` (TransitNet) | platforms, edges, coverage | `new` | every line edit |
 | `tsk_walk`, `tsk_drive` (+ `_off`) | per origin, a row-aligned vector of transit components, **empty when no destination has transit** (`TSkim`, SIM-17) | every line edit and `equilibrate` | |
@@ -424,7 +427,7 @@ more pass.
 | Test | Covers |
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
-| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), an edit while the day loads ridership matches the same edit after a blocking day and a preview then leaves the day alone (SIM-22), warm start from saved roads matches and rejects another graph (SIM-19), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
+| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), an edit while the day loads ridership matches the same edit after a blocking day and a preview then leaves the day alone (SIM-22), intercity trips past the cutoff load their cars on the roads (SIM-24), warm start from saved roads matches and rejects another graph (SIM-19), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share, bond rate and term) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
 | unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, `PointGrid` matches brute force, scoped line edits match a full recompute (SIM-21), clock rates, logit, grant gate and settlement arithmetic |

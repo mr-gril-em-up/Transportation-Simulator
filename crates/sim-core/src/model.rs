@@ -6,6 +6,7 @@ use crate::clock::Clock;
 use crate::economy::{self, Ledger};
 use crate::geo::dist_km;
 use crate::graph::{RoadGraph, Tree, NONE};
+use crate::intercity::Intercity;
 use crate::pairs::Pairs;
 use crate::params::*;
 use crate::roads::Router;
@@ -139,6 +140,11 @@ pub struct Results {
     /// modeled by this tier (0 without a cutoff). Intercity travel is F37.
     #[serde(default)]
     pub beyond_cutoff_trips: f64,
+    /// Daily intercity person trips between places farther apart than the
+    /// strategic cutoff, all modes (F37, SIM-24; 0 without a cutoff). Their
+    /// cars are in the road volumes.
+    #[serde(default)]
+    pub intercity_trips: f64,
     /// One entry per active line, in id order.
     pub lines: Vec<LineResult>,
     /// Peak-hour vehicle-km on the road network.
@@ -185,6 +191,25 @@ pub struct LinkFlow {
     pub vc: f64,
     /// Congested speed, km/h.
     pub speed_kph: f64,
+}
+
+/// One direction of an intercity cell pair (SIM-24).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntercityPair {
+    /// Origin cell's population-weighted centroid, [lon, lat].
+    pub from: [f64; 2],
+    /// Destination cell's centroid, [lon, lat].
+    pub to: [f64; 2],
+    /// Residents of the origin cell.
+    pub from_pop: f64,
+    /// Residents of the destination cell.
+    pub to_pop: f64,
+    /// Free-flow car minutes between the cells.
+    pub car_min: f64,
+    /// Car km along that route.
+    pub car_km: f64,
+    /// Daily person trips in this direction, all modes.
+    pub trips: f64,
 }
 
 /// Transit skims per origin, aligned to `Pairs::row`. An empty row means no
@@ -374,6 +399,11 @@ pub struct Sim {
     pairs: Pairs,
     /// Daily work trips (both directions) beyond the cutoff, by home zone.
     beyond_cutoff: Vec<f64>,
+    /// Intercity travel past the cutoff (SIM-24), when there is a cutoff.
+    intercity: Option<Intercity>,
+    /// Peak-hour intercity cars per edge: fixed background volume under the
+    /// assigned regional volume (empty without intercity travel).
+    bg_vol: Vec<f64>,
     /// Daily home->work trips (AM direction), presence applied, per pair.
     hbw: Vec<f64>,
     /// Daily non-work trips, origin->destination.
@@ -581,6 +611,30 @@ impl Sim {
         }
 
         let n_edges = graph.edges.len();
+        let intercity = match params.strategic_max_min {
+            Some(cut) if params.intercity.enabled => {
+                let zp: Vec<(f64, f64, f64)> =
+                    zones.iter().map(|z| (z.lon, z.lat, z.population)).collect();
+                Some(Intercity::build(
+                    &zp,
+                    &zone_node,
+                    &graph,
+                    &link_time,
+                    &params.intercity,
+                    cut,
+                ))
+            }
+            _ => None,
+        };
+        let bg_vol = intercity
+            .as_ref()
+            .map(|ic| {
+                ic.car_veh_daily
+                    .iter()
+                    .map(|v| v * params.intercity.peak_hour_share)
+                    .collect()
+            })
+            .unwrap_or_default();
         let mut sim = Sim {
             params,
             clock: Clock::default(),
@@ -590,6 +644,8 @@ impl Sim {
             intra_km,
             vot_min,
             beyond_cutoff,
+            intercity,
+            bg_vol,
             hbw,
             hbo: Vec::new(),
             link_vol: vec![0.0; n_edges],
@@ -1172,8 +1228,9 @@ impl Sim {
     pub fn equilibrate(&mut self) {
         let t0 = Instant::now();
         self.day_job = None;
-        self.link_time = self.graph.free_flow_times();
         self.link_vol.iter_mut().for_each(|v| *v = 0.0);
+        // Free flow, plus intercity background volume where there is any.
+        self.update_link_times();
         let k = self.params.feedback_iterations.max(1);
         self.feedback(k, 0);
         let (rows, _) = self.pass(false);
@@ -1287,7 +1344,7 @@ impl Sim {
                     if d == 0.0 {
                         0.0
                     } else {
-                        d * g.bpr_time(e, self.link_vol[e] + l * d, a, b)
+                        d * g.bpr_time(e, self.link_vol[e] + self.bg(e) + l * d, a, b)
                     }
                 })
                 .sum()
@@ -1429,12 +1486,36 @@ impl Sim {
         };
         let mut out: Vec<LinkFlow> = (0..self.graph.edges.len())
             .flat_map(|e| {
-                let vol = self.link_vol[e];
+                let vol = self.link_vol[e] + self.bg(e);
                 self.graph.members_of(e).iter().map(move |m| flow(m, vol))
             })
             .collect();
         out.extend(self.graph.dead.iter().map(|m| flow(m, 0.0)));
         out
+    }
+
+    /// Intercity cell pairs past the strategic cutoff (SIM-24), one entry
+    /// per direction: empty without a cutoff. For calibration and for drawing
+    /// intercity desire lines.
+    pub fn intercity_pairs(&self) -> Vec<IntercityPair> {
+        let Some(ic) = &self.intercity else {
+            return Vec::new();
+        };
+        ic.pairs
+            .iter()
+            .map(|q| {
+                let (o, d) = (&ic.cells[q.o as usize], &ic.cells[q.d as usize]);
+                IntercityPair {
+                    from: [o.lon, o.lat],
+                    to: [d.lon, d.lat],
+                    from_pop: o.pop,
+                    to_pop: d.pop,
+                    car_min: q.car_min as f64,
+                    car_km: q.car_km as f64,
+                    trips: q.trips,
+                }
+            })
+            .collect()
     }
 
     /// Top `n` zone pairs by daily trips (both directions, all modes, excluding intrazonal).
@@ -1804,8 +1885,9 @@ impl Sim {
 
         let (mut vkm, mut vhr) = (0.0, 0.0);
         for (e, ed) in self.graph.edges.iter().enumerate() {
-            vkm += self.link_vol[e] * ed.len_km;
-            vhr += self.link_vol[e] * self.link_time[e] / 60.0;
+            let v = self.link_vol[e] + self.bg(e);
+            vkm += v * ed.len_km;
+            vhr += v * self.link_time[e] / 60.0;
         }
         self.results = Results {
             daily_trips: daily,
@@ -1814,6 +1896,7 @@ impl Sim {
             mode_share: daily.shares(),
             unserved_trips: unserved,
             beyond_cutoff_trips: self.beyond_cutoff.iter().sum(),
+            intercity_trips: self.intercity.as_ref().map_or(0.0, |ic| ic.person_trips()),
             lines,
             peak_vehicle_km: vkm,
             peak_avg_speed_kph: if vhr > 0.0 { vkm / vhr } else { 0.0 },
@@ -2018,10 +2101,15 @@ impl Sim {
         s
     }
 
+    /// Fixed intercity background volume on edge `e` (SIM-24).
+    fn bg(&self, e: usize) -> f64 {
+        self.bg_vol.get(e).copied().unwrap_or(0.0)
+    }
+
     fn update_link_times(&mut self) {
         let (a, b) = (self.params.bpr_alpha, self.params.bpr_beta);
         for e in 0..self.graph.edges.len() {
-            self.link_time[e] = self.graph.bpr_time(e, self.link_vol[e], a, b);
+            self.link_time[e] = self.graph.bpr_time(e, self.link_vol[e] + self.bg(e), a, b);
         }
     }
 
