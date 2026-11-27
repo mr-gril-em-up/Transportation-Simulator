@@ -49,13 +49,15 @@ Collected 2026-11-27 from the pages linked in the CSV.
 | — | Red Line park-and-ride lots: Leander 619, Lakeline 935, Howard 301 spaces (1,855 total), all shared with bus park-and-ride; no other Red Line station lists a lot | New. Caps drive access to rail in sim-core calibration |
 | — | CapMetro 2023 (NTD): bus 1,312,824 revenue hours and $235.5M, rail 28,388 hours and $34.8M, total operating expenses $345.1M; FY2023 sales tax $382.4M (ACFR) | New. sim-core budget check of the loaded network |
 | — | Calibrated tax rate for sim-core's 3 km stop-buffer tax base: about $39,100 per served resident, so today's network yields the real $382.4M. Calibrated from the ACFR, not a sourced rate; sim-core recomputes it on the DATA-7 lines | New. Keeps one tax rule for a blank map and a loaded network |
+| — | Dallas–Houston (FRA HSR FEIS Appendix J, 2017 base): 15.97M person trips a year between North Texas and Houston, 94.0% auto, 5.6% air, 0.4% bus; Texas Central forecast 6.5M HSR riders in 2029 (29% share) and 13.6M in 2050; drive 243–258 min, DAL–HOU flight 64+8 min. Amtrak FY25: Texas Eagle 372,135, Sunset Limited 91,493, Heartland Flyer 80,876 (whole routes) | New. Intercity anchors for F37 and the M3 HSR exit check |
 
 ## Still open
 
 1. **Value of travel time from the primary source.** USDOT BCA Guidance Appendix A (Tables A-2, A-4) could not be read directly; current rows come from a grant application quoting the Dec 2023 tables.
 2. **Express-lane tolls.** TxDOT TEXpress and MoPac Express dynamic per-mile ranges were not retrievable.
 3. **Texas-specific road costs.** FDOT's models stand in for Texas. TxDOT bid tabulations would give Texas unit costs.
-4. **Dollar-year normalization.** Figures span 2019–2027 dollars. A small helper to inflate to 2024 USD (CPI-U) is needed before sim-core consumes them.
+4. **Statewide long-distance trip rate and Texas 100–300 mi mode shares.** Only the Dallas–Houston corridor (FRA FEIS) and the 2001 NHTS national split are sourced; TxDOT's Statewide Analysis Model or NHTS 2022 long-distance tables would fill it.
+5. **Dollar-year normalization.** Figures span 2019–2027 dollars. A small helper to inflate to 2024 USD (CPI-U) is needed before sim-core consumes them.
 
 ## Updating
 

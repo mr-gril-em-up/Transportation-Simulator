@@ -25,7 +25,7 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `only_capmetro_operators_match` | `src/gtfs.rs` | Missing or CapMetro operator matches; Amtrak and CARTS do not |
 | `contraction_keeps_class_boundaries` | `src/scenario.rs` | Two links with equal speed and lanes but different class (motorway, motorway_link) are not contracted |
 | `route_and_street_matching` | `src/counts.rs` | TxDOT `ON_ROAD` against OSM refs (IH/I, SH/TX, FM/RM, SL/Loop, multi-ref ways, no partial numbers) and street names with suffix and direction normalization |
-| `snaps_both_carriageways_and_drops_misses` | `src/counts.rs` | Nearest matching link wins over a closer link with another ref; opposite carriageway found; stations out of range or unmatched dropped |
+| `snaps_both_carriageways_and_drops_misses` | `src/counts.rs` | Nearest matching link wins over a closer link with another ref; opposite carriageway found with both link indices; stations out of range or unmatched dropped |
 | `dates_and_weekdays` | `src/gtfs.rs` | GTFS date to day number, Wednesday test, times past 24:00 |
 | `acs_parses_and_flags_suppressed` | `src/acs.rs` | Summary-file table parsing (block-group rows only, state row skipped), suppressed sentinels, blanks and zero-household rows become `None` |
 | `zones_without_header_row` | `src/census.rs` | Centers of Population file without a header |

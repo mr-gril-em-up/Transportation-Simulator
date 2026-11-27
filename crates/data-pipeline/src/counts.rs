@@ -38,6 +38,7 @@ pub struct Station {
     pub on_road: String,
     pub lon: f64,
     pub lat: f64,
+    pub active: bool,
 }
 
 /// A station snapped to the scenario road graph, as written to `counts.json`.
@@ -53,11 +54,18 @@ pub struct Count {
     /// Scenario link (node ids) the station sits on.
     pub from: u32,
     pub to: u32,
+    /// Index of that link in `scenario.json` `road_links` (tells parallel
+    /// links between the same nodes apart).
+    pub link: u32,
     /// Opposite carriageway of a divided road, if found.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from2: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to2: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link2: Option<u32>,
+    /// TxDOT `ACTIVE`: the station is still in the count program.
+    pub active: bool,
     /// Distance from the station to `from`-`to`, meters.
     pub dist_m: f64,
 }
@@ -79,6 +87,7 @@ pub fn read_stations(path: &Path) -> Result<Vec<Station>> {
         col("LONGITUDE")?,
         col("LATITUDE")?,
     );
+    let act = h.iter().position(|c| c == "ACTIVE");
     let mut out = Vec::new();
     for rec in r.records() {
         let rec = rec?;
@@ -99,6 +108,7 @@ pub fn read_stations(path: &Path) -> Result<Vec<Station>> {
             on_road: rec[road].trim().to_string(),
             lon: lo,
             lat: la,
+            active: act.and_then(|i| rec.get(i)).is_none_or(|v| v.trim() != "0"),
         });
     }
     Ok(out)
@@ -220,7 +230,11 @@ fn cell(lon: f64, lat: f64) -> (i32, i32) {
 
 /// Snaps stations to scenario links. `edge_link[i]` is the scenario link of
 /// `roads.edges[i]` (from `scenario::to_scenario_mapped`).
-pub fn snap(stations: &[Station], roads: &Roads, edge_link: &[Option<(u32, u32)>]) -> Vec<Count> {
+pub fn snap(
+    stations: &[Station],
+    roads: &Roads,
+    edge_link: &[Option<crate::scenario::LinkRef>],
+) -> Vec<Count> {
     // Segment index: (edge, a, b) by grid cell.
     let mut segs: Vec<(usize, [f64; 2], [f64; 2])> = Vec::new();
     let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
@@ -273,7 +287,7 @@ pub fn snap(stations: &[Station], roads: &Roads, edge_link: &[Option<(u32, u32)>
         let Some(&(e0, d0, dir0)) = cands.first() else {
             continue;
         };
-        let (from, to) = edge_link[e0].unwrap();
+        let (from, to, link) = edge_link[e0].unwrap();
         let second = if roads.edges[e0].oneway {
             cands
                 .iter()
@@ -281,7 +295,7 @@ pub fn snap(stations: &[Station], roads: &Roads, edge_link: &[Option<(u32, u32)>
                 .find(|(e, _, dir)| {
                     roads.edges[*e].oneway
                         && dir[0] * dir0[0] + dir[1] * dir0[1] < -0.5
-                        && edge_link[*e] != Some((from, to))
+                        && edge_link[*e].map(|x| x.2) != Some(link)
                 })
                 .and_then(|(e, _, _)| edge_link[*e])
         } else {
@@ -296,8 +310,11 @@ pub fn snap(stations: &[Station], roads: &Roads, edge_link: &[Option<(u32, u32)>
             lat: s.lat,
             from,
             to,
+            link,
             from2: second.map(|x| x.0),
             to2: second.map(|x| x.1),
+            link2: second.map(|x| x.2),
+            active: s.active,
             dist_m: (d0 * 10.0).round() / 10.0,
         });
     }
@@ -356,7 +373,7 @@ mod tests {
                 edge(4, 5, false, "FM 1"),
             ],
         };
-        let link = vec![Some((0, 1)), Some((3, 2)), Some((4, 5))];
+        let link = vec![Some((0, 1, 0)), Some((3, 2, 1)), Some((4, 5, 2))];
         let st = |id: &str, road: &str, lon: f64| Station {
             id: id.into(),
             year: 2023,
@@ -364,6 +381,7 @@ mod tests {
             on_road: road.into(),
             lon,
             lat: 30.305,
+            active: true,
         };
         let c = snap(
             &[
@@ -377,6 +395,7 @@ mod tests {
         assert_eq!(c.len(), 1, "too far and unmatched stations dropped");
         assert_eq!((c[0].from, c[0].to), (0, 1));
         assert_eq!((c[0].from2, c[0].to2), (Some(3), Some(2)));
+        assert_eq!((c[0].link, c[0].link2), (0, Some(1)));
         assert!(c[0].dist_m < 10.0);
     }
 }
