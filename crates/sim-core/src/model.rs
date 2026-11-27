@@ -214,8 +214,11 @@ struct DayJob {
     next: usize,
     vol: Vec<f64>,
     outs: Vec<(usize, OriginOut)>,
-    /// `Sim::lines_version` when the final pass began.
+    /// `Sim::lines_version` when the final pass (or the loading) began.
     lines_at_start: u64,
+    /// After the final pass: its demand and the loads so far, loaded a
+    /// slice of origins at a time (SIM-22).
+    loading: Option<(Demand, LineLoads)>,
 }
 
 impl DayJob {
@@ -227,16 +230,30 @@ impl DayJob {
             vol: Vec::new(),
             outs: Vec::new(),
             lines_at_start: 0,
+            loading: None,
         }
     }
 
     fn progress(&self, z: usize) -> f64 {
-        let passes = (self.assign_rounds + 1) as f64;
+        // The assignment rounds, the final pass and the loading.
+        let passes = (self.assign_rounds + 2) as f64;
         if self.round == 0 {
             return 0.0;
         }
         ((self.round - 1) as f64 + self.next as f64 / z.max(1) as f64) / passes
     }
+}
+
+/// Mode choice rows and the daily transit demand per pair they give, between
+/// choice and loading (SIM-22).
+struct Demand {
+    rows: Vec<Row>,
+    walk: Vec<f64>,
+    drive: Vec<f64>,
+    /// Off-peak paths' demand; empty unless `off`.
+    o_walk: Vec<f64>,
+    o_drive: Vec<f64>,
+    off: bool,
 }
 
 /// Transit-side state a line evaluation replaces (see `Sim::on_lines_changed`).
@@ -1088,7 +1105,7 @@ impl Sim {
                         job.lines_at_start = self.lines_version;
                     }
                 }
-                _ => {
+                r if r == job.assign_rounds + 1 => {
                     let range = job.next..(job.next + slice).min(z);
                     let (_, outs) = self.pass_range(range.clone(), false);
                     job.outs.extend(outs);
@@ -1098,15 +1115,44 @@ impl Sim {
                         // stale: keep the car skims, redo transit at once.
                         let fresh = job.lines_at_start == self.lines_version;
                         let rows = self.commit_outs(std::mem::take(&mut job.outs), fresh);
-                        if fresh {
-                            self.finish(t0, false, Some(rows));
-                        } else {
+                        if !fresh {
                             self.transit_skims();
                             self.finish(t0, false, None);
+                            self.settle_months();
+                            return;
                         }
+                        // Ridership loading runs in slices too. The stored
+                        // loads no longer match today's car times, so an edit
+                        // meanwhile recomputes in full (`edit_scope`).
+                        self.loads = LineLoads::default();
+                        let dem = self.demand(Some(rows));
+                        job.loading = Some((dem, LineLoads::new(&self.net)));
+                        job.round += 1;
+                        job.next = 0;
+                        job.lines_at_start = self.lines_version;
+                    }
+                }
+                _ => {
+                    if job.lines_at_start != self.lines_version {
+                        // An edit already re-evaluated transit in full on
+                        // today's car times; its results stand.
+                        self.results.car_times_stale = false;
                         self.settle_months();
                         return;
                     }
+                    let range = job.next..(job.next + slice).min(z);
+                    let Some((dem, acc)) = job.loading.take() else {
+                        self.settle_months();
+                        return;
+                    };
+                    let acc = acc.merge(self.load_demand(&dem, range.clone(), None));
+                    job.next = range.end;
+                    if job.next >= z {
+                        self.finish_results(t0, false, dem, acc);
+                        self.settle_months();
+                        return;
+                    }
+                    job.loading = Some((dem, acc));
                 }
             }
             if t0.elapsed() >= budget {
@@ -1604,6 +1650,19 @@ impl Sim {
         rows: Option<Vec<Row>>,
         scope: Option<(&EditScope, &LineLoads)>,
     ) {
+        let dem = self.demand(rows);
+        let only = scope.map(|(s, _)| &s.load[..]);
+        let mut loads = self.load_demand(&dem, 0..self.nz, only);
+        if let Some((s, old)) = scope {
+            loads.carry(old, &s.keep);
+        }
+        self.finish_results(t0, stale, dem, loads);
+    }
+
+    /// Daily transit demand by pair from mode choice (`rows`, or a fresh
+    /// choice when None), with park-and-ride cars and the idle store
+    /// updated: everything in `finish` before loading.
+    fn demand(&mut self, rows: Option<Vec<Row>>) -> Demand {
         let idle = self.transit_idle();
         let rows = match rows {
             Some(r) => r,
@@ -1662,14 +1721,42 @@ impl Sim {
                 }
             }
         }
-        let only = scope.map(|(s, _)| &s.load[..]);
-        let mut loads = self.load_transit(&d_walk, &d_drive, false, only);
-        if off {
-            loads = loads.merge(self.load_transit(&o_walk, &o_drive, true, only));
+        Demand {
+            rows,
+            walk: d_walk,
+            drive: d_drive,
+            o_walk,
+            o_drive,
+            off,
         }
-        if let Some((s, old)) = scope {
-            loads.carry(old, &s.keep);
+    }
+
+    /// Load `dem` for origins in `origins` (and `only`), peak and off-peak.
+    fn load_demand(
+        &self,
+        dem: &Demand,
+        origins: std::ops::Range<usize>,
+        only: Option<&[bool]>,
+    ) -> LineLoads {
+        let loads = self.load_transit(&dem.walk, &dem.drive, false, origins.clone(), only);
+        if dem.off {
+            loads.merge(self.load_transit(&dem.o_walk, &dem.o_drive, true, origins, only))
+        } else {
+            loads
         }
+    }
+
+    /// Results from demand and its loads: the rest of `finish`.
+    fn finish_results(&mut self, t0: Instant, stale: bool, dem: Demand, loads: LineLoads) {
+        let Demand {
+            rows,
+            walk: d_walk,
+            drive: d_drive,
+            o_walk,
+            o_drive,
+            off,
+        } = dem;
+        let np = self.pairs.len();
         // Built fresh (not written in place) so `evaluate_in_slot` can move
         // the previous vector aside and back.
         self.transit_od = (0..np)
@@ -2061,12 +2148,13 @@ impl Sim {
     }
 
     /// Load daily transit demand on peak (`offpeak = false`) or off-peak paths.
-    /// Only origins `only` marks are loaded (all when None).
+    /// Only origins in `origins` that `only` marks are loaded (all when None).
     fn load_transit(
         &self,
         d_walk: &[f64],
         d_drive: &[f64],
         offpeak: bool,
+        origins: std::ops::Range<usize>,
         only: Option<&[bool]>,
     ) -> LineLoads {
         let z = self.nz;
@@ -2075,7 +2163,7 @@ impl Sim {
             return LineLoads::new(net);
         }
         let (p, car, pairs) = (&self.params, &self.car_peak, &self.pairs);
-        (0..z)
+        origins
             .into_par_iter()
             .fold(
                 || {
