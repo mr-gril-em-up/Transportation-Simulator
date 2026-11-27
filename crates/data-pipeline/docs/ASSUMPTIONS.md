@@ -38,7 +38,10 @@ Every number or rule in the code that is not read straight from a source. Each e
 |---|---|---|---|
 | Stops = relation members with role `stop*`, else `platform*` | `osm.rs` | PTv2 tagging; older routes map only platforms | GTFS for agencies that publish it |
 | Routes kept if any stop is in the clip box | `osm.rs` | Lines entering the county count | n/a |
-| No headways or schedules | `osm.rs` | OSM does not carry them | CapMetro GTFS for the M1 Red Line check |
+| No headways or schedules | `osm.rs` | OSM does not carry them | Existing lines come from agency GTFS instead (DATA-9) |
+| A route's stops are its longest trip that day; short-turn and branch patterns are dropped | `gtfs.rs` | sim-core lines have one stop list; the longest trip covers the most stations | One line per pattern if branch service matters |
+| A route with no departures 07–09 or 10–15 on the chosen Wednesday is not an existing line (PM-only expresses, school trippers: 31 of 446 statewide routes) | `lines.rs` | sim-core lines need a base headway | Add a PM peak window |
+| Headways are means over 07–09 and 10–15 on the busiest Wednesday, both directions combined per window | `gtfs.rs` | Frequency-based model, DATA-6 | Per-direction headways |
 | Scenario `lines` empty | `scenario.rs` | Design doc: game starts with existing transit removed | Optional toggle in the app reads `transit.json` |
 
 ## Known gaps

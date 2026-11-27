@@ -100,17 +100,29 @@ Margins of error are large at block-group level, which is why suppressed values 
 
 **Citation:** U.S. Census Bureau, 2020 TIGER/Line Shapefiles, Block Groups, Texas.
 
-## 6. CapMetro GTFS static feed
+## 6. Agency GTFS static feeds
+
+The feed list is `reference/gtfs_feeds.csv` (`id,agency,url,fallback_url,source`). `fetch.sh` downloads each, tries the fallback (a Mobility Database copy, where one exists) if the agency URL fails, and keeps `routes.txt`, `trips.txt`, `stop_times.txt`, `stops.txt`, `calendar.txt` and `calendar_dates.txt` in `raw/gtfs/<id>/`. A feed that fails only drops that agency's lines. Add an agency by adding a row.
+
+| id | Agency | URL | Fallback |
+|---|---|---|---|
+| capmetro | Capital Metropolitan Transportation Authority (Austin) | https://data.austintexas.gov/download/r4v4-vz24/application/zip | none |
+| dart | Dallas Area Rapid Transit (bus, light rail, streetcar, Silver Line, TRE) | https://www.dart.org/transitdata/latest/google_transit.zip | Mobility Database mdb-152 |
+| metro | Metropolitan Transit Authority of Harris County (Houston) | https://metro.resourcespace.com/pages/download.php?ref=4835&ext=zip | Mobility Database mdb-2060 |
+| trinity | Trinity Metro (Fort Worth) | https://gtfsdata.ridetm.org/gtfs/fwtatransitdata.zip | Mobility Database mdb-2890 |
+| dcta | Denton County Transportation Authority (A-train, buses) | https://gtfs.remix.com/dcta_denton_tx_us.zip | none |
+| via | VIA Metropolitan Transit (San Antonio) | https://via.madcollective.com/wp-content/uploads/2025/06/google_transit.zip | none |
+| ccrta | Corpus Christi Regional Transportation Authority | https://www.ccrta.org/gtfs/ccrta-gtfs.zip | Mobility Database mdb-315 (service dates end June 2025) |
+| epct | El Paso County Transit | https://rapid.nationalrtap.org/GTFSFileManagement/UserUploadFiles/11511/GTFS_EPCT.zip | Mobility Database mdb-3419 |
 
 | | |
 |---|---|
-| Publisher | Capital Metropolitan Transportation Authority, via the City of Austin open data portal (catalog.data.gov dataset "CapMetro GTFS") |
-| File | https://data.austintexas.gov/download/r4v4-vz24/application/zip; `fetch.sh` keeps `routes.txt`, `trips.txt`, `stop_times.txt`, `calendar.txt`, `calendar_dates.txt` in `raw/gtfs_capmetro/` |
-| Columns used | `route_short_name`; trip `service_id`, `direction_id`; first `departure_time` per trip; calendar days and exceptions |
-| Gives the game | Weekday peak and midday headway and span for existing CapMetro routes in `transit.json`, so calibration loads today's network at real frequencies |
-| Not reachable | From the cloud sandbox (proxy); the Actions runner downloads it |
+| Columns used | `route_short_name`, `route_long_name`, `route_type`; trip `service_id`, `direction_id`; `stop_id`, `stop_sequence` and first `departure_time` per trip; stop name and coordinates; calendar days and exceptions |
+| Gives the game | Today's network for every listed agency as existing lines (stops, mode, weekday peak and midday headway, span), and headways on CapMetro routes in `transit.json` |
+| Not reachable | From the cloud sandbox (proxy); the Actions runner downloads them |
+| Not yet listed | El Paso Sun Metro (city buses and streetcar), Lubbock Citibus, other small-city and rural agencies: no stable static URL found yet |
 
-**Citation:** Capital Metropolitan Transportation Authority, GTFS static feed, City of Austin Open Data Portal.
+**Citation:** each agency's GTFS static feed as listed above; Mobility Database (MobilityData) for fallback copies.
 
 ## Planned sources (not read yet)
 

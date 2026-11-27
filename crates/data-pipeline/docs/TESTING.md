@@ -19,8 +19,8 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `county_level_merges_block_groups` | `tests/sample.rs` | `--level county` on the whole sample: 5 block groups become 2 counties, totals unchanged, 5-digit GEOIDs, manifest `zone_level` and `block_groups`, `scenario.json` validates |
 | `tracts_merge_counts_weights_and_flows` | `src/aggregate.rs` | Tract merge: sums, population-weighted centroid and income, area only when complete, unpopulated tract, flows summed with intrazonal kept; county merge |
 | `commute_shares_sum_listed_block_groups` | `src/acs.rs` | B08301 shares sum only the listed block groups, skip county rows, and add to 1 |
-| `red_line_uses_timetable_and_park_and_ride` | `src/lines.rs` | One line per ref (most stops), routes without headways dropped, `train` becomes commuter rail with the figures.csv 32/51 min timetable, Leander and Lakeline stops get park-and-ride and Downtown does not, midday headway carried |
-| `headways_from_a_tiny_feed` | `src/gtfs.rs` | Busiest-Wednesday service selection with a calendar_dates removal, weekend service ignored, directions combined per window, peak and midday headways, span, empty windows give `None` |
+| `red_line_uses_timetable_and_park_and_ride` | `src/lines.rs` | Lines from two feeds in feed then key order; routes without headways, with one stop or of ferry type dropped; agency-prefixed names with the short name left out when the long name has it; `route_type` 2 becomes commuter rail with the figures.csv 32/51 min timetable; type 0 is light rail, or tram for a streetcar; Leander and Lakeline stops get park-and-ride and Downtown does not; midday headway carried; nothing outside the bounding box |
+| `headways_from_a_tiny_feed` | `src/gtfs.rs` | Busiest-Wednesday service selection with a calendar_dates removal, weekend service ignored, directions combined per window, peak and midday headways, span, empty windows give `None`; long name, route type and stop sequence with coordinates; a route with no short name keyed by its long name; the feed list parses |
 | `highway_roads_keep_only_motorway_to_secondary` | `tests/sample.rs` | `--roads highway`: only motorway to secondary classes in `roads.json`, fewer edges than the full build, manifest `road_classes` |
 | `only_capmetro_operators_match` | `src/gtfs.rs` | Missing or CapMetro operator matches; Amtrak and CARTS do not |
 | `dates_and_weekdays` | `src/gtfs.rs` | GTFS date to day number, Wednesday test, times past 24:00 |
@@ -148,3 +148,21 @@ Actions run [45956794828](https://github.com/mr-gril-em-up/Transportation-Simula
 | `scenario_road_nodes` / `scenario_road_links` | 213,801 / 283,966 | 1,092,465 / 1,712,605 |
 
 The highway cut keeps 17% of nodes and 20% of road km. Simplification removes only 34% here, against 45% for all classes, because rural highways change speed or lane count often and contraction needs both equal. `existing_lines` is 61 (CapMetro only) and `transit_routes` 691.
+
+## Statewide GTFS existing lines (2026-11-27)
+
+Actions run [45970882831](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45970882831), `--area 48 --level tract --roads highway`, branch build (not published). Every feed in `reference/gtfs_feeds.csv` downloaded; CCRTA's own URL returned 403 to the runner and the Mobility Database fallback was used.
+
+| Feed | GTFS trips | Routes |
+|---|---|---|
+| CapMetro | 26,147 | 67 |
+| DART | 20,931 | 92 |
+| METRO | 21,878 | 109 |
+| Trinity Metro | 5,979 | 32 |
+| DCTA | 1,845 | 13 |
+| VIA | 20,947 | 95 |
+| CCRTA | 23,745 | 32 |
+| El Paso County Transit | 229 | 6 |
+
+415 existing lines from 446 routes; the 31 left out have no morning-peak or midday departures (CapMetro 481–486 and VIA 2xx school and PM-only routes, Trinity 61X/65X, DCTA NTX). Rail checks from the log (peak / midday min, stops): DART Red, Blue, Green, Orange 20 / 20 with 23–31 stops; DART Silver 30 / 42.9, 10 stops; TRE 30 / 50, 10 stops; METRO 700 (Red) 6 / 6, 25 stops; METRO 800 and 900 12 / 12; TEXRail 30 / 30, 9 stops (coded light rail in the feed, corrected to commuter rail); DCTA A-train 30 / 30, 6 stops; DART 620 streetcar (type 5) tram 20 / 20.
+

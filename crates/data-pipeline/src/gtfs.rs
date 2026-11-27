@@ -1,7 +1,9 @@
-//! Weekday headways for existing transit routes from a GTFS static feed
-//! (CapMetro's, for Travis). OSM route relations give the stops but no
-//! frequencies; GTFS gives the timetable. This module reduces the timetable
-//! to a few numbers per route and attaches them to the OSM routes by `ref`.
+//! Weekday headways and stop sequences for existing transit routes from a
+//! GTFS static feed (one per agency, listed in `reference/gtfs_feeds.csv`).
+//! This module reduces each feed's timetable to a few numbers per route plus
+//! the stops of its longest trip that day. `lines.rs` turns those into
+//! sim-core lines (DATA-9); `apply` also copies CapMetro's headways onto the
+//! OSM routes in `transit.json` by `ref`.
 //!
 //! Method (DATA-6):
 //! - Service day: the Wednesday with the most scheduled trips, from
@@ -11,6 +13,8 @@
 //! - Peak headway = 120 min / departures in 07:00–09:00; midday headway =
 //!   300 min / departures in 10:00–15:00; span = last − first departure.
 //!   A window with no departures gives `None`.
+//! - Route key: `route_short_name`, or `route_long_name` when the short name
+//!   is empty. Stops: the trip that day with the most stops, any direction.
 
 use crate::model::Transit;
 use anyhow::{Context, Result};
@@ -26,6 +30,45 @@ pub struct RouteHeadway {
     pub span_hours: f64,
     /// Trips that day in the busier direction.
     pub trips: usize,
+    /// `route_long_name`, empty if the feed has none.
+    pub long_name: String,
+    /// GTFS `route_type` (0 tram/light rail, 1 metro, 2 rail, 3 bus, ...).
+    pub route_type: Option<u16>,
+    /// Stops of the route's longest trip that day, in order.
+    pub stops: Vec<GtfsStop>,
+}
+
+/// A stop from `stops.txt`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct GtfsStop {
+    pub name: String,
+    pub lon: f64,
+    pub lat: f64,
+}
+
+const FEEDS: &str = include_str!("../reference/gtfs_feeds.csv");
+
+/// One agency's GTFS feed from `reference/gtfs_feeds.csv`; `fetch.sh`
+/// unzips it into `data/raw/gtfs/<id>/`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Feed {
+    pub id: String,
+    /// Short agency name, prefixed to line names.
+    pub agency: String,
+}
+
+/// The feeds listed in `reference/gtfs_feeds.csv`, in file order.
+pub fn feeds() -> Vec<Feed> {
+    csv::Reader::from_reader(FEEDS.as_bytes())
+        .records()
+        .filter_map(|r| r.ok())
+        .filter_map(|r| {
+            Some(Feed {
+                id: r.get(0)?.to_string(),
+                agency: r.get(1)?.to_string(),
+            })
+        })
+        .collect()
 }
 
 /// Days since 1970-01-01 for a GTFS `YYYYMMDD` date.
@@ -89,11 +132,44 @@ pub fn read_headways(dir: &Path) -> Result<HashMap<String, RouteHeadway>> {
     // Routes.
     let mut r = reader(dir, "routes.txt")?.context("routes.txt missing")?;
     let h = r.headers()?.clone();
-    let (rid, rsn) = (col(&h, "route_id")?, col(&h, "route_short_name")?);
-    let mut short: HashMap<String, String> = HashMap::new();
+    let rid = col(&h, "route_id")?;
+    let (rsn, rln, rty) = (
+        col(&h, "route_short_name").ok(),
+        col(&h, "route_long_name").ok(),
+        col(&h, "route_type").ok(),
+    );
+    // route_id -> (key, long name, route_type)
+    let mut short: HashMap<String, (String, String, Option<u16>)> = HashMap::new();
     for rec in r.records() {
         let rec = rec?;
-        short.insert(rec[rid].to_string(), rec[rsn].to_string());
+        let get = |i: Option<usize>| i.and_then(|i| rec.get(i)).unwrap_or("").to_string();
+        let (sn, ln) = (get(rsn), get(rln));
+        let key = if sn.is_empty() { ln.clone() } else { sn };
+        let key = if key.is_empty() {
+            rec[rid].to_string()
+        } else {
+            key
+        };
+        short.insert(rec[rid].to_string(), (key, ln, get(rty).parse().ok()));
+    }
+
+    // Stops (optional: without them routes get headways but no stops).
+    let mut stop_pos: HashMap<String, GtfsStop> = HashMap::new();
+    if let Some(mut s) = reader(dir, "stops.txt")? {
+        let h = s.headers()?.clone();
+        let (sid, slat, slon) = (
+            col(&h, "stop_id")?,
+            col(&h, "stop_lat")?,
+            col(&h, "stop_lon")?,
+        );
+        let sname = col(&h, "stop_name").ok();
+        for rec in s.records() {
+            let rec = rec?;
+            if let (Ok(lat), Ok(lon)) = (rec[slat].parse(), rec[slon].parse()) {
+                let name = sname.and_then(|i| rec.get(i)).unwrap_or("").to_string();
+                stop_pos.insert(rec[sid].to_string(), GtfsStop { name, lon, lat });
+            }
+        }
     }
 
     // Trips.
@@ -204,12 +280,14 @@ pub fn read_headways(dir: &Path) -> Result<HashMap<String, RouteHeadway>> {
     // First departure of each trip running that day.
     let mut st = reader(dir, "stop_times.txt")?.context("stop_times.txt missing")?;
     let h = st.headers()?.clone();
-    let (sttrip, stdep, stseq) = (
+    let (sttrip, stdep, stseq, ststop) = (
         col(&h, "trip_id")?,
         col(&h, "departure_time")?,
         col(&h, "stop_sequence")?,
+        col(&h, "stop_id")?,
     );
     let mut first: HashMap<String, (u32, f64)> = HashMap::new();
+    let mut seqs: HashMap<String, Vec<(u32, String)>> = HashMap::new();
     for rec in st.records() {
         let rec = rec?;
         let Some(tr) = trips.get(&rec[sttrip]) else {
@@ -218,7 +296,14 @@ pub fn read_headways(dir: &Path) -> Result<HashMap<String, RouteHeadway>> {
         if !services.contains(&tr.service) {
             continue;
         }
-        let (Ok(seq), Some(dep)) = (rec[stseq].parse::<u32>(), minutes(&rec[stdep])) else {
+        let Ok(seq) = rec[stseq].parse::<u32>() else {
+            continue;
+        };
+        seqs.entry(rec[sttrip].to_string())
+            .or_default()
+            .push((seq, rec[ststop].to_string()));
+        // Untimed intermediate stops have an empty departure_time.
+        let Some(dep) = minutes(&rec[stdep]) else {
             continue;
         };
         let e = first
@@ -235,10 +320,26 @@ pub fn read_headways(dir: &Path) -> Result<HashMap<String, RouteHeadway>> {
         let tr = &trips[id];
         let name = short
             .get(&tr.route)
-            .cloned()
+            .map(|x| x.0.clone())
             .unwrap_or_else(|| tr.route.clone());
         deps.entry((name, tr.dir.clone())).or_default().push(*dep);
     }
+    // Longest trip per route key that day; ties go to the lower trip_id.
+    let mut longest: HashMap<String, (usize, &str)> = HashMap::new();
+    for (id, v) in &seqs {
+        let tr = &trips[id];
+        let name = short
+            .get(&tr.route)
+            .map_or(tr.route.as_str(), |x| x.0.as_str());
+        let e = longest.entry(name.to_string()).or_insert((0, id.as_str()));
+        if v.len() > e.0 || (v.len() == e.0 && id.as_str() < e.1) {
+            *e = (v.len(), id.as_str());
+        }
+    }
+    let meta: HashMap<&str, (&str, Option<u16>)> = short
+        .values()
+        .map(|(k, ln, ty)| (k.as_str(), (ln.as_str(), *ty)))
+        .collect();
     let mut out: HashMap<String, RouteHeadway> = HashMap::new();
     for ((name, _), mut d) in deps {
         d.sort_by(f64::total_cmp);
@@ -252,6 +353,18 @@ pub fn read_headways(dir: &Path) -> Result<HashMap<String, RouteHeadway>> {
             midday_headway_min: hw(600.0, 900.0),
             span_hours: ((d[d.len() - 1] - d[0]) / 60.0 * 10.0).round() / 10.0,
             trips: d.len(),
+            long_name: meta.get(name.as_str()).map_or("", |m| m.0).to_string(),
+            route_type: meta.get(name.as_str()).and_then(|m| m.1),
+            stops: longest
+                .get(&name)
+                .map(|(_, id)| {
+                    let mut v = seqs[*id].clone();
+                    v.sort();
+                    v.iter()
+                        .filter_map(|(_, s)| stop_pos.get(s).cloned())
+                        .collect()
+                })
+                .unwrap_or_default(),
         };
         // Combine directions per window: a peak-direction express runs one
         // way in the morning and the other in the evening.
@@ -330,7 +443,8 @@ mod tests {
         let w = |n: &str, s: &str| std::fs::write(dir.join(n), s).unwrap();
         w(
             "routes.txt",
-            "\u{feff}route_id,route_short_name\nR7,7\nR550,550\n",
+            "\u{feff}route_id,route_short_name,route_long_name,route_type\n\
+             R7,7,Duval,3\nR550,550,Red Line,2\nRTX,,TEXRail,2\n",
         );
         // WK runs Mon-Fri all November 2026; SAT runs weekends only.
         w(
@@ -362,6 +476,11 @@ mod tests {
         add("R7", "SAT", "sat".into(), 0, 480);
         add("R550", "WK", "r0".into(), 0, 400);
         add("R550", "WK", "r1".into(), 0, 1000);
+        add("RTX", "WK", "tx".into(), 0, 450);
+        w(
+            "stops.txt",
+            "stop_id,stop_name,stop_lat,stop_lon\nA,Alpha,30.1,-97.1\nB,Beta,30.2,-97.2\n",
+        );
         w("trips.txt", &trips);
         w("stop_times.txt", &st);
 
@@ -378,6 +497,15 @@ mod tests {
             (None, None)
         );
         assert_eq!(r550.span_hours, 10.0);
+        assert_eq!((r7.long_name.as_str(), r7.route_type), ("Duval", Some(3)));
+        let names: Vec<&str> = r7.stops.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["Alpha", "Beta"]);
+        assert_eq!(r7.stops[1].lon, -97.2);
+        assert!(
+            hw.contains_key("TEXRail"),
+            "empty short name keys by long name"
+        );
+        assert_eq!(feeds()[0].id, "capmetro");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
