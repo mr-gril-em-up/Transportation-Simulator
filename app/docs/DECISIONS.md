@@ -128,3 +128,11 @@ In schematic or morph view, stop positions on screen are not their real
 coordinates, so a drag would write a wrong location. While a line is being
 edited, `render()` uses `t = 1` (pure geography) at every zoom, and the
 editor fits the camera to the line.
+
+### A21. Interchange stops move together
+Snapping while drawing puts two lines' stops at the same spot. Dragging
+one of them moves every other line's stop within 10 m (`LINK_KM`), and
+each touched line is re-simulated. The tolerance is there because snapped
+coordinates come from rendered, tile-quantized geometry, so they are not
+bit-identical. Splitting an interchange means deleting the stop on one line
+and adding a new one.
