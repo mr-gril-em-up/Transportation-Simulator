@@ -314,7 +314,7 @@ Simplifications and why:
 
 ### Construction period (F24)
 
-A new line, or a new alignment of an existing one, opens on
+Decision SIM-1. A new line, or a new alignment of an existing one, opens on
 `clock.day() + ceil(build_years x 365 / construction_speedup [12])`.
 
 | Mode | Real years | Game days at 12x |

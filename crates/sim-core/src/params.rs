@@ -100,7 +100,7 @@ pub struct Params {
     /// Build and permitting times are divided by this (12x default, 1x-24x setting).
     pub construction_speedup: f64,
     /// Open lines the moment they are drawn (no construction period). True by
-    /// default until the app shows lines under construction (D33); set false
+    /// default until the app shows lines under construction (SIM-1); set false
     /// for the game's construction period.
     pub instant_build: bool,
 
