@@ -12,6 +12,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Desktop app: Red Line demo with ridership, cost and farebox from sim-core](docs/img/desktop-sim-core.png)
 ![Browser client (mock sim): Red Line demo and a drawn bus line](docs/img/city-view.png)
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
+![Editing a line: stops ringed in black can be dragged, added or deleted](docs/img/stop-editing.png)
 ![Desire lines from sim-core with the Red Line; pairs along the line turn green as transit share rises](docs/img/desire-lines.png)
 
 ## Run
@@ -48,6 +49,13 @@ the build. The terminal prints
 - **Draw bus line / Draw rail line**: click the map to drop stops. **Enter** or double-click
   finishes, **Esc** cancels. Clicking an existing stop snaps to it, so lines can share an
   interchange.
+- **Edit stops** (per line, in the ridership panel): zooms to the line and draws it in true
+  geography. Drag a stop to move it, click the map to add a stop (it goes where it lengthens the
+  line least), and right-click a stop to delete it (a line keeps at least two). **Esc** or
+  **Done** finishes. Each finished edit re-runs the sim; drags preview without a sim call until
+  you release.
+- **Rename a line**: double-click its name in the panel, type, then **Enter** (or click away).
+  **Esc** cancels.
 - **Desire lines**: toggles the top 300 zone pairs by daily trips (F06). Width scales with the
   square root of trips relative to the busiest pair. Color runs from purple (no transit) to green
   (10%+ transit share). It refreshes after every line edit, so you can watch transit share move.
@@ -69,7 +77,7 @@ geographic and only show from City zoom down.
 ## Test
 
 ```bash
-cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo check && cargo test)
+cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo fmt --check && cargo test --locked && cargo clippy --locked --all-targets -- -D warnings)
 ```
 
 - `npm test` (Vitest, [test/core.test.ts](test/core.test.ts)): clock arithmetic and zoom
@@ -168,8 +176,9 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 |---|---|
 | Lines are straight from stop to stop, not snapped to roads | Road graph from the pipeline plus a router (F16 follow-up) |
 | Desire lines are straight zone-to-zone chords capped at 300 pairs; no filtering by purpose or mode | F06 follow-up if playtests want it |
-| No cost preview while drawing | F16 / F23 |
-| `park_ride` is all-or-nothing per line | Per-stop editing (F16) |
+| No capital cost preview while drawing or editing; operating cost shows after commit | F23 (sim-core capital cost model), then F16 |
+| Mode picker is two buttons (bus, light rail); fare fixed at $1.25 | F16 |
+| `park_ride` is all-or-nothing per line | Per-stop properties in the stop editor (F16) |
 | Clock is client-side; `Sim::tick` is not called, so car congestion only updates at sim build | F21 |
 | Schematic is greedy: parallel lines can overlap, no station pins | F41 |
 | Basemap tiles come from OpenFreeMap over the network; CSP is off | Bundled tiles (F33), then tighten CSP |
@@ -182,7 +191,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 |---|---|
 | F05 Tauri shell and map | Done: shell, map and sim-core linked |
 | F15 Tauri command interface | Done (app side): `upsert_route`, `remove_route`, `sim_status`. Clock advance not wired |
-| F16 Line drawing | Partial: draw, headway and delete work; no stop editing or cost preview |
+| F16 Line drawing | Partial: draw, edit stops (move, insert, delete), rename, headway, delete line. Missing: capital cost preview (needs sim-core's cost model, F23) and mode/fare pickers |
 | F17 Ridership readout | Done for line totals and per-stop boardings, plus cost and farebox from sim-core |
 | F21 Clock and time-lapse | Prototype: client clock at 1/2/10/60x, no skip-to-month |
 | F41 / F42 Schematic and morph | Prototype: heuristic layout, no pins |
@@ -197,6 +206,7 @@ app/
 │   ├── main.ts           App wiring: state, rendering, UI events, clock loop
 │   ├── map.ts            MapLibre setup, basemap + offline fallback, all layers, zoom bands
 │   ├── draw.ts           Click-to-place line drawing tool
+│   ├── edit.ts           Stop editor: drag, insert (least added length), delete; bestInsertIndex()
 │   ├── schematic.ts      Tube-map layout + geo/schematic morph
 │   ├── clock.ts          Game clock and time-lapse
 │   ├── style.css         HUD styling

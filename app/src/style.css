@@ -16,6 +16,8 @@ button.on { background: #1b1d22; color: #fff; border-color: #1b1d22; }
 #routes h3 { margin: 0 0 6px; font-size: 14px; }
 #routes small { color: #7a808a; font-weight: 400; }
 .route { padding: 6px 0; border-top: 1px solid #eceef1; }
+.route.editing { background: #f6f7f9; margin: 0 -10px; padding: 6px 10px; }
+.route .name[contenteditable="true"] { outline: 1px solid #0098d4; padding: 0 2px; }
 .route .row { display: flex; gap: 6px; margin-top: 4px; }
 .riders { font-variant-numeric: tabular-nums; font-weight: 600; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
