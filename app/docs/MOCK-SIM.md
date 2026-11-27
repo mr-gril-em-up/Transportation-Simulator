@@ -77,7 +77,7 @@ pipeline's Travis build, MetroRail's $3.50 fare) returns about **1,970 weekday
 riders**; the preset itself now uses 32 minutes (about 1,750 in the mock). `ASC_CAR = 2.0`
 was tuned to land a little above APTA's ~1,500 a weekday. sim-core has since
 been fitted to Travis ACS commute shares (SIM-10) and gives 861/day for the
-line alone and 1,367/day inside today's network (SIM-12), so the mock sits between the
+line alone and 1,352/day inside today's network (SIM-12, SIM-15), so the mock sits between the
 two; it is not re-tuned because it exists for UI work, not forecasts. A 10-stop bus line on the
 Guadalupe/Lamar corridor gives about 1,100 at 15 minutes and 1,500 at
 10 minutes, below the real 801/1-corridor numbers; acceptable for a mock.
