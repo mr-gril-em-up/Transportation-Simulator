@@ -24,7 +24,7 @@ Keep the README as the entry point. If it grows past roughly 400 lines, move det
 
 - Every public item (`pub fn`, `pub struct`, `pub enum`, fields of public structs, Tauri commands, TS exports) has a doc comment stating what it is, its units, and its invariants. `cargo doc` must build without warnings.
 - Every module (`lib.rs`, each `mod`) opens with a `//!` comment: what the module owns and what it must not do.
-- Comments explain **why**, not what. Write one wherever a reader would otherwise ask "why not the obvious way?" Link the design doc section or decision number (`D7`) when the reason lives there.
+- Comments explain **why**, not what. Write one wherever a reader would otherwise ask "why not the obvious way?" Link the design doc section or decision ID (`SIM-3`, or a frozen legacy ID like `D7`) when the reason lives there.
 - Magic numbers carry their source: `// 1,800 veh/h/lane, HCM basic freeway segment` or `// NHTS 2017: 3.5 trips/person/day`.
 - Calibration targets and tolerances live in named constants with a doc comment naming the data they come from.
 
@@ -36,7 +36,9 @@ Keep the README as the entry point. If it grows past roughly 400 lines, move det
 
 ## 4. Decisions
 
-Add a row to [DECISIONS.md](DECISIONS.md) when you make a choice a future developer would otherwise have to ask about: a dependency, a data source, a format, an algorithm, a deviation from the design doc, a scope call. One line of decision, one line of why. If you reverse a decision, add a new row and mark the old one superseded.
+Add a row to [DECISIONS.md](DECISIONS.md) when you make a choice a future developer would otherwise have to ask about: a dependency, a data source, a format, an algorithm, a deviation from the design doc, a scope call. One line of decision, one line of why.
+
+IDs are per stream so parallel PRs don't collide: `SIM-` (sim-core), `DATA-` (data-pipeline), `APP-` (app), `DOC-` (project-level and docs). Take the next number in your stream's section and **append the row at the bottom of that section**. Never add rows to the frozen legacy `D1`–`D31` table. To reverse a decision, add a new row and mark the old one "Superseded by <ID>".
 
 ## 5. Roadmap and architecture upkeep
 
@@ -60,6 +62,6 @@ The [PR template](../.github/pull_request_template.md) carries this checklist. R
 - [ ] Component README updated (summary, run, test, interfaces, rationale, gaps, status)
 - [ ] Public items have doc comments; `cargo doc` builds clean
 - [ ] Interface change? Owner and consumer docs and ARCHITECTURE.md updated, fixture updated
-- [ ] New decision? Row added to DECISIONS.md
+- [ ] New decision? Row appended to your stream's section of DECISIONS.md (`SIM-`/`DATA-`/`APP-`/`DOC-` ID)
 - [ ] Roadmap Status and Gantt tag updated for features touched
 - [ ] New doc listed in docs/README.md
