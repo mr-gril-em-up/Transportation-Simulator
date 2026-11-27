@@ -88,32 +88,57 @@ TRANSPO_SCENARIO=$PWD/../crates/data-pipeline/data/out/48-2023-tract-highway/sce
   SIM-15). Travis keeps the dense model. The panel header says `sim-core · Texas data`.
 - **Loading screen.** Startup is over a minute statewide, so a card shows the stage (reading the
   scenario, then the first traffic equilibrium for 6,896 census tracts), a bar and the seconds
-  elapsed and left against an estimate of 80 s. The bar stops at 97% and the text says when it
+  elapsed and left against an estimate (200 s cold, 70 s warm, as measured below). The bar stops at 97% and the text says when it
   is taking longer than the estimate. sim-core has no progress callback, so the bar is time
   against the estimate, not work done. A county build shows no card.
+- **Warm start** (SIM-19, A36). After a cold start the shell saves the starting road volumes
+  (`Sim::road_state`, 3.5 MB) as `road_state-network.json` (or `road_state-blank.json` on a
+  blank map) beside the scenario. The next start reads it and calls `Sim::new_warm`, so the first
+  equilibrium is one warm day: 230 s cold, 72 s warm with 455 lines (measured below). It is never
+  overwritten during play, so every warm start begins from the same roads. A state from another
+  road graph (sim-core's fingerprint) or from another build of the data (size and time of
+  `scenario.json` and `existing_lines.json`, so a republish on the same roads counts) is ignored
+  and the start is cold. Delete the file, or
+  set `TRANSPO_WARM_START=0`, to start cold; a cold start saves a fresh one. The card says
+  "Settling traffic from the last start's roads" when warm. The Travis build saves and reads one
+  too.
 - **Opens on all of Texas.** Once the scenario is read, the map fits the zone extent.
 - **Real regional rail and intercity lines** (A33). The pipeline's `transit.json` holds every
   OSM transit route in Texas. The shell keeps rail, light rail and tram, one variant per line
   (the one with most stops), and leaves out CapMetro's (they run in sim-core as today's network).
-  That is 18 lines: DART Red, Blue, Green, Orange and Silver, TRE, TEXRail, DCTA A-train, METRORail Red,
-  Green and Purple, Amtrak Texas Eagle, Sunset Limited and Heartland Flyer, the Dallas, El Paso
-  and McKinney Avenue streetcars, and the Grapevine Vintage Railroad. They are drawn in the tube
-  view with their own colors and listed under **Other real rail** in the panel. They are drawn
-  only: sim-core does not run them, so they carry no riders and cost nothing. Making them real
-  service needs headways for them in `existing_lines.json` (pipeline).
+  That is 18 lines. Since DATA-9 (#77) the statewide `existing_lines.json` runs DART, METRORail,
+  TRE, TEXRail, the A-train and the Dallas and McKinney Avenue streetcars as real service, so
+  the client drops a reference line when more than half its stops are within 300 m of a running
+  rail stop (`notRunning`). Five remain: Amtrak Texas Eagle, Sunset Limited and Heartland Flyer,
+  the El Paso Streetcar and the Grapevine Vintage Railroad. They are drawn in the tube view with
+  their own colors and listed under **Other real rail** in the panel. They are drawn only:
+  sim-core does not run them, so they carry no riders and cost nothing.
+- **Today's network statewide** (DATA-9): 415 lines from every agency's GTFS (CapMetro, DART,
+  Houston METRO, Trinity Metro, DCTA, VIA, CCRTA, El Paso), 14 of them rail. Rail takes its
+  color from the GTFS name (`existingColor`: "BLUE LINE" is blue, TRE, TEXRail and the A-train
+  their own); buses are gray.
+- **New day computing** (SIM-18). The clock worker calls `Sim::tick_budgeted(dt, 100 ms)`, so
+  a day's re-run runs in slices with the lock released in between and the clock keeps going.
+  The clock panel shows `New day computing 43%` (`day_progress`) until it ends; results and
+  car times are the previous day's until then, and the client re-reads results when it ends.
+  A command waiting for the lock goes before the next slice.
+
+  ![New day computing](docs/img/day-computing.png)
 - **County detail** (A34). From City zoom in, the zoom badge names the county under the map
   center (`City z11.5 · geographic · Travis County`), from the nearest tract's GEOID in
   `zones.json`. Zooming in is a view change only: the strategic tier still scores the whole
   state, because the camera never changes the score. A county's own detailed model (block
   groups, every street) is sim-core's local tier (F28, F35), not built.
 
-Measured 2026-11-27 in `tauri dev` under Xvfb on 4 cores (software rendering competing for
-CPU): ready in 155 s with today's 61 CapMetro lines; sim-core's `examples/statewide.rs` on the
-same machine took 77 s cold and 20.5 s for the next day (release, no lines). Today's network
-carries 45,163 riders/day on the statewide tier (tract zones, highway roads only), against
-about 79k on the Travis build: not comparable, and not calibrated. A line edit takes about
-4.5 s (300 ms on Travis); each day boundary re-runs the day for about 20 s while holding the
-Sim lock, so an edit made then waits.
+Measured 2026-11-27 in `tauri dev` under Xvfb on 4 cores (WebKit's software rendering takes
+about 1.3 cores, so a desktop with a GPU should be faster), with the DATA-9 build (415 lines at
+start): ready in 201 to 214 s (230 s cold and 72 s warm with the republished 455-line build); a day's re-run takes about 45 s of wall time in slices; adding a
+2-stop bus line takes about 16 s for the whole round trip (preview, upsert, results, budget)
+with or without a day computing, and removing one about 2 s. The add cost grows with the
+number of lines (4.5 s with 61 lines before sim-core SIM-17); reported to sim-core. Today's
+network carries about 409,000 riders/day on the statewide tier (tract zones, highway roads
+only): a strategic-tier figure, not a calibration result. sim-core's `examples/statewide.rs`
+took 77 s cold and 20.5 s a day on the same machine (release, no lines).
 
 ![Loading the statewide build](docs/img/statewide-loading.png)
 ![All of Texas at State zoom: real rail and intercity lines in the tube view](docs/img/statewide-texas.png)
@@ -240,7 +265,7 @@ interface SimClient {
   referenceLines(): Promise<RouteSpec[]>;                // real rail sim-core does not run; drawn only
   zoneCounties(): Promise<[lon, lat, fips][]>;           // zone centroids with county FIPS
   results(): Promise<RouteResult[]>;                     // re-read after the daily re-run
-  clock(): Promise<ClockState>;                          // { gameSeconds, timelapse, paused, day }
+  clock(): Promise<ClockState>;                          // { gameSeconds, timelapse, paused, day, dayProgress?, daysDone? }
   setClock(c: { paused?; timelapse? }): Promise<ClockState>;
   skipToNextMonth(): Promise<ClockState>;
 }
@@ -288,7 +313,7 @@ interface SimClient {
 | `ledger` | none | sim-core `Ledger` (`cash`, `current`, `history`, `served_population`, `bonds`, `distressed_months`, `bankrupt_month`) plus `debt`, `debt_service_per_month`, `bankruptcy_months`, `bond_rate`, `bond_term_months` |
 | `issue_bond` | `principal: number` | Same as `ledger`, after borrowing. Errors on a non-positive amount or once bankrupt |
 | `existing_routes` | none | Lines present at start: `{ route_id, line: TransitLine }[]` with ids `e0`, `e1`, ...; empty on a blank map |
-| `clock` | none | `{ game_seconds, timelapse, paused, day }` (sim-core `Clock` plus whole days) |
+| `clock` | none | `{ game_seconds, timelapse, paused, day, day_progress? }` (sim-core `Clock` plus whole days; `day_progress` 0 to 1 only while a day re-runs; `days_done` counts finished day re-runs, and results change when it does) |
 | `set_clock` | `paused?: boolean`, `timelapse?: number` | Same as `clock`; omitted fields unchanged, non-positive time-lapse ignored |
 | `skip_to_next_month` | none | Same as `clock`, after re-running the day and settling the month |
 | `results` | none | `RouteResultOut[]` for every route, no change |
@@ -363,10 +388,10 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | Desire lines are straight zone-to-zone chords capped at 300 pairs; no filtering by purpose or mode | F06 follow-up if playtests want it |
 | The browser mock builds instantly (no construction period) | Not planned: construction rules live in sim-core |
 | Cost preview only while drawing; a stop edit is charged on release with no preview first (the budget shows what it cost) | F16 follow-up if it matters in play |
-| A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (about 2 s on real Travis, about 20 s statewide) | Run the daily re-run off the lock on a copy (sim-core), or show "re-running the day" in the HUD |
-| Statewide loading bar is elapsed time against an 80 s estimate, not work done | A progress callback from `Sim::new` (sim-core) |
-| Statewide startup recomputes the first equilibrium every launch (about 70 s to 155 s) | Cache the equilibrium with the save format (F43) |
-| Real rail outside CapMetro is drawn only, not simulated | Headways for those lines in the pipeline's `existing_lines.json` |
+| A line edit statewide takes about 16 s with 415 lines (Xvfb, 4 cores) | sim-core: incremental transit update on a line change (reported) |
+| Statewide loading bar is elapsed time against an estimate (200 s cold, 70 s warm), not work done | A progress callback from `Sim::new` (sim-core) |
+| The first statewide start on a machine is cold (230 s here with 455 lines) | Ship a `road_state-network.json` with the data release (pipeline) |
+| Amtrak and the El Paso Streetcar are drawn only, not simulated | Intercity rail (F37); El Paso's feed in the pipeline |
 | County names cover 40 metro counties; others show the FIPS code | A county name list from the pipeline |
 | `npm run tauri build` bundles no scenario: an installed app on another machine opens on the synthetic region | Bundle the build as a Tauri resource when packaging matters (M3 release) |
 | Startup on real Travis takes about 11 s in `tauri dev` (measured before SIM-2 and DATA-2 merged; expect less now) | Re-measure; further gains are sim-core startup work |

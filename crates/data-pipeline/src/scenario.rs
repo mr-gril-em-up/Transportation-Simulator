@@ -182,7 +182,10 @@ pub fn simplify(
         if a == b || a == v || b == v {
             continue;
         }
-        let same = li.speed_kph == lj.speed_kph && li.lanes == lj.lanes && li.oneway == lj.oneway;
+        let same = li.speed_kph == lj.speed_kph
+            && li.lanes == lj.lanes
+            && li.oneway == lj.oneway
+            && li.class == lj.class;
         // One-way: must flow a -> v -> b (or b -> v -> a).
         let (from, to) = if !li.oneway || (li.to as usize == v && lj.from as usize == v) {
             (a, b)
@@ -257,6 +260,7 @@ pub fn to_scenario_mapped(
             capacity_vph: None,
             toll: 0.0,
             oneway: e.oneway,
+            class: Some(e.class.clone()),
         })
         .collect();
     let mut protect = vec![false; roads.nodes.len()];
@@ -340,7 +344,21 @@ mod tests {
             capacity_vph: None,
             toll: 0.0,
             oneway,
+            class: None,
         }
+    }
+
+    #[test]
+    fn contraction_keeps_class_boundaries() {
+        // 0 - 1 - 2 with equal speed and lanes but different classes: node 1 stays.
+        let mut a = link(0, 1, 100.0, false);
+        let mut b = link(1, 2, 100.0, false);
+        a.class = Some("motorway".into());
+        b.class = Some("motorway_link".into());
+        let protect = [true, false, true];
+        let (keep, out, _) = simplify(3, vec![a, b], &[true; 3], &protect);
+        assert!(keep[1]);
+        assert_eq!(out.len(), 2);
     }
 
     #[test]

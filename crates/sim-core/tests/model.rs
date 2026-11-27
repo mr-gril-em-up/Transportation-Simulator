@@ -755,3 +755,113 @@ fn line_edit_during_a_budgeted_day_is_kept() {
     assert!(during > 0.0 && after > 0.0);
     assert!((after - during).abs() / during < 0.2, "{during} -> {after}");
 }
+
+#[test]
+fn line_edit_while_the_day_loads_ridership_matches_an_edit_after_it() {
+    // SIM-22: ridership loading is the day's last phase and also runs in
+    // slices. An edit two slices before the end lands where the same edit
+    // after a blocking day does.
+    let bus = || straight_line(Mode::Bus, (-7.0, 3.0), (7.0, 3.0), 0.8, 10.0);
+    let start = || {
+        let mut s = sim();
+        s.add_line(rail()).unwrap();
+        s.clock.set_timelapse(60.0);
+        s
+    };
+    let zero = std::time::Duration::ZERO;
+    // Count the calls a budgeted day takes.
+    let mut n = start();
+    n.tick_budgeted(24.0, zero);
+    let mut calls = 1;
+    while n.day_progress().is_some() {
+        n.tick_budgeted(0.0, zero);
+        calls += 1;
+    }
+    let mut a = start();
+    a.tick(24.0);
+    a.add_line(bus()).unwrap();
+    let mut b = start();
+    b.tick_budgeted(24.0, zero);
+    for _ in 0..calls - 3 {
+        b.tick_budgeted(0.0, zero);
+    }
+    let p = b.day_progress().expect("day still running");
+    assert!(p > 0.75, "not yet loading: progress {p}");
+    b.add_line(bus()).unwrap();
+    while b.day_progress().is_some() {
+        b.tick_budgeted(0.0, zero);
+    }
+    assert!(!b.results().car_times_stale);
+    let close = |x: f64, y: f64| (x - y).abs() <= 1e-6 * x.abs().max(1.0);
+    for (la, lb) in a.results().lines.iter().zip(&b.results().lines) {
+        assert!(
+            close(la.daily_boardings, lb.daily_boardings),
+            "{}: {} vs {}",
+            la.name,
+            la.daily_boardings,
+            lb.daily_boardings
+        );
+    }
+}
+
+#[test]
+fn preview_while_the_day_loads_ridership_leaves_the_day_alone() {
+    // SIM-22: a preview puts the transit state back, including the edit
+    // counter, so the day job carries on and lands where a blocking day does.
+    let start = || {
+        let mut s = sim();
+        s.add_line(rail()).unwrap();
+        s.clock.set_timelapse(60.0);
+        s
+    };
+    let zero = std::time::Duration::ZERO;
+    let mut n = start();
+    n.tick_budgeted(24.0, zero);
+    let mut calls = 1;
+    while n.day_progress().is_some() {
+        n.tick_budgeted(0.0, zero);
+        calls += 1;
+    }
+    let mut a = start();
+    a.tick(24.0);
+    let mut b = start();
+    let yesterday = b.results().lines[0].daily_boardings;
+    b.tick_budgeted(24.0, zero);
+    for _ in 0..calls - 3 {
+        b.tick_budgeted(0.0, zero);
+    }
+    assert!(b.day_progress().expect("day still running") > 0.75);
+    b.preview_line(straight_line(Mode::Bus, (-7.0, 3.0), (7.0, 3.0), 0.8, 10.0))
+        .unwrap();
+    assert!(
+        b.results().car_times_stale,
+        "preview put the day's results in early"
+    );
+    while b.day_progress().is_some() {
+        b.tick_budgeted(0.0, zero);
+    }
+    let (ra, rb) = (a.results(), b.results());
+    assert!(!rb.car_times_stale);
+    let close = |x: f64, y: f64| (x - y).abs() <= 1e-6 * x.abs().max(1.0);
+    assert!(close(ra.peak_vehicle_km, rb.peak_vehicle_km));
+    let (la, lb) = (ra.lines[0].daily_boardings, rb.lines[0].daily_boardings);
+    assert!(close(la, lb), "{la} vs {lb} (yesterday {yesterday})");
+}
+
+#[test]
+fn warm_start_from_saved_roads_matches_and_rejects_another_graph() {
+    // SIM-19: saved road volumes start the next game near the same state,
+    // and a state from a different road network is ignored.
+    let input = generate(&SynthConfig::small());
+    let a = Sim::new(input.clone(), Params::default()).unwrap();
+    let saved: sim_core::RoadState =
+        serde_json::from_str(&serde_json::to_string(&a.road_state()).unwrap()).unwrap();
+    let b = Sim::new_warm(input.clone(), Params::default(), &saved).unwrap();
+    assert!(b.started_warm());
+    let (va, vb) = (a.results().peak_vehicle_km, b.results().peak_vehicle_km);
+    assert!((va - vb).abs() / va < 0.03, "{va} vs {vb}");
+    let mut other = input;
+    other.road_links[0].speed_kph *= 2.0;
+    let c = Sim::new_warm(other, Params::default(), &saved).unwrap();
+    assert!(!c.started_warm());
+}

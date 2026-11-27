@@ -83,9 +83,9 @@ impl RoadGraph {
         for (li, l) in input.road_links.iter().enumerate() {
             let (a, b) = (index[&l.from], index[&l.to]);
             let len_km = l.length_m / 1000.0;
-            let cap = l
-                .capacity_vph
-                .unwrap_or(lane_capacity_vph(l.speed_kph) * l.lanes.max(1) as f64);
+            let cap = l.capacity_vph.unwrap_or(
+                lane_capacity_vph(l.speed_kph, l.class.as_deref()) * l.lanes.max(1) as f64,
+            );
             let mk = |from, to| Member {
                 link: li as u32,
                 from,
@@ -259,6 +259,30 @@ impl RoadGraph {
     pub fn members_of(&self, e: usize) -> &[Member] {
         let ed = &self.edges[e];
         &self.members[ed.m_lo as usize..ed.m_hi as usize]
+    }
+
+    /// Identifies this contracted graph: a hash of every edge's endpoints and
+    /// every member's free-flow time and capacity. Saved road volumes
+    /// (`RoadState`) only apply to the graph they came from.
+    /// FNV-1a, so the value is stable across Rust versions and saved files
+    /// keep matching.
+    pub fn fingerprint(&self) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut eat = |x: u64| {
+            for b in x.to_le_bytes() {
+                h = (h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+            }
+        };
+        eat(self.n_nodes as u64);
+        eat(self.edges.len() as u64);
+        for e in 0..self.edges.len() {
+            for m in self.members_of(e) {
+                eat(((m.from as u64) << 32) | m.to as u64);
+                eat(m.t0_min.to_bits());
+                eat(m.cap_vph.to_bits());
+            }
+        }
+        h
     }
 
     /// BPR time of edge `e` at `vol` vehicles/hour: the sum over its members.
@@ -440,6 +464,7 @@ mod tests {
             capacity_vph: None,
             toll: 0.0,
             oneway: false,
+            class: None,
         };
         ScenarioInput {
             road_nodes: vec![node(1), node(2), node(3)],

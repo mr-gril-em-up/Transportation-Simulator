@@ -103,8 +103,9 @@ let days_crossed = sim.tick(real_dt_seconds);
 | `equilibrate()` | seconds | Full mode choice and congested car assignment from free-flow times. Call after changing `params`. |
 | `equilibrate_warm()` | ~2 s at Travis size | Daily re-run starting from the previous day's road volumes (`daily_iterations` rounds). |
 | `tick(real_dt) -> u64` | free or ~2 s | Advances `sim.clock`; at a day boundary opens lines whose construction finished, runs `equilibrate_warm` once, and settles the ledger at month boundaries. Call from a worker thread. |
-| `tick_budgeted(real_dt, budget) -> u64` | about `budget` | Same day, spread over calls (SIM-18): a boundary opens due lines and starts the day's re-run as a job, and each call runs at most about `budget` of it, so line edits go in between. Results and car times stay the previous day's until the job ends; months settle when it does. Statewide with a 100 ms budget: the longest call is 0.5 s instead of a 14 s block. Use instead of `tick`, not alongside it. |
-| `day_progress() -> Option<f64>` | free | Share of the running day job done (0 to 1), None when none runs. For a "new day computing" indicator. |
+| `tick_budgeted(real_dt, budget) -> u64` | about `budget` | Same day, spread over calls (SIM-18): a boundary opens due lines and starts the day's re-run as a job, and each call runs at most about `budget` of it, so line edits go in between. Results and car times stay the previous day's until the job ends; months settle when it does. Statewide with a 100 ms budget and all 455 lines: the longest call is 0.45 s instead of a 20 s block (ridership loading also runs in slices, SIM-22). Use instead of `tick`, not alongside it. |
+| `Sim::new_warm(input, params, &RoadState)`, `road_state() -> RoadState`, `started_warm()` | | Warm start (SIM-19): save `road_state()` (road volumes plus a fingerprint of the road graph, ~3.5 MB JSON statewide) when a game ends and pass it to `new_warm` next time; the cold equilibrium becomes one warm day. Statewide: 21 s instead of 71 s, starting at 40 km/h instead of 33. A state from another road network is ignored (`started_warm()` is false and the start is cold). |
+| `day_progress() -> Option<f64>` | free | Share of the running day job done (0 to 1; the assignment rounds, the final pass and the ridership loading count as equal parts), None when none runs. For a "new day computing" indicator. |
 | `calibrate_mode_shares(ModeSplit, iters)` | ~0.1 s/iter | Fits the logit constants so commute trips reproduce target shares (ACS journey to work); transit as one share unless `transit_drive` has its own target (SIM-10). |
 | `commute_mode_shares() -> ModeSplit` | ~0.3 s | Commute (home-work) shares under current constants: the quantity the fit targets. |
 | `input() -> &ScenarioInput` | free | The scenario as loaded (lines live in `lines()`). |
@@ -171,7 +172,8 @@ Fields marked optional may be omitted.
     "lanes": 1,            // optional, per direction
     "capacity_vph": 1800,  // optional, per direction; derived from speed x lanes
     "toll": 0,             // optional, $ per traversal
-    "oneway": false        // optional; false = usable both ways
+    "oneway": false,       // optional; false = usable both ways
+    "class": "primary"     // optional OSM highway class; sets derived capacity (F38)
   }],
   "commutes": [{ "home": 2, "work": 1, "workers": 900 }],  // LODES OD by zone
   "lines": []              // optional, transit present at start (see TransitLine)
@@ -250,7 +252,10 @@ statewide build (6,896 tracts, 214k road nodes) a game day takes 13.8 s at a
 Road assignment steps by a Frank-Wolfe line search (SIM-15): with 8 cold
 rounds (69 s) the statewide peak average is 33 km/h at start and 38 km/h by
 day 3 (plain MSA gave 3 km/h). A statewide line edit (preview or add, today's
-61 CapMetro lines loaded) takes 0.78 s, at 1.4 GB peak (SIM-17). Plan and numbers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
+61 CapMetro lines loaded) takes 0.78 s, at 1.4 GB peak (SIM-17). With all
+455 Texas lines it took 8.2 s; a spatial index for the stop and tract joins
+brings it to 4.9 s (SIM-20), still over the 2 s target. Re-searching and re-loading only the transit
+networks an edit can reach brings it to about 1.0 s (SIM-21). Plan and numbers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
 
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See
@@ -274,6 +279,7 @@ cargo run --release -p sim-core --example calibrate -- \
 | Fitted, SIM-11 (3 real lots with spaces) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,953 | 1,471 |
 | Fitted on `existing_lines.json` with GTFS headways (now the defaults) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 77,802 | 1,367 |
 | Same constants after the line-searched assignment (SIM-15; a refit moves them under 0.02, not adopted) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 77,349 | 1,352 |
+| Same constants on the DATA-9 republish (stops from GTFS, Red Line coded commuter rail; a refit moves them under 0.01, not adopted) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 77,062 | 1,317 |
 | Target / count | ACS 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | ~69-70k (NTD weekday) | 1,500 (APTA weekday) |
 
 Shares are % of commuters who travel (ACS less work from home and other).

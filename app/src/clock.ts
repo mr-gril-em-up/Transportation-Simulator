@@ -13,6 +13,10 @@ export interface ClockState {
   timelapse: number;
   paused: boolean;
   day: number; // whole game days since the start (day 0)
+  /** 0 to 1 while the day's re-run computes (results are still the previous day's); absent otherwise. */
+  dayProgress?: number;
+  /** Day re-runs finished since the backend started; results change when it does. Absent in the mock. */
+  daysDone?: number;
 }
 
 /** Display copy of the game clock. Advanced only by real time x time-lapse; zoom never touches it. */

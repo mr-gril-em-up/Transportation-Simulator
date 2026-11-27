@@ -52,8 +52,11 @@ doc.
 
 - Done: statewide build behind a loading screen, opens on Texas, real rail and intercity lines
   drawn in the tube view, county named from City zoom (F34 app side, A32 to A34)
-- Next: cache the first equilibrium (F43); progress callback from sim-core; the daily re-run off
-  the Sim lock; real rail as simulated lines once the pipeline has headways
+- Done: day re-run in slices with a "New day computing" indicator (SIM-18, A35); today's
+  network statewide (DATA-9, 415 lines) with line colors from GTFS names
+- Done: warm start from the saved starting road state (SIM-19, A36): 230 s to 72 s statewide here
+- Next: ship the road state with the data release; progress callback from sim-core; faster
+  statewide line edits (sim-core, in progress)
 - Stream statewide tract-level layers; regional tier per metro
 
 ## M4 (MVP polish)

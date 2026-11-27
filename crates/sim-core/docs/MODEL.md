@@ -104,8 +104,12 @@ minutes) in M3. The profile is already in place to feed it.
 
 **Road graph.** Directed edges from `road_links` (two per link unless `oneway`).
 Free-flow time = length / speed. Capacity per direction from the input, else
-lanes x per-lane capacity by speed: 1,900 veh/h at 80+ km/h (freeway), 900 at
-55+ (arterial), 600 below (local). Car skims (time, distance, tolls between
+lanes x per-lane capacity. With the link's OSM `class` (F38): motorway 2,000
+veh/h, motorway ramps 1,500, trunk 1,800, trunk ramps 1,300, any other class
+at 80+ km/h 1,700 (an uncontrolled highway: HCM two-lane and multilane
+capacity less ~10% trucks); otherwise, and without a class, by speed: 1,900
+at 80+ km/h (freeway), 900 at 55+ (signalized arterial), 600 below (local).
+First estimates, to be fitted to TxDOT counts (F38). Car skims (time, distance, tolls between
 every kept pair of zones) come from one Dijkstra tree per origin zone, stopped as
 soon as every zone's road node is reached or, with a strategic cutoff, past
 it (below). Same-zone or same-node trips use
@@ -271,7 +275,10 @@ Travis by `examples/calibrate.rs`:
   -3.89]`. Buses carry 77.8k a day against ~69-70k weekday (NTD), 11% high;
   the Red Line 1,367 against 1,500, 9% low. After the line-searched road
   assignment (SIM-15) the same constants still reproduce ACS and give buses
-  77.3k and the Red Line 1,352 (10% low).
+  77.3k and the Red Line 1,352 (10% low). On the DATA-9 republish (stops
+  from GTFS, the Red Line coded as commuter rail, its three lots back) the
+  same constants still reproduce ACS (a refit moves them under 0.01) and
+  give buses 77.1k and the Red Line 1,317 (12% low).
 - SIM-10 (superseded split): park-and-ride share of transit commuters 3%. **Tuned, not sourced**: ACS
   has no access mode and no CapMetro on-board survey split was found. It
   decides the Red Line: with walk and drive access fitted together, modeled

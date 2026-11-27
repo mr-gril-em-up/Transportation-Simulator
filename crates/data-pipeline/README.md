@@ -84,6 +84,7 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 - **Tract and county zone levels** (DATA-5): `--level tract|county` merges block groups by GEOID prefix after the block-group build. Counts add; centroid, income and zero-car share are population-weighted; flows inside one coarse zone become intrazonal. The statewide scenario at block-group level is far too large for a sub-20 s day, so coarser levels come first.
 - **Zone connectors** (D19) go to the nearest local-road node (never motorway or trunk) in the largest connected component, so access is not free and clipping fragments cannot strand a zone.
 - **Lanes per direction in `scenario.json`**, because sim-core capacity is per direction; `roads.json` keeps OSM's total for drawing.
+- **Road class** (`RoadLink.class`, optional, added by sim-core for F38): the raw OSM `highway` value (`motorway`, `motorway_link`, `primary`, ...), filled for every link. sim-core derives capacity from it when `capacity_vph` is omitted. Contraction keeps class boundaries, so a ramp never merges into the freeway.
 - **No starting transit** in `scenario.json` (design doc "Starting map"); existing routes stay in `transit.json` for calibration.
 
 Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every default and its source: [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md).

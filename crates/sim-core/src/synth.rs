@@ -117,6 +117,7 @@ pub fn generate(cfg: &SynthConfig) -> ScenarioInput {
                     capacity_vph: None,
                     toll: 0.0,
                     oneway: false,
+                    class: None,
                 });
             }
             if iy + 1 < n {
@@ -130,6 +131,7 @@ pub fn generate(cfg: &SynthConfig) -> ScenarioInput {
                     capacity_vph: None,
                     toll: 0.0,
                     oneway: false,
+                    class: None,
                 });
             }
         }

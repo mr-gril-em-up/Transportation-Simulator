@@ -154,6 +154,19 @@ lines, so interchanges between a real DART line and a drawn one merge; the
 lines are never sent to sim-core. The badge runs `countyAt` (nearest zone
 centroid, 6,896 checks) on every zoom and `moveend`.
 
+### Warm start (SIM-19)
+
+`SimState::start` passes `warm_path()`: `road_state-<network|blank>.json`
+beside the scenario, or none (synthetic region, `TRANSPO_WARM_START=0`). The
+startup thread reads it (`read_road_state`; unreadable, or saved under
+another `build_stamp`, the size and mtime of `scenario.json` and
+`existing_lines.json`, is the same as missing) and builds with `Sim::new_warm`, else `Sim::new`. If the Sim did
+not start warm (no file, or sim-core rejected a fingerprint from another
+road graph), it writes `sim.road_state()` there (`write_road_state`; a
+failure is logged and costs only the next start's speed). Nothing else
+writes the file, so play never changes where the next game starts.
+`LoadInfo.warm` tells the loading card.
+
 ### Lines present at start (F44)
 
 sim-core treats `ScenarioInput.lines` as existing service: LineIds 0..n in
@@ -253,11 +266,21 @@ behaves the same in the browser.
 
 sim-core owns time. `SimState::spawn_clock` starts a worker thread that
 sleeps 100 ms, measures real elapsed time, takes the Sim lock and calls
-`Sim::tick(dt)`. `tick` advances sim-core's `Clock` (1 game minute per real
-second times time-lapse) and, at each day boundary, re-runs the day
-(`equilibrate_warm`, which also refreshes car congestion) and settles any
-month crossed. All of that happens under the lock, so a line edit made at
-midnight waits for it.
+`Sim::tick_budgeted(dt, DAY_SLICE)` (SIM-18, 100 ms). It advances sim-core's
+`Clock` (1 game minute per real second times time-lapse). A day boundary
+starts the day's re-run (`equilibrate_warm`'s work, which also refreshes car
+congestion) as a job, and each call runs about one slice of it; the lock is
+released between calls, so edits go in while a statewide day computes. The
+slice is a floor, not a cap: the day's final commit is one call of about
+0.6 s statewide. Months settle when the job ends. While a command waits for
+the lock (`WAITING`, a static counter bumped in `SimState::with`), the worker
+skips its slice, because std's Mutex is not fair; the skipped time carries
+into the next step. `clock` reports `day_progress` (0 to 1) while a job runs;
+the client shows "New day computing". The worker counts finished re-runs
+(`days_done`: a job that ended, a day that ran inside one step, or a skip to
+next month) and `clock` reports it; the client re-reads results when it
+changes, so a job that ends and the next that starts between two 500 ms
+polls still triggers a re-read (review note on #82).
 
 ```mermaid
 sequenceDiagram
@@ -265,12 +288,12 @@ sequenceDiagram
     participant S as Sim (Mutex)
     participant C as client
     loop every 100 ms
-        W->>S: tick(dt)
+        W->>S: tick_budgeted(dt, 100 ms)
     end
     loop every 500 ms
         C->>S: clock
         S-->>C: game_seconds, timelapse, paused, day
-        Note over C: day changed? apply(results)
+        Note over C: days_done changed? apply(results)
     end
     C->>S: set_clock / skip_to_next_month (buttons)
 ```

@@ -4,6 +4,7 @@
 //! `cold_rounds` sets `feedback_iterations`, default 4; `days` warm days, default 1).
 //! Prints load time, the cold equilibrium (`Sim::new`), one warm game day
 //! (`equilibrate_warm`, what `tick` runs daily, the 20 s target) and memory.
+//! `DUMP=<file>` writes the results after the line edit as JSON, to diff two builds.
 //! With `LINES=<existing_lines.json>` it starts from those lines and times a
 //! line edit (`preview_line` and `add_line` of a copy of the first line; the
 //! F18 target is 2 s).
@@ -50,10 +51,28 @@ fn main() {
         .map(|f| serde_json::from_str(&std::fs::read_to_string(f).expect("LINES")).unwrap())
         .unwrap_or_default();
     input.lines = lines.clone();
-    let mut sim = Sim::new(input, params).unwrap();
+    // ROADS=<file>: start warm from saved road volumes if the file exists,
+    // and save them there at the end (SIM-19).
+    let roads_file = std::env::var("ROADS").ok();
+    let saved: Option<sim_core::RoadState> = roads_file
+        .as_ref()
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .and_then(|j| serde_json::from_str(&j).ok());
+    let mut sim = match &saved {
+        Some(r) => Sim::new_warm(input, params, r).unwrap(),
+        None => Sim::new(input, params).unwrap(),
+    };
+    if saved.is_some() {
+        println!("warm start from saved roads: {}", sim.started_warm());
+    }
     let cold = t.elapsed().as_secs_f64();
+    let start = if sim.started_warm() {
+        "warm start (1 day)".to_string()
+    } else {
+        format!("cold start ({rounds} rounds)")
+    };
     println!(
-        "cold start ({rounds} rounds): {cold:.1} s, peak speed {:.0} km/h",
+        "{start}: {cold:.1} s, peak speed {:.0} km/h",
         sim.results().peak_avg_speed_kph
     );
     let mut warm = 0.0;
@@ -84,6 +103,13 @@ fn main() {
             t.elapsed().as_secs_f64()
         );
     }
+    // DUMP=<file>: write the results after the line edit (timing zeroed; the budgeted day
+    // below slices by wall clock, so its sums can differ in the last bit) to diff two builds.
+    if let Ok(f) = std::env::var("DUMP") {
+        let mut r = sim.results().clone();
+        r.eval_ms = 0.0;
+        std::fs::write(f, serde_json::to_string(&r).unwrap()).unwrap();
+    }
     // One more day through `tick_budgeted` (SIM-18): the longest single call
     // is how long a line edit can wait behind the day.
     let t = Instant::now();
@@ -105,6 +131,9 @@ fn main() {
         "budgeted day: {:.1} s in {calls} calls of 100 ms budget, longest call {longest:.2} s",
         t.elapsed().as_secs_f64()
     );
+    if let Some(f) = &roads_file {
+        std::fs::write(f, serde_json::to_string(&sim.road_state()).unwrap()).unwrap();
+    }
     let r = sim.results();
     let sh = r.mode_share;
     println!(

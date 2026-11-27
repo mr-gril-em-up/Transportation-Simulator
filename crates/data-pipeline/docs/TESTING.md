@@ -23,6 +23,7 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `headways_from_a_tiny_feed` | `src/gtfs.rs` | Busiest-Wednesday service selection with a calendar_dates removal, weekend service ignored, directions combined per window, peak and midday headways, span, empty windows give `None`; long name, route type and stop sequence with coordinates; a route with no short name keyed by its long name; the feed list parses |
 | `highway_roads_keep_only_motorway_to_secondary` | `tests/sample.rs` | `--roads highway`: only motorway to secondary classes in `roads.json`, fewer edges than the full build, manifest `road_classes` |
 | `only_capmetro_operators_match` | `src/gtfs.rs` | Missing or CapMetro operator matches; Amtrak and CARTS do not |
+| `contraction_keeps_class_boundaries` | `src/scenario.rs` | Two links with equal speed and lanes but different class (motorway, motorway_link) are not contracted |
 | `route_and_street_matching` | `src/counts.rs` | TxDOT `ON_ROAD` against OSM refs (IH/I, SH/TX, FM/RM, SL/Loop, multi-ref ways, no partial numbers) and street names with suffix and direction normalization |
 | `snaps_both_carriageways_and_drops_misses` | `src/counts.rs` | Nearest matching link wins over a closer link with another ref; opposite carriageway found; stations out of range or unmatched dropped |
 | `dates_and_weekdays` | `src/gtfs.rs` | GTFS date to day number, Wednesday test, times past 24:00 |

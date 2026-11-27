@@ -38,7 +38,8 @@ Coordinates are WGS84 longitude, latitude in degrees. Lengths in meters, speeds 
 | `zones[].area_km2` | TIGER/Line 2020 `ALAND` / 10⁶ | `null` if no TIGER file |
 | `zones[].parking_cost` | Not sourced | 0 |
 | `road_links[].lanes` | OSM `lanes`, else class default | Converted to **per direction**: one-way keeps the total, two-way halves it (minimum 1) |
-| `road_links[].capacity_vph`, `toll` | Not set | sim-core derives capacity from speed and lanes |
+| `road_links[].class` | OSM `highway` value (`motorway`, `motorway_link`, `trunk`, `primary`, ...) | sim-core sets capacity per facility type from it (SIM-23); contraction never merges links of different class |
+| `road_links[].capacity_vph`, `toll` | Not set | sim-core derives capacity from class, speed and lanes |
 | `road_links[].oneway` | OSM `oneway`, motorway class, roundabouts | `oneway=-1` ways are flipped so `from → to` is the legal direction |
 | `commutes[]` | LODES OD `S000` summed to block-group pairs | Only pairs with both ends in the area |
 | `lines` | Empty by default. With `--existing-lines`, today's network: one line per GTFS route of every agency feed (DATA-7, DATA-9) | sim-core loads these as existing service (no capital charge, open from day 0), so they are opt-in until the app has a setting to drop them and Collins decides the default. The same lines are always written to `existing_lines.json`. Red Line 550 uses the `figures.csv` timetable headways; Leander, Lakeline and Howard stops carry `park_ride` and `park_ride_spaces` (SIM-11) |

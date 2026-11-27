@@ -11,7 +11,7 @@ math is in [MODEL.md](MODEL.md); the API and schema are in the
 | `schema.rs` | Input types (serde). The contract with `data-pipeline`. | serde |
 | `lib.rs` | Re-exports, `SimError`, `ScenarioInput::validate` | all |
 | `params.rs` | `Params` (every tunable number), per-mode defaults, road lane capacity | schema |
-| `geo.rs` | Equirectangular distance and offsets | none |
+| `geo.rs` | Equirectangular distance and offsets, `PointGrid` radius and nearest-point queries (SIM-20) | none |
 | `graph.rs` | Road graph (CSR), Dijkstra tree, distance/toll along the tree, all-or-nothing loading | params, schema |
 | `transit.rs` | Transit platforms and edges, stop coverage, path search (`Searcher`), passenger loading (`LineLoads`) | geo, params, schema, roads (`Route`) |
 | `roads.rs` | Road routing for bus, trolleybus and BRT: snap stops to the contracted graph, A* by distance, route cache, street shapes (SIM-8) | geo, graph, schema |
@@ -94,7 +94,11 @@ tick_budgeted (SIM-18)  (each call about `budget`)
      origins, summing their AON loads -> Frank-Wolfe step -> final round: pass_range slices
      -> commit car (and transit) skims -> finish -> settle months
   line edits between calls run as usual on the previous day's car times; if one
-  lands during the final round, transit is re-skimmed at commit
+  lands during the final round, transit is re-skimmed at commit. One landing
+  during an assign round mixes old- and new-network slices into that round's
+  load; later days pull it back, as they do any day's error. Note that
+  the budget is a floor per slice, not a hard cap: the final commit and
+  finish are one step (0.5-0.6 s statewide)
 
 finish
   mode choice (origins with no transit reuse their totals, SIM-17) -> transit loading
@@ -272,7 +276,9 @@ unchanged. **Open:** about 39 km/h after a week is still low for a peak
 hour. Two known causes, for F38 with TxDOT counts: roads at 55 to 80 km/h get
 900 veh/h per lane (`lane_capacity_vph`, set for signalized arterials), which
 also applies to rural two-lane highways that carry ~1,700; and BPR puts no cap
-on delay at very high volume/capacity.
+on delay at very high volume/capacity. `RoadLink.class` (OSM highway class,
+optional) now sets capacity by facility type, so a rural two-lane highway can
+carry 1,700 per lane; the pipeline fills it next, and the counts then fit it.
 
 **Line edits (SIM-17).** With today's 61 CapMetro lines loaded
 (`LINES=existing_lines.json examples/statewide.rs`), a statewide
@@ -311,15 +317,117 @@ call is 0.50 s (the final commit). Results are the previous day's until the
 job ends; a test checks the budgeted day lands within 1e-6 of the blocking
 one, and that a line added mid-day is in the day's results.
 
+**Warm start (SIM-19).** The statewide cold start is 8 feedback rounds from
+free flow (71 s). `Sim::road_state()` returns the road volumes with a
+fingerprint of the contracted road graph (FNV-1a over every member's ends,
+free-flow time and capacity, so it is stable across Rust versions);
+`Sim::new_warm` loads them and runs one warm game day instead
+(`equilibrate_warm`). Statewide after 3 game days saved: **21.4 s** to start,
+peak 40 km/h (cold: 70.9 s, 33 km/h). A state whose fingerprint or length
+does not match is ignored, so a rebuilt scenario starts cold. The app can
+ship a state with each scenario release, or save one when a game closes.
+The fingerprint covers the road graph only, not demand: a state saved under
+other params, mode constants, existing lines or a recalibrated release on the
+same roads is accepted. It is a starting guess, not a checked result: the
+warm day's Frank-Wolfe step moves it toward the new demand, so a mismatched
+save costs accuracy on day 1, not correctness.
+
+**Transit network build at statewide scale (SIM-20).** With every Texas
+agency's GTFS loaded (455 lines, 19.5k stops) a line edit took 8.2 s, and
+4.5 s of it was `TransitNet::build` comparing every stop with every other
+stop (transfers) and with every tract (access, egress, nearest zone).
+`geo::PointGrid` buckets points by lon/lat cell; `near` returns every point
+that can lie within a radius, sorted by index, and the caller keeps its exact
+distance test, so the lists and their order are the same as the all-pairs
+scans. The longitude span is widened by the smallest cosine inside the
+query's latitude band, so no point within the radius is missed. `nearest`
+grows the radius until the best hit lies inside it. `Searcher` also stops
+clearing every platform and zone before each search: it resets only what the
+last run touched, and sorts the touched platforms before egress so ties
+resolve in the same order. Statewide, 455 lines, 4 cores:
+
+| | Network rebuild | Line edit (preview / add) | Longest budgeted-day call |
+|---|---|---|---|
+| Before | 4.5 s | 8.2 s / 8.1 s | 3.7 s |
+| After | **0.15 s** | **4.9 s / 4.6 s** | 3.1 s |
+
+Travis results are bit-identical (`DUMP=` output of `examples/statewide.rs`
+with one rayon thread; with more threads parallel float sums already differ
+in the last bit between runs). What is left of the edit: transit skims
+1.8 s, ridership loading 1.8 s (both re-search every origin with transit),
+and 0.75 s flattening per-pair vectors; the longest day call is the same
+loading in the day's final slice. Next: re-search and re-load only the
+transit networks an edit can reach.
+
+**Edits scoped to the networks they reach (SIM-21).** A transit search
+only moves along ride and transfer edges, so it never leaves the connected
+components of the platforms it starts from: the origin's walk-access
+platforms and the park-and-ride platforms within the drive limit.
+`TransitNet::comp` numbers the components and `comp_sigs` hashes what a
+search inside each one reads (line ids, stop numbers, positions, service,
+fares, park-and-ride and its penalty), keyed by line id and stop number so
+a component untouched by an edit hashes the same in the rebuilt net. On an
+edit, `Sim::edit_scope` compares the old and new nets:
+
+1. Components whose hash is new (in the new net) or gone (from the old
+   one) are changed.
+2. An origin is re-searched if it seeds a changed component in either net;
+   every other origin keeps its skim rows, with park-and-ride platform ids
+   renumbered when a removal shifted them.
+3. Components seeded by a re-searched origin have new loads. Origins that
+   seed one are re-loaded, and every other line keeps its stored load
+   (`Sim::loads`, carried by line id). A line no re-searched origin
+   reaches has riders whose choices did not change, so its load is the same.
+
+Mode choice still runs for every origin with transit (0.2 s). The scope
+falls back to a full recompute when off-peak skims switch on or off. A
+preview saves the stored loads with the rest of the transit state and puts
+them back. Statewide, 455 lines, 4 cores, editing a copy of an Austin bus
+line:
+
+| | Line edit (preview / add) | Longest budgeted-day call |
+|---|---|---|
+| SIM-20 | 4.9 s / 4.6 s | 3.1 s |
+| SIM-21 | **0.95 s / 1.07 s** | 2.5 s |
+
+With one rayon thread the results after the edit are bit-identical to
+SIM-20's full recompute, statewide and on Travis (`DUMP=` md5; with one
+thread the statewide edit is 1.8 s against 13.5 s). On Travis all of
+CapMetro is one component, so a Travis edit is still a full recompute. A unit test
+(`scoped_line_edits_match_a_full_recompute`) runs adds, a crossing line, a
+headway change, a removal that renumbers platforms and a preview on two
+networks, and after each one redoes the skims and loading in full: skims
+must match exactly, loads to 1e-9. Breaking any of the four rules above
+(drive seeds, old-net seeds, the load carry, the renumbering) fails it. The
+day's longest call is still the full loading in its last slice; the day
+changes car times, so nothing carries over there.
+
+**Ridership loading in slices (SIM-22).** With 455 lines the day's final
+call did all of the ridership loading at once: 2.5 s, of which 2.1 s was
+`load_transit` re-running every transit origin's search. `finish` is now
+three steps: `demand` (mode choice to per-pair transit demand, park-and-ride
+cars), `load_demand` over a range of origins, and `finish_results`. The day
+job adds a loading phase after the final pass that loads one slice of
+origins per step and sums the loads, so the work spreads over calls like the
+passes do. While it runs, the stored per-line loads are cleared, because
+they no longer match the committed car times; an edit in that window
+therefore recomputes in full (`edit_scope` sees no stored loads), and its
+results stand: the job ends without overwriting them. A preview is not an
+edit: it puts `lines_version` back with the rest of the transit state, so
+the job carries on. Statewide, 455 lines,
+100 ms budget: longest call **0.45 s** (was 2.5 s), the day 22.9 s over
+106 calls (was 23.0 s over 85). `day_progress` counts the loading as one
+more pass.
+
 ## Testing
 
 | Test | Covers |
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
-| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
+| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), an edit while the day loads ridership matches the same edit after a blocking day and a preview then leaves the day alone (SIM-22), warm start from saved roads matches and rejects another graph (SIM-19), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share, bond rate and term) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
-| unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit, grant gate and settlement arithmetic |
+| unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, `PointGrid` matches brute force, scoped line edits match a full recompute (SIM-21), clock rates, logit, grant gate and settlement arithmetic |
 | `examples/bench.rs` | Travis-sized timing (synthetic, or a real `scenario.json`); asserts a line edit < 2 s |
 | `examples/redline.rs` | F19 probe: Red Line from real stops on a real build, boardings per stop |
 

@@ -12,6 +12,8 @@ fn fixture_parses_and_validates_with_defaults() {
     assert_eq!(s.zones[0].median_income, 70_000.0);
     assert_eq!(s.road_links[0].toll, 0.0);
     assert!(!s.road_links[0].oneway);
+    assert_eq!(s.road_links[0].class, None);
+    assert_eq!(s.road_links[1].class.as_deref(), Some("motorway"));
     assert_eq!(s.lines[0].mode, Mode::CommuterRail);
     assert!(s.lines[0].stops[1].park_ride);
 }

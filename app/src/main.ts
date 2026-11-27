@@ -11,7 +11,7 @@ import { money, escapeHtml } from "./format";
 import { inspectorHtml } from "./inspector";
 import { isRegional, defaultFare, type PendingRoute, type Budget, type Statement, type ClockState, type LngLat, type LoadProgress, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
 import { createSim } from "./sim";
-import { countyAt, countyName, loadingText } from "./statewide";
+import { countyAt, countyName, existingColor, loadingText, notRunning } from "./statewide";
 import { serialQueue } from "./sim/queue";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -248,7 +248,6 @@ const inspecting = new Set<string>();
 /** Ids of lines present at start (today's network, F44); grouped apart in the panel. */
 const existing = new Set<string>();
 let existingOpen = false;
-const EXISTING_COLOR = { rail: "#dc241f", bus: "#8a8a8a" };
 let referenceOpen = false;
 
 function renderPanel(): void {
@@ -343,7 +342,7 @@ sim.ready(onProgress).then(
     const start = await sim.existingRoutes();
     if (start.length) {
       for (const r of start) {
-        r.color = isRegional(r.mode) ? EXISTING_COLOR.rail : EXISTING_COLOR.bus;
+        r.color = existingColor(r.name, isRegional(r.mode));
         existing.add(r.id);
         routes.push(r);
       }
@@ -352,7 +351,9 @@ sim.ready(onProgress).then(
       await apply(() => sim.results());
     }
     // Real rail and intercity lines the sim does not run, and counties for the badge.
-    [reference, zoneCounty] = await Promise.all([sim.referenceLines(), sim.zoneCounties()]);
+    const [ref, zc] = await Promise.all([sim.referenceLines(), sim.zoneCounties()]);
+    reference = notRunning(ref, routes);
+    zoneCounty = zc;
     renderPanel();
     render();
     // Hand the clock to the sim, carrying over pause and speed set while it loaded.
@@ -580,14 +581,23 @@ const pauseBtn = $("btn-pause");
 const lapseBtn = $("btn-lapse");
 const CLOCK_POLL_MS = 500;
 let simDay = -1;
+let daysDone = -1;
 let simReady = false;
 
 function syncClock(s: ClockState): void {
   clock.sync(s);
   pauseBtn.textContent = clock.paused ? "▶" : "⏸";
   lapseBtn.textContent = `Time-lapse ${clock.speed}x`;
-  if (simDay >= 0 && s.day !== simDay) void apply(() => sim.results()); // the day re-ran
+  // Results change when a day's re-run ends (SIM-18: a sliced job, or inside one step on a
+  // county). The shell counts finished re-runs, so a job that ends and the next that starts
+  // between two polls still triggers a re-read. The mock has no count: it re-reads on day change.
+  const computing = s.dayProgress !== undefined;
+  const done = s.daysDone ?? s.day;
+  if (simDay >= 0 && done !== daysDone) void apply(() => sim.results());
   simDay = s.day;
+  daysDone = done;
+  $("day-computing").hidden = !computing;
+  if (computing) $("day-computing").textContent = `New day computing ${Math.round(s.dayProgress! * 100)}%`;
 }
 const clockCall = (p: Promise<ClockState>) => p.then(syncClock, (e) => console.error(e));
 const togglePause = () => {

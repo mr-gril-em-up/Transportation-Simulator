@@ -4,7 +4,7 @@ import { RED_LINE } from "../src/data/geo";
 import { elbow, layoutSchematic } from "../src/schematic";
 import { isRegional, type RouteSpec } from "../src/sim/api";
 import { MockSim } from "../src/sim/mock";
-import { countyAt, countyName, fromRef, loadingText } from "../src/statewide";
+import { countyAt, countyName, existingColor, fromRef, loadingText, notRunning } from "../src/statewide";
 
 const redLine = (headwayMin = 20): RouteSpec => ({
   id: "red",
@@ -288,11 +288,12 @@ describe("sim-owned clock (F21)", () => {
 
   it("maps the shell's ClockOut", async () => {
     const { fromClock } = await import("../src/sim/tauri");
-    expect(fromClock({ game_seconds: 18000, timelapse: 2, paused: false, day: 0 })).toEqual({
+    expect(fromClock({ game_seconds: 18000, timelapse: 2, paused: false, day: 0, days_done: 0 })).toEqual({
       gameSeconds: 18000,
       timelapse: 2,
       paused: false,
       day: 0,
+      daysDone: 0,
     });
   });
 });
@@ -430,15 +431,16 @@ describe("statewide view", () => {
   it("frames the scenario from the shell's load report", async () => {
     const { fromLoad, sourceLabel } = await import("../src/sim/tauri");
     expect(sourceLabel("/x/data/out/48-2023-tract-highway/scenario.json")).toBe("sim-core · Texas data");
-    const p = fromLoad({ stage: "equilibrium", elapsed_s: 20, expected_s: 80, zones: 6896, statewide: true, bounds: [-106.6, 25.9, -93.6, 36.5] });
+    const p = fromLoad({ stage: "equilibrium", elapsed_s: 20, expected_s: 80, zones: 6896, statewide: true, warm: false, bounds: [-106.6, 25.9, -93.6, 36.5] });
     expect(p.bounds).toEqual([[-106.6, 25.9], [-93.6, 36.5]]);
-    expect(fromLoad({ stage: "reading", elapsed_s: 0, expected_s: 17, zones: 0, statewide: false, bounds: null }).bounds).toBeUndefined();
+    expect(fromLoad({ stage: "reading", elapsed_s: 0, expected_s: 17, zones: 0, statewide: false, warm: false, bounds: null }).bounds).toBeUndefined();
     const t = loadingText(p);
     expect(t.stage).toContain("6,896 census tracts");
     expect(t.fill).toBeCloseTo(0.25);
     expect(t.detail).toBe("20 s, about 60 s left");
     expect(loadingText({ ...p, elapsedS: 200 }).fill).toBe(0.97); // never claims done before it is
     expect(loadingText({ ...p, elapsedS: 200 }).detail).toContain("longer than the estimate");
+    expect(loadingText({ ...p, warm: true }).stage).toMatch(/^Settling traffic from the last start's roads/);
   });
 
   it("names the county of the nearest zone", () => {
@@ -460,5 +462,28 @@ describe("statewide view", () => {
     expect(r.color).toBe("#d0202e");
     expect(r.stops.map((s) => s.name)).toEqual(["Stop 1", "B"]);
     expect(fromRef({ id: "r2", name: "Amtrak Texas Eagle", operator: "Amtrak", mode: "train", ref: "Texas Eagle", stops: [] }).mode).toBe("commuter_rail");
+  });
+
+  it("colors today's network by its GTFS name", () => {
+    expect(existingColor("DART DART LIGHT RAIL - BLUE LINE", true)).toBe("#0f6fc6");
+    expect(existingColor("METRO 900 METRORAIL PURPLE LINE", true)).toBe("#7f3f98");
+    expect(existingColor("DART TRE TRINITY RAILWAY", true)).toBe("#1d4f91");
+    expect(existingColor("Trinity Metro TEXRail", true)).toBe("#b5121b");
+    expect(existingColor("CapMetro 801", false)).toBe("#8a8a8a");
+  });
+
+  it("drops reference lines that today's network already runs", () => {
+    const stop = (lng: number, lat: number) => ({ id: `${lng}`, name: "", lngLat: [lng, lat] as [number, number] });
+    const line = (id: string, mode: RouteSpec["mode"], pts: [number, number][]): RouteSpec => ({ id, name: id, mode, color: "", stops: pts.map(([a, b]) => stop(a, b)), headwayMin: 10, fare: 1 });
+    const dartRef = line("ref-dart", "light_rail", [[-96.8, 32.78], [-96.79, 32.8], [-96.78, 32.82]]);
+    const amtrak = line("ref-amtrak", "commuter_rail", [[-96.8, 32.78], [-97.33, 32.75], [-97.74, 30.27]]);
+    const running = [line("e1", "light_rail", [[-96.8001, 32.7801], [-96.7901, 32.8001], [-96.7801, 32.8201]]), line("e2", "bus", [[-97.33, 32.75], [-97.74, 30.27]])];
+    expect(notRunning([dartRef, amtrak], running).map((r) => r.id)).toEqual(["ref-amtrak"]); // buses do not count
+  });
+
+  it("passes the day's re-run progress through", async () => {
+    const { fromClock } = await import("../src/sim/tauri");
+    expect(fromClock({ game_seconds: 0, timelapse: 1, paused: false, day: 3, day_progress: 0.4, days_done: 2 })).toMatchObject({ dayProgress: 0.4, daysDone: 2 });
+    expect("dayProgress" in fromClock({ game_seconds: 0, timelapse: 1, paused: false, day: 3, days_done: 3 })).toBe(false);
   });
 });
