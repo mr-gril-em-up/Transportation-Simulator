@@ -180,11 +180,30 @@ deliberately absent.
 zero-lane links without an explicit capacity; the pipeline should run it on its
 output. A small working example is [tests/fixtures/tiny.json](tests/fixtures/tiny.json).
 
-M0/M1 zones are Travis County block groups. Keep the road graph simplified
-(degree-2 nodes contracted); tens of thousands of nodes is fine (see the
+M0/M1 zones are Travis County block groups. The pipeline can send the road
+graph as split at intersections; sim-core drops dead ends and contracts
+degree-2 chains itself (SIM-2), so tens of thousands of nodes is fine (see the
 performance table).
 
-### Performance (4-thread container, release build, synthetic Travis-sized region)
+### Performance on the real Travis build (4-thread container, release build)
+
+`cargo run --release -p sim-core --example bench path/to/scenario.json` on the
+published `data-48453-2023` build (766 zones, 93,461 road nodes, 121,120 links,
+148,257 commute pairs; fetch it with the pipeline's `scripts/download-build.sh`).
+
+| Operation | Before SIM-2 | With dead-end pruning and chain contraction |
+|---|---|---|
+| `Sim::new` (baseline to equilibrium) | 10.3 s | 5.8 s |
+| `add_line` / `preview_line` | 0.04 s / 0.09 s | 0.04 s / 0.10 s |
+| `equilibrate_warm` (each game day) | 3.5 s | 1.9 s |
+| `equilibrate` (full re-run) | 8.8 s | 4.8 s |
+
+Contraction leaves 45,746 of 93,406 connected nodes and 125,474 of 212,360
+directed edges. Mode shares and line ridership are identical to 1e-12, and an
+ignored test (`contraction_keeps_zone_times_on_real_scenario`) checks
+zone-to-zone times on 40 origins.
+
+### Performance on synthetic regions (4-thread container, release build)
 
 676 zones, 1.3M residents, 4.1M daily trips.
 
@@ -202,7 +221,9 @@ the same region took 15.2 s to load and 13.0 s per game day; the gains come
 from one shortest-path tree per origin per round instead of two, warm-starting
 the daily run, and a leaner Dijkstra (see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#threading-and-performance)).
-Contracting degree-2 road nodes is the next lever for the real OSM graph.
+Contracting degree-2 road nodes (SIM-2, above) roughly halved the real
+Travis numbers again. The next lever is renumbering the surviving nodes
+densely so Dijkstra's arrays shrink with the graph.
 
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See
