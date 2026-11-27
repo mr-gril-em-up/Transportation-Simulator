@@ -26,6 +26,9 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `contraction_keeps_class_boundaries` | `src/scenario.rs` | Two links with equal speed and lanes but different class (motorway, motorway_link) are not contracted |
 | `route_and_street_matching` | `src/counts.rs` | TxDOT `ON_ROAD` against OSM refs (IH/I, SH/TX, FM/RM, SL/Loop, multi-ref ways, no partial numbers) and street names with suffix and direction normalization |
 | `snaps_both_carriageways_and_drops_misses` | `src/counts.rs` | Nearest matching link wins over a closer link with another ref; opposite carriageway found with both link indices; stations out of range or unmatched dropped |
+| `facility_from_id_suffix` | `src/counts.rs` | `..SBSR`/`..ANBSR` are frontage with direction, `..EBDR` ramp, plain ids main |
+| `county_names_map_to_geoids` | `src/counts.rs` | 254 counties; `TRAVIS`, `De Witt`, `Harris County` map to their GEOIDs |
+| `frontage_skips_main_lanes_and_county_sets_external` | `src/counts.rs` | A frontage count on top of motorway main lanes takes the frontage road heading its direction (by ref, or by a `Frontage Road` name with no ref), with no opposite carriageway; a ramp count with no `*_link` edge drops; a station in another county is `external` |
 | `dates_and_weekdays` | `src/gtfs.rs` | GTFS date to day number, Wednesday test, times past 24:00 |
 | `acs_parses_and_flags_suppressed` | `src/acs.rs` | Summary-file table parsing (block-group rows only, state row skipped), suppressed sentinels, blanks and zero-household rows become `None` |
 | `zones_without_header_row` | `src/census.rs` | Centers of Population file without a header |
@@ -177,4 +180,15 @@ Runs [45972336256](https://github.com/mr-gril-em-up/Transportation-Simulator/act
 ## TxDOT counts (2026-11-27)
 
 Branch runs, not published: [45982061651](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45982061651) (Travis, block groups, all roads) snapped 888 of the 41,921 statewide stations to its 79,583 scenario links; [45982066230](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45982066230) (statewide tract, highway roads) snapped 29,772 to 283,966 links.
+
+## Frontage, ramp and external counts (2026-11-27)
+
+sim-core found frontage-road stations (`..SBSR`) on freeway main lanes (210 of 888 Travis, 4,354 of 29,772 statewide) and 309 Travis stations outside the county, where no zones load the links. Branch runs after the fix:
+
+| Run | Snapped (was) | Frontage | Ramp | External |
+|---|---|---|---|---|
+| [45987525141](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45987525141) Travis, block groups, all roads | 757 (888) | 79 | 0 | 295 |
+| [45987623912](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45987623912) statewide tract, highway roads | 26,691 (29,772) | 1,372 | 21 | 0 |
+
+Frontage stations with no frontage edge in range now drop (about 130 in Travis, about 3,000 statewide, where the highway-only graph has few frontage roads). One of the 41,921 stations has a `CNTY_NM` not in the county table and is never external.
 
