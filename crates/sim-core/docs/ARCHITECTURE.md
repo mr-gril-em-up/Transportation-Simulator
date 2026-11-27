@@ -96,7 +96,7 @@ tick_budgeted (SIM-18)  (each call about `budget`)
   line edits between calls run as usual on the previous day's car times; if one
   lands during the final round, transit is re-skimmed at commit. One landing
   during an assign round mixes old- and new-network slices into that round's
-  load; later days pull it back, as they do any day's error
+  load; later days pull it back, as they do any day's error. Note that
   the budget is a floor per slice, not a hard cap: the final commit and
   finish are one step (0.5-0.6 s statewide)
 
