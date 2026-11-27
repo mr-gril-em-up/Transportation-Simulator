@@ -18,8 +18,8 @@ mod transit;
 pub use clock::Clock;
 pub use economy::{Bond, Ledger, MonthStatement};
 pub use model::{
-    DesireLine, LineId, LinePreview, LineResult, LinkFlow, ModeSplit, PendingLine, Results, Sim,
-    ZoneResult,
+    DesireLine, LineId, LinePreview, LineResult, LinkFlow, ModeSplit, PendingLine, Results,
+    RoadState, Sim, ZoneResult,
 };
 pub use params::Params;
 pub use schema::*;

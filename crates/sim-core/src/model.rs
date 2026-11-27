@@ -193,6 +193,16 @@ pub struct LinkFlow {
 /// off-peak skims means "same as peak".
 type TSkim = Vec<Vec<TOd>>;
 
+/// Saved road volumes for a warm start (`Sim::road_state`, `Sim::new_warm`,
+/// SIM-19). `fingerprint` identifies the contracted road graph it belongs to.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoadState {
+    /// `RoadGraph::fingerprint` of the graph the volumes belong to.
+    pub fingerprint: u64,
+    /// Peak-hour volume per contracted road edge, vehicles/hour.
+    pub link_vol: Vec<f64>,
+}
+
 /// A game day's road re-run, spread over `tick_budgeted` calls (SIM-18):
 /// round 0 re-prices park-and-ride, rounds 1..=`assign_rounds` load slices of
 /// origins on the roads and step toward that load, and the last round skims
@@ -372,6 +382,7 @@ pub struct Sim {
     /// Bumped on every line change, so a day job can tell its transit rows
     /// went stale.
     lines_version: u64,
+    started_warm: bool,
 }
 
 /// A line (or a new version of one) under construction.
@@ -405,6 +416,41 @@ pub struct LinePreview {
 impl Sim {
     /// Build and run the baseline to equilibrium. Takes a few seconds for a county.
     pub fn new(input: ScenarioInput, params: Params) -> Result<Sim, SimError> {
+        Sim::build(input, params, None)
+    }
+
+    /// `new`, starting the roads from a saved [`RoadState`] (`road_state()`
+    /// of an earlier game on the same scenario) instead of free flow, so the
+    /// cold equilibrium becomes one warm game day (SIM-19). A state from
+    /// another road network (fingerprint mismatch) is ignored and the start
+    /// is cold, as with `new`.
+    pub fn new_warm(
+        input: ScenarioInput,
+        params: Params,
+        roads: &RoadState,
+    ) -> Result<Sim, SimError> {
+        Sim::build(input, params, Some(roads))
+    }
+
+    /// Road volumes to save and pass to `new_warm` next time. Small: one
+    /// number per contracted road edge (~2 MB statewide as JSON).
+    pub fn road_state(&self) -> RoadState {
+        RoadState {
+            fingerprint: self.graph.fingerprint(),
+            link_vol: self.link_vol.clone(),
+        }
+    }
+
+    /// Whether the last build started warm from a saved `RoadState`.
+    pub fn started_warm(&self) -> bool {
+        self.started_warm
+    }
+
+    fn build(
+        input: ScenarioInput,
+        params: Params,
+        roads: Option<&RoadState>,
+    ) -> Result<Sim, SimError> {
         input.validate()?;
         let mut input = input;
         let initial_lines = std::mem::take(&mut input.lines);
@@ -529,6 +575,7 @@ impl Sim {
             idle_key: None,
             day_job: None,
             lines_version: 0,
+            started_warm: false,
             tsk_walk: vec![],
             tsk_drive: vec![],
             tsk_walk_off: vec![],
@@ -547,7 +594,19 @@ impl Sim {
         sim.car_free = sim.skim_car(&sim.link_time.clone());
         sim.hbo = sim.gravity_other();
         sim.rebuild_transit();
-        sim.equilibrate();
+        match roads {
+            Some(r)
+                if r.fingerprint == sim.graph.fingerprint()
+                    && r.link_vol.len() == sim.link_vol.len()
+                    && r.link_vol.iter().all(|v| v.is_finite() && *v >= 0.0) =>
+            {
+                sim.link_vol.clone_from(&r.link_vol);
+                sim.update_link_times();
+                sim.started_warm = true;
+                sim.equilibrate_warm();
+            }
+            _ => sim.equilibrate(),
+        }
         // Lines present at start are already paid for.
         sim.capital_paid = (0..sim.lines.len())
             .map(|i| sim.line_capital(i as LineId).unwrap_or(0.0))

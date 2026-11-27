@@ -755,3 +755,21 @@ fn line_edit_during_a_budgeted_day_is_kept() {
     assert!(during > 0.0 && after > 0.0);
     assert!((after - during).abs() / during < 0.2, "{during} -> {after}");
 }
+
+#[test]
+fn warm_start_from_saved_roads_matches_and_rejects_another_graph() {
+    // SIM-19: saved road volumes start the next game near the same state,
+    // and a state from a different road network is ignored.
+    let input = generate(&SynthConfig::small());
+    let a = Sim::new(input.clone(), Params::default()).unwrap();
+    let saved: sim_core::RoadState =
+        serde_json::from_str(&serde_json::to_string(&a.road_state()).unwrap()).unwrap();
+    let b = Sim::new_warm(input.clone(), Params::default(), &saved).unwrap();
+    assert!(b.started_warm());
+    let (va, vb) = (a.results().peak_vehicle_km, b.results().peak_vehicle_km);
+    assert!((va - vb).abs() / va < 0.03, "{va} vs {vb}");
+    let mut other = input;
+    other.road_links[0].speed_kph *= 2.0;
+    let c = Sim::new_warm(other, Params::default(), &saved).unwrap();
+    assert!(!c.started_warm());
+}
