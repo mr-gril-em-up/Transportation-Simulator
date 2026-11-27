@@ -89,6 +89,9 @@ pub struct TransitNet {
     pub pnr_penalty: Vec<f64>,
     /// Per zone: share of the zone within walking range of a stop (0..1).
     pub coverage: Vec<f64>,
+    /// Per platform: its connected component over ride and transfer edges.
+    /// A search never leaves the components its seeds are in (SIM-21).
+    pub comp: Vec<u32>,
 }
 
 /// Share of a disk (radius `r`) lying within `big_r` of a point `d` from its center.
@@ -114,6 +117,35 @@ pub fn coverage(d: f64, r: f64, big_r: f64) -> f64 {
             full * ((r + big_r - d) / (2.0 * big_r)).clamp(0.0, 1.0)
         }
     }
+}
+
+/// Connected components of the platform graph (edges are symmetric: every
+/// ride has its reverse and transfers are found from both ends), numbered by
+/// first platform.
+fn components(adj: &[Vec<TEdge>]) -> Vec<u32> {
+    let mut comp = vec![u32::MAX; adj.len()];
+    let mut stack = Vec::new();
+    let mut n = 0;
+    for s in 0..adj.len() {
+        if comp[s] != u32::MAX {
+            continue;
+        }
+        comp[s] = n;
+        stack.push(s);
+        while let Some(v) = stack.pop() {
+            for e in &adj[v] {
+                let to = match *e {
+                    TEdge::Ride { to, .. } | TEdge::Transfer { to, .. } => to as usize,
+                };
+                if comp[to] == u32::MAX {
+                    comp[to] = n;
+                    stack.push(to);
+                }
+            }
+        }
+        n += 1;
+    }
+    comp
 }
 
 impl TransitNet {
@@ -259,9 +291,11 @@ impl TransitNet {
         let pnr = (0..platforms.len() as u32)
             .filter(|&i| platforms[i as usize].park_ride)
             .collect();
+        let comp = components(&adj);
         TransitNet {
             lines: metas,
             pnr_penalty: vec![0.0; platforms.len()],
+            comp,
             platforms,
             adj,
             walk_access,
@@ -269,6 +303,41 @@ impl TransitNet {
             pnr,
             coverage: cov,
         }
+    }
+
+    /// Per component: a hash of everything a search inside it reads (line
+    /// ids, stops, positions, service, fares, park-and-ride and its penalty),
+    /// keyed by line id and stop number rather than platform index, so the
+    /// same component in a net rebuilt after an unrelated edit hashes the
+    /// same (SIM-21).
+    pub fn comp_sigs(&self) -> Vec<u64> {
+        let n = self.comp.iter().map(|&c| c as usize + 1).max().unwrap_or(0);
+        let mut h = vec![0xcbf2_9ce4_8422_2325u64; n];
+        let mix = |h: &mut u64, x: u64| {
+            for b in x.to_le_bytes() {
+                *h ^= b as u64;
+                *h = h.wrapping_mul(0x0100_0000_01b3);
+            }
+        };
+        for (pi, pl) in self.platforms.iter().enumerate() {
+            let h = &mut h[self.comp[pi] as usize];
+            let l = &self.lines[pl.line as usize];
+            mix(h, l.id as u64);
+            mix(h, (pi as u32 - l.first_platform) as u64);
+            for x in [pl.lon, pl.lat, pl.pnr_spaces, self.pnr_penalty[pi]] {
+                mix(h, x.to_bits());
+            }
+            mix(h, pl.park_ride as u64);
+            if pi as u32 == l.first_platform {
+                for x in [l.headway, l.offpeak_headway, l.fare, l.fare_per_km] {
+                    mix(h, x.to_bits());
+                }
+                for x in l.seg_min.iter().chain(&l.seg_km) {
+                    mix(h, x.to_bits());
+                }
+            }
+        }
+        h
     }
 
     pub fn is_empty(&self) -> bool {
@@ -608,7 +677,7 @@ impl<'a> Searcher<'a> {
 }
 
 /// Passenger loads per line (indexed like `TransitNet::lines`).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct LineLoads {
     pub boardings: Vec<f64>,
     /// Per line, boardings at each stop.
@@ -635,6 +704,19 @@ impl LineLoads {
                 .collect(),
         }
     }
+    /// Replace the loads of lines `keep` maps to a line of `old` with that
+    /// line's old loads (SIM-21).
+    pub fn carry(&mut self, old: &LineLoads, keep: &[Option<usize>]) {
+        for (i, k) in keep.iter().enumerate() {
+            if let Some(o) = *k {
+                self.boardings[i] = old.boardings[o];
+                self.pkm[i] = old.pkm[o];
+                self.stop_boardings[i].clone_from(&old.stop_boardings[o]);
+                self.seg[i].clone_from(&old.seg[o]);
+            }
+        }
+    }
+
     pub fn merge(mut self, o: LineLoads) -> Self {
         for i in 0..self.boardings.len() {
             self.boardings[i] += o.boardings[i];

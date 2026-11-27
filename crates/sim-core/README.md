@@ -253,7 +253,8 @@ rounds (69 s) the statewide peak average is 33 km/h at start and 38 km/h by
 day 3 (plain MSA gave 3 km/h). A statewide line edit (preview or add, today's
 61 CapMetro lines loaded) takes 0.78 s, at 1.4 GB peak (SIM-17). With all
 455 Texas lines it took 8.2 s; a spatial index for the stop and tract joins
-brings it to 4.9 s (SIM-20), still over the 2 s target. Plan and numbers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
+brings it to 4.9 s (SIM-20), still over the 2 s target. Re-searching and re-loading only the transit
+networks an edit can reach brings it to about 1.0 s (SIM-21). Plan and numbers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
 
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See
@@ -277,6 +278,7 @@ cargo run --release -p sim-core --example calibrate -- \
 | Fitted, SIM-11 (3 real lots with spaces) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 65,953 | 1,471 |
 | Fitted on `existing_lines.json` with GTFS headways (now the defaults) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 77,802 | 1,367 |
 | Same constants after the line-searched assignment (SIM-15; a refit moves them under 0.02, not adopted) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 77,349 | 1,352 |
+| Same constants on the DATA-9 republish (stops from GTFS, Red Line coded commuter rail; a refit moves them under 0.01, not adopted) | 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | 77,062 | 1,317 |
 | Target / count | ACS 83.5 / 10.4 / 2.3 / 2.9 / 0.8 | ~69-70k (NTD weekday) | 1,500 (APTA weekday) |
 
 Shares are % of commuters who travel (ACS less work from home and other).

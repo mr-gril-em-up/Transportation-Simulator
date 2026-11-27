@@ -357,6 +357,49 @@ and 0.75 s flattening per-pair vectors; the longest day call is the same
 loading in the day's final slice. Next: re-search and re-load only the
 transit networks an edit can reach.
 
+**Edits scoped to the networks they reach (SIM-21).** A transit search
+only moves along ride and transfer edges, so it never leaves the connected
+components of the platforms it starts from: the origin's walk-access
+platforms and the park-and-ride platforms within the drive limit.
+`TransitNet::comp` numbers the components and `comp_sigs` hashes what a
+search inside each one reads (line ids, stop numbers, positions, service,
+fares, park-and-ride and its penalty), keyed by line id and stop number so
+a component untouched by an edit hashes the same in the rebuilt net. On an
+edit, `Sim::edit_scope` compares the old and new nets:
+
+1. Components whose hash is new (in the new net) or gone (from the old
+   one) are changed.
+2. An origin is re-searched if it seeds a changed component in either net;
+   every other origin keeps its skim rows, with park-and-ride platform ids
+   renumbered when a removal shifted them.
+3. Components seeded by a re-searched origin have new loads. Origins that
+   seed one are re-loaded, and every other line keeps its stored load
+   (`Sim::loads`, carried by line id). A line no re-searched origin
+   reaches has riders whose choices did not change, so its load is the same.
+
+Mode choice still runs for every origin with transit (0.2 s). The scope
+falls back to a full recompute when off-peak skims switch on or off. A
+preview saves the stored loads with the rest of the transit state and puts
+them back. Statewide, 455 lines, 4 cores, editing a copy of an Austin bus
+line:
+
+| | Line edit (preview / add) | Longest budgeted-day call |
+|---|---|---|
+| SIM-20 | 4.9 s / 4.6 s | 3.1 s |
+| SIM-21 | **0.95 s / 1.07 s** | 2.5 s |
+
+With one rayon thread the results after the edit are bit-identical to
+SIM-20's full recompute, statewide and on Travis (`DUMP=` md5; with one
+thread the statewide edit is 1.8 s against 13.5 s). On Travis all of
+CapMetro is one component, so a Travis edit is still a full recompute. A unit test
+(`scoped_line_edits_match_a_full_recompute`) runs adds, a crossing line, a
+headway change, a removal that renumbers platforms and a preview on two
+networks, and after each one redoes the skims and loading in full: skims
+must match exactly, loads to 1e-9. Breaking any of the four rules above
+(drive seeds, old-net seeds, the load carry, the renumbering) fails it. The
+day's longest call is still the full loading in its last slice; the day
+changes car times, so nothing carries over there.
+
 ## Testing
 
 | Test | Covers |
@@ -365,7 +408,7 @@ transit networks an edit can reach.
 | `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), warm start from saved roads matches and rejects another graph (SIM-19), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share, bond rate and term) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
-| unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, `PointGrid` matches brute force, clock rates, logit, grant gate and settlement arithmetic |
+| unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, `PointGrid` matches brute force, scoped line edits match a full recompute (SIM-21), clock rates, logit, grant gate and settlement arithmetic |
 | `examples/bench.rs` | Travis-sized timing (synthetic, or a real `scenario.json`); asserts a line edit < 2 s |
 | `examples/redline.rs` | F19 probe: Red Line from real stops on a real build, boardings per stop |
 

@@ -271,7 +271,10 @@ Travis by `examples/calibrate.rs`:
   -3.89]`. Buses carry 77.8k a day against ~69-70k weekday (NTD), 11% high;
   the Red Line 1,367 against 1,500, 9% low. After the line-searched road
   assignment (SIM-15) the same constants still reproduce ACS and give buses
-  77.3k and the Red Line 1,352 (10% low).
+  77.3k and the Red Line 1,352 (10% low). On the DATA-9 republish (stops
+  from GTFS, the Red Line coded as commuter rail, its three lots back) the
+  same constants still reproduce ACS (a refit moves them under 0.01) and
+  give buses 77.1k and the Red Line 1,317 (12% low).
 - SIM-10 (superseded split): park-and-ride share of transit commuters 3%. **Tuned, not sourced**: ACS
   has no access mode and no CapMetro on-board survey split was found. It
   decides the Red Line: with walk and drive access fitted together, modeled
