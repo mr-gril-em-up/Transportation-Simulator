@@ -244,8 +244,10 @@ zones 11.0 s / 3.1 GB per cold day. Dense zone-pair storage extrapolates to
 (SIM-13) only pairs within that free-flow car time are kept: `CUTOFF=30` runs
 3,136 zones in 2.7 s / 0.52 GB and 6,889 zones in 6.2 s / 1.12 GB. On the real
 statewide build (6,896 tracts, 214k road nodes) a game day takes 13.8 s at a
-60-minute cutoff (`examples/statewide.rs`), under the F34 target of 20 s. Plan and
-numbers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
+60-minute cutoff (`examples/statewide.rs`), under the F34 target of 20 s.
+Road assignment steps by a Frank-Wolfe line search (SIM-15): with 8 cold
+rounds (69 s) the statewide peak average is 33 km/h at start and 38 km/h by
+day 3 (plain MSA gave 3 km/h). Plan and numbers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#statewide-scale-f34-plan).
 
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See

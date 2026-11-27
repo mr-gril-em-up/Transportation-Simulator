@@ -302,27 +302,38 @@ rounds of:
 1. car skims on current link times,
 2. transit skims (park-and-ride drive times depend on car skims),
 3. mode choice,
-4. all-or-nothing assignment on the same shortest-path trees, averaged into
-   link volumes with step `1/n` (method of successive averages),
+4. all-or-nothing assignment on the same shortest-path trees, blended into
+   link volumes: the whole load in round 1, then the Frank-Wolfe step below,
 5. new link times.
 
 Then it skims once more, runs mode choice and loads transit.
 
 `equilibrate_warm` (what the game runs once per game day) starts from the
-previous day's volumes and runs `daily_iterations [1]` round with step
-`1/(feedback_iterations + n)`, i.e. it treats the previous solution as four
-rounds of history. The step is fixed at 1/5, so each game day moves road
-volumes a fifth of the way toward the day's all-or-nothing target: a line edit's
-effect on car times is about half absorbed after 3 game days and 90% after
-10. That lag is deliberate. Demand does not change between days unless the
-player changed lines, car volumes move a few percent per line, and drivers in
-reality take days to weeks to re-sort their routes. A caller that needs the
-settled state at once (tests, a scenario load) runs `equilibrate`.
+previous day's volumes and runs `daily_iterations [1]` round. Each round after
+the first cold one steps toward the round's all-or-nothing load by a
+Frank-Wolfe line search (SIM-15): the step `λ` in [0, 1] that minimizes the
+Beckmann objective `Σ ∫ t_e` along that direction, found by bisection on its
+derivative `Σ (a_e - v_e) t_e(v_e + λ (a_e - v_e))` (about 20 cheap sums over
+the links, no extra trees). The step is floored at a tenth of the MSA step
+`1/(feedback_iterations + n)` so a round always moves. On Travis the warm steps
+are about 0.1 to 0.2, so a line edit's effect on car times is largely
+absorbed over a game week. That lag is deliberate. Demand does not change
+between days unless the player changed lines, car volumes move a few percent
+per line, and drivers in reality take days to weeks to re-sort their routes. A
+caller that needs the settled state at once (tests, a scenario load) runs
+`equilibrate`.
 
-Why MSA with feedback and not Frank-Wolfe user equilibrium: MSA with feedback
-converges to the same combined mode-and-route equilibrium, needs no line
-search, and folds mode choice into the same loop. Four rounds get volumes to
-within a few percent; more rounds only cost time. Why one peak hour: congestion
+Why the line search and not plain MSA (SIM-15): MSA's fixed steps 1, 1/2,
+1/3, 1/4 keep a quarter of the free-flow all-or-nothing load after four
+rounds. On Travis, where local streets give every trip alternatives, that was
+close enough (peak speed 50 km/h; 56 km/h with the line search, ACS fit
+unchanged). On the statewide highway-only graph it left freeways at three
+times capacity: a 3 km/h statewide peak average, against 12 km/h with the
+line search in the same four rounds (8 rounds: 33 km/h). The fixed-demand
+objective is not exact here, since mode choice moves demand between rounds,
+but the derivative is still the right test of whether the step overshoots.
+Feedback stays folded into the same loop, as before.
+Why one peak hour: congestion
 is what drives mode choice for commuters, and the peak hour is where it lives.
 Midday and evening congestion come with the regional tier's time slices.
 

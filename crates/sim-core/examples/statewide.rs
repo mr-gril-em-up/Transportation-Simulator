@@ -1,6 +1,7 @@
 //! F34: one game day for all of Texas on the strategic tier.
-//! `cargo run --release -p sim-core --example statewide -- <scenario.json> [cutoff_min]`
-//! (the `data-48-2023-tract-highway` release; cutoff default 90 minutes).
+//! `cargo run --release -p sim-core --example statewide -- <scenario.json> [cutoff_min] [cold_rounds] [days]`
+//! (the `data-48-2023-tract-highway` release; cutoff default 90 minutes,
+//! `cold_rounds` sets `feedback_iterations`, default 4; `days` warm days, default 1).
 //! Prints load time, the cold equilibrium (`Sim::new`), one warm game day
 //! (`equilibrate_warm`, what `tick` runs daily, the 20 s target) and memory.
 use sim_core::{Params, ScenarioInput, Sim};
@@ -32,16 +33,31 @@ fn main() {
         input.commutes.len(),
         t.elapsed().as_secs_f64()
     );
+    let rounds: usize = a.get(3).and_then(|c| c.parse().ok()).unwrap_or(4);
+    let days: usize = a.get(4).and_then(|c| c.parse().ok()).unwrap_or(1);
     let params = Params {
         strategic_max_min: Some(cut),
+        feedback_iterations: rounds,
         ..Params::default()
     };
     let t = Instant::now();
     let mut sim = Sim::new(input, params).unwrap();
     let cold = t.elapsed().as_secs_f64();
-    let t = Instant::now();
-    sim.equilibrate_warm();
-    let warm = t.elapsed().as_secs_f64();
+    println!(
+        "cold start ({rounds} rounds): {cold:.1} s, peak speed {:.0} km/h",
+        sim.results().peak_avg_speed_kph
+    );
+    let mut warm = 0.0;
+    for d in 1..=days {
+        let t = Instant::now();
+        sim.equilibrate_warm();
+        warm = t.elapsed().as_secs_f64();
+        println!(
+            "day {d}: {warm:.1} s, peak speed {:.0} km/h, car-unreachable pairs {}",
+            sim.results().peak_avg_speed_kph,
+            sim.car_unreachable_pairs()
+        );
+    }
     let r = sim.results();
     let sh = r.mode_share;
     println!(
