@@ -4,7 +4,7 @@
 // preview locally and only re-run the sim on release.
 import type maplibregl from "maplibre-gl";
 import type { LngLat, RouteSpec } from "./sim/api";
-import { km } from "./sim/mock";
+import { km } from "./geo";
 
 /** Index at which inserting `p` adds the least length to the polyline `pts` (0..pts.length). */
 export function bestInsertIndex(pts: LngLat[], p: LngLat): number {
@@ -19,6 +19,10 @@ export function bestInsertIndex(pts: LngLat[], p: LngLat): number {
   return best;
 }
 
+/** Stops of other lines closer than this to a dragged stop move with it. Snapping
+ *  while drawing copies rendered (tile-quantized) coordinates, so exact equality fails. */
+export const LINK_KM = 0.01;
+
 let stopSeq = 0;
 /** A stop id unique for the session, so per-stop results never collide after edits. */
 export const newStopId = (routeId: string) => `${routeId}-e${++stopSeq}`;
@@ -27,16 +31,21 @@ export const newStopId = (routeId: string) => `${routeId}-e${++stopSeq}`;
 export class StopEditor {
   route: RouteSpec | null = null;
   private dragIdx = -1;
+  // Stops on other lines sitting on the dragged stop (an interchange made
+  // by snapping while drawing). They move with it so the interchange survives.
+  private linked: { route: RouteSpec; idx: number }[] = [];
 
   constructor(
     private map: maplibregl.Map,
+    private allRoutes: () => RouteSpec[],
     private onPreview: () => void, // re-render without a sim call (during drag)
     private onChange: (route: RouteSpec) => void, // edit finished: re-run sim
     private onStateChange: (route: RouteSpec | null) => void,
   ) {
     map.on("mousedown", "stops", (e) => this.down(e));
     map.on("mousemove", (e) => this.move(e));
-    map.on("mouseup", () => this.up());
+    // On window, not the map: releasing the button outside the canvas must end the drag.
+    window.addEventListener("mouseup", () => this.up());
     map.on("click", (e) => this.click(e));
     map.on("contextmenu", "stops", (e) => this.remove(e));
     window.addEventListener("keydown", (e) => e.key === "Escape" && this.stop());
@@ -82,12 +91,20 @@ export class StopEditor {
     if (idx < 0) return;
     e.preventDefault();
     this.dragIdx = idx;
+    const here = this.route.stops[idx].lngLat;
+    this.linked = this.allRoutes()
+      .filter((r) => r !== this.route)
+      .flatMap((r) => r.stops.map((s, i) => ({ route: r, idx: i, s })))
+      .filter(({ s }) => km(s.lngLat, here) < LINK_KM)
+      .map(({ route, idx }) => ({ route, idx }));
     this.map.dragPan.disable();
   }
 
   private move(e: maplibregl.MapMouseEvent): void {
     if (!this.route || this.dragIdx < 0) return;
-    this.route.stops[this.dragIdx].lngLat = [e.lngLat.lng, e.lngLat.lat];
+    const p: LngLat = [e.lngLat.lng, e.lngLat.lat];
+    this.route.stops[this.dragIdx].lngLat = p;
+    for (const l of this.linked) l.route.stops[l.idx].lngLat = [...p];
     this.onPreview();
   }
 
@@ -97,6 +114,8 @@ export class StopEditor {
     this.map.dragPan.enable();
     this.dragEndedAt = performance.now();
     this.onChange(this.route);
+    for (const r of new Set(this.linked.map((l) => l.route))) this.onChange(r);
+    this.linked = [];
   }
   // A click can follow a drag's mouseup (same element); it must not insert a stop.
   // Not every drag produces one, so use a short time window instead of a flag.

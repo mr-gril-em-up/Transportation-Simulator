@@ -51,7 +51,8 @@ the build. The terminal prints
   interchange.
 - **Edit stops** (per line, in the ridership panel): zooms to the line and draws it in true
   geography. Drag a stop to move it, click the map to add a stop (it goes where it lengthens the
-  line least), and right-click a stop to delete it (a line keeps at least two). **Esc** or
+  line least), and right-click a stop to delete it (a line keeps at least two). Dragging an
+  interchange stop moves the other lines' stop with it, so the interchange stays connected. **Esc** or
   **Done** finishes. Each finished edit re-runs the sim; drags preview without a sim call until
   you release.
 - **Rename a line**: double-click its name in the panel, type, then **Enter** (or click away).
@@ -206,6 +207,7 @@ app/
 │   ├── main.ts           App wiring: state, rendering, UI events, clock loop
 │   ├── map.ts            MapLibre setup, basemap + offline fallback, all layers, zoom bands
 │   ├── draw.ts           Click-to-place line drawing tool
+│   ├── geo.ts            km(): distance helper shared by the editor, schematic and mock
 │   ├── edit.ts           Stop editor: drag, insert (least added length), delete; bestInsertIndex()
 │   ├── schematic.ts      Tube-map layout + geo/schematic morph
 │   ├── clock.ts          Game clock and time-lapse

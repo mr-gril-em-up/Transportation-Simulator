@@ -40,7 +40,8 @@ millisecond, so there is no diffing or caching.
 | `src/sim/mock.ts` | `MockSim` and the stand-in model ([MOCK-SIM.md](MOCK-SIM.md)) | api |
 | `src/map.ts` | Creates the MapLibre map, loads the basemap (with offline fallback), adds every source and layer, defines zoom bands | maplibre-gl, data/geo |
 | `src/schematic.ts` | Octilinear layout of regional lines, interchange merging, morph helper ([SCHEMATIC.md](SCHEMATIC.md)) | api, mock.km |
-| `src/edit.ts` | `StopEditor`: one line at a time; drag (preview via `render`, sim on release), click to insert at `bestInsertIndex`, right-click to delete; forces geographic drawing while active | map, api |
+| `src/geo.ts` | `km()` distance helper (no app or sim dependencies) | api types |
+| `src/edit.ts` | `StopEditor`: one line at a time; drag (moves interchange partners within `LINK_KM` too) (preview via `render`, sim on release), click to insert at `bestInsertIndex`, right-click to delete; forces geographic drawing while active | map, api |
 | `src/draw.ts` | Drawing state machine: click adds a stop, Enter/double-click finishes, Esc cancels, snaps to existing stops | map |
 | `src/clock.ts` | `GameClock`: game minutes, pause, time-lapse steps | nothing |
 | `src/main.ts` | Wires everything: route list, sim round trips, render, HUD events, keyboard, clock loop | all of the above |

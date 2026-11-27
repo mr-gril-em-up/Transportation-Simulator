@@ -203,6 +203,7 @@ $("btn-draw-rail").onclick = () => (editor.stop(), drawer.start("light_rail"));
 
 const editor = new StopEditor(
   map,
+  () => routes,
   render,
   (route) => void apply(() => sim.upsertRoute(route)),
   () => {
