@@ -19,7 +19,8 @@ sim-core = { path = "../../crates/sim-core" }
 # Optimize the simulation even in dev builds: unoptimized sim-core takes ~16 s to
 # build the Travis scenario at startup; optimized it is ~4 s. The shell itself
 # stays at opt-level 0 for fast rebuilds.
-[profile.dev.package.sim-core]
-opt-level = 3
-[profile.dev.package.rayon-core]
+# Every dependency (sim-core, serde_json, rayon, tauri...) is optimized even in
+# dev builds; only this crate stays at debug opt-level for fast rebuilds.
+# Unoptimized serde_json alone made parsing the 27 MB Travis scenario slow (A16).
+[profile.dev.package."*"]
 opt-level = 3

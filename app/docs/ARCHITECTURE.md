@@ -53,7 +53,7 @@ millisecond, so there is no diffing or caching.
 1. The player finishes a line in `draw.ts`, which calls back into
    `main.addRoute(mode, points)`.
 2. `addRoute` builds a `RouteSpec` (ids, default headway of 15 min for local
-   modes and 30 min for regional ones, fare $1.25, a color) and calls
+   modes and 30 min for regional ones, fare $3.50 for commuter rail and $1.25 otherwise, a color) and calls
    `sim.upsertRoute(route)`.
 3. `TauriSim` converts it to a sim-core `TransitLine` and calls
    `invoke("upsert_route", { routeId, line })`.

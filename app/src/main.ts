@@ -14,6 +14,8 @@ import { serialQueue } from "./sim/queue";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+// CapMetro fares (sim-core figures fare_capmetro_*): MetroRail $3.50, local bus $1.25.
+const DEFAULT_FARE: Partial<Record<Mode, number>> = { commuter_rail: 3.5 };
 const COLORS = ["#dc241f", "#0098d4", "#00782a", "#9b0056", "#f3a9bb", "#ee7c0e", "#6950a1", "#b36305"];
 
 const sim = createSim();
@@ -71,7 +73,7 @@ function makeRoute(id: string, mode: Mode, pts: LngLat[], stopNames?: string[], 
     color: COLORS[(nextId - 2) % COLORS.length],
     stops: pts.map((p, i) => ({ id: `${id}-s${i}`, name: stopNames?.[i] ?? `Stop ${i + 1}`, lngLat: p })),
     headwayMin: isRegional(mode) ? 30 : 15,
-    fare: 1.25,
+    fare: DEFAULT_FARE[mode] ?? 1.25,
   };
 }
 

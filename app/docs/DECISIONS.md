@@ -96,10 +96,14 @@ Texas suburban rail trips start with a drive (design doc), so regional lines
 set it on every stop and local lines on none. Too generous downtown;
 replaced by per-stop editing (F16).
 
-### A16. sim-core optimized in dev builds
-`[profile.dev.package.sim-core] opt-level = 3` (and `rayon-core`). Debug
-sim-core built the Travis scenario in 16 s, which made `npm run tauri dev`
-feel broken. The shell stays unoptimized for fast rebuilds.
+### A16. Dependencies optimized in dev builds
+`[profile.dev.package."*"] opt-level = 3`: every dependency, not only
+sim-core. Debug sim-core built the synthetic scenario in 16 s, which made
+`npm run tauri dev` feel broken; optimizing only sim-core and rayon-core
+still left serde_json debug, and real Travis startup took about 20 s.
+With all dependencies optimized it is about 11 s. The shell crate stays
+unoptimized for fast rebuilds. Cost: the first dev build takes about 5
+minutes (CI caches `target/`).
 
 ### A17. Sim calls are serialized in the client
 Responses carry full state, so overlapping calls could apply out of order.
@@ -174,4 +178,6 @@ construction; with the panel line and faded drawing in place, the shell turns
 it off. Faded (opacity) rather than dashed because MapLibre's `line-dasharray`
 is not data-driven, and a second pair of layers for one state is more code
 than it is worth. Rebuilds draw normally: a line the player can ride should not
-look unbuilt. The mock stays instant; it exists for UI work without Rust.
+look unbuilt. Their per-stop boardings are hidden until the rebuild opens,
+because sim-core's `boardings_by_stop` is aligned with the running
+version's stops, not the drawn ones; the line total still shows. The mock stays instant; it exists for UI work without Rust.
