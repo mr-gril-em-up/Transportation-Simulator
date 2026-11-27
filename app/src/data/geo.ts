@@ -26,15 +26,19 @@ export const TRAVIS_OUTLINE: LngLat[] = [
   [-97.65, 30.07], [-97.92, 30.03], [-98.17, 30.25], [-98.17, 30.36],
 ];
 
-// CapMetro Red Line, approximate station positions (demo preset).
+// CapMetro Red Line (route 550), the 10 stations of OSM relation 90283 as
+// published in the data pipeline's Travis build (transit.json, data-48453-2023),
+// northbound order. Coordinates rounded to about 1 m.
+// (c) OpenStreetMap contributors, ODbL.
 export const RED_LINE: { name: string; lngLat: LngLat }[] = [
-  { name: "Downtown", lngLat: [-97.7393, 30.2643] },
-  { name: "Plaza Saltillo", lngLat: [-97.7247, 30.2627] },
-  { name: "MLK Jr.", lngLat: [-97.7085, 30.281] },
-  { name: "Highland", lngLat: [-97.718, 30.3268] },
-  { name: "Crestview", lngLat: [-97.7186, 30.3396] },
-  { name: "Kramer", lngLat: [-97.718, 30.3925] },
-  { name: "Howard", lngLat: [-97.695, 30.4385] },
-  { name: "Lakeline", lngLat: [-97.798, 30.479] },
-  { name: "Leander", lngLat: [-97.853, 30.588] },
+  { name: "Downtown", lngLat: [-97.73810, 30.26463] },
+  { name: "Plaza Saltillo", lngLat: [-97.72755, 30.26223] },
+  { name: "MLK Jr.", lngLat: [-97.70899, 30.27996] },
+  { name: "Highland", lngLat: [-97.71619, 30.32877] },
+  { name: "Crestview", lngLat: [-97.71968, 30.33844] },
+  { name: "McKalla", lngLat: [-97.71759, 30.38797] },
+  { name: "Kramer", lngLat: [-97.71638, 30.39279] },
+  { name: "Howard", lngLat: [-97.70176, 30.44017] },
+  { name: "Lakeline", lngLat: [-97.78668, 30.48117] },
+  { name: "Leander", lngLat: [-97.85573, 30.58659] },
 ];

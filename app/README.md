@@ -51,7 +51,7 @@ npm run dev         # browser only at http://localhost:1420, mock sim, no Rust n
 The panel header names the source: `sim-core · Travis data` or `sim-core · synthetic region`.
 
 On startup, sim-core builds the scenario on a background thread. Measured in `tauri dev` (sim-core
-optimized even in dev builds, decision A16): about 19 s on the real Travis build (766 zones,
+optimized even in dev builds, decision A16): about 11 s on the real Travis build (766 zones,
 93k-node road graph) and about 4 s on the synthetic region. sim-core reports about 7 s on real
 Travis in a release build. The window opens right away, the ridership panel header shows
 `sim-core · Travis data · loading…` until `sim_status` reports ready, and a line drawn before
@@ -76,7 +76,8 @@ then waits for the build. The terminal prints
 - **Desire lines**: toggles the top 300 zone pairs by daily trips (F06). Width scales with the
   square root of trips relative to the busiest pair. Color runs from purple (no transit) to green
   (10%+ transit share). It refreshes after every line edit, so you can watch transit share move.
-- **Add Red Line demo**: an approximate CapMetro Red Line (9 stations, commuter rail, 30-min
+- **Add Red Line demo**: the CapMetro Red Line's 10 real stations (OSM route 550 from the
+  pipeline's Travis build, including McKalla), commuter rail, 30-min
   headway).
 - **Budget** (top of the ridership panel): cash on hand, the change from the last edit, and this
   month's capital spend and federal grants. Building charges capital less any grant; extending a
@@ -198,7 +199,9 @@ A `ScenarioInput` JSON file
 block-group zones, 1.29M people, 948k jobs, LODES 2023 commutes, OSM roads). Without it the shell
 uses `sim_core::synth::generate(&SynthConfig::default())`, a Travis-sized synthetic region (676
 zones, 1.3M people) centered on downtown Austin. On the real build, the Red Line demo returns
-about 3,600 riders/day at 30-minute headway (reported pre-2020: about 2,500) and a line edit
+about 3,200 riders/day at 30-minute headway once open (NTD: about 1,600 to 1,700). The app gives
+park-and-ride to every stop of a regional line, which likely explains most of the gap to
+sim-core's own 2,285 for the same stations (see Known gaps) and a line edit
 takes under 100 ms.
 
 ## Design and rationale
@@ -236,9 +239,9 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | No monthly statement view; settlement shows only as the cash change | Budget panel (M2) |
 | A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (well under a second on the synthetic region, about 2 s on real Travis) | Fine for M1; revisit with the statewide scenario (M3) |
 | `npm run tauri build` bundles no scenario: an installed app on another machine opens on the synthetic region | Bundle the build as a Tauri resource when packaging matters (M3 release) |
-| Startup on real Travis takes about 19 s in `tauri dev` | sim-core startup work (graph contraction, SIM stream) |
+| Startup on real Travis takes about 11 s in `tauri dev` | sim-core startup work (graph contraction, SIM stream) |
 | Mode picker is two buttons (bus, light rail); fare fixed at $1.25 | F16 |
-| `park_ride` is all-or-nothing per line | Per-stop properties in the stop editor (F16) |
+| `park_ride` is all-or-nothing per line, which inflates the Red Line demo (about 3,200/day against NTD 1,600 to 1,700) | Per-stop properties in the stop editor (F16) |
 | Clock is client-side; `Sim::tick` is not called, so car congestion only updates at sim build | F21 |
 | Schematic is greedy: parallel lines can overlap, no station pins | F41 |
 | Basemap tiles come from OpenFreeMap over the network; CSP is off | Bundled tiles (F33), then tighten CSP |
