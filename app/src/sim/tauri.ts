@@ -139,6 +139,7 @@ interface ClockOut {
   timelapse: number;
   paused: boolean;
   day: number;
+  day_progress?: number;
 }
 
 export const fromClock = (c: ClockOut): ClockState => ({
@@ -146,6 +147,7 @@ export const fromClock = (c: ClockOut): ClockState => ({
   timelapse: c.timelapse,
   paused: c.paused,
   day: c.day,
+  ...(c.day_progress !== undefined && { dayProgress: c.day_progress }),
 });
 
 /** RouteSpec to sim-core TransitLine (field mapping in docs/ARCHITECTURE.md). */

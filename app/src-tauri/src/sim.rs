@@ -13,7 +13,19 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-/// How often the clock worker advances `Sim::tick`. Short enough that the
+/// Most of a day's re-run one clock step may do while holding the lock
+/// (`Sim::tick_budgeted`, SIM-18). A floor per slice, not a cap: the day's
+/// final commit is one call of about 0.6 s statewide.
+const DAY_SLICE: Duration = Duration::from_millis(100);
+
+/// Commands waiting for the Sim lock. The clock worker skips its day slice
+/// while any wait, so an edit made while a statewide day computes goes next
+/// instead of interleaving with slices (std's Mutex is not fair). Skipping
+/// loses no game time: the next step carries the elapsed time. One Sim per
+/// process, so a static is enough.
+static WAITING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// How often the clock worker advances `Sim::tick_budgeted`. Short enough that the
 /// client's display (which interpolates between polls) never drifts visibly.
 const TICK_EVERY: Duration = Duration::from_millis(100);
 
@@ -192,15 +204,20 @@ impl SimState {
         state
     }
 
-    /// Start the clock worker: advances `Sim::tick` by real elapsed time until
-    /// the app exits. Day boundaries re-run the day and settle months inside
-    /// `tick`, holding the lock, so edits wait for them (F21).
+    /// Start the clock worker: advances `Sim::tick_budgeted` by real elapsed
+    /// time until the app exits (F21). A day boundary starts the day's re-run
+    /// as a job that each step advances by about `DAY_SLICE`, releasing the
+    /// lock in between, so edits go in while a statewide day computes. Until
+    /// the job ends, results are the previous day's; months settle at its end.
     pub fn spawn_clock(self) -> Self {
         let s = self.clone();
         std::thread::spawn(move || {
             let mut last = Instant::now();
             loop {
                 std::thread::sleep(TICK_EVERY);
+                if WAITING.load(std::sync::atomic::Ordering::Acquire) > 0 {
+                    continue;
+                }
                 let now = Instant::now();
                 let dt = (now - last).as_secs_f64();
                 last = now;
@@ -210,7 +227,7 @@ impl SimState {
                     return;
                 }
                 if let Some(sim) = inner.sim.as_mut() {
-                    sim.tick(dt);
+                    sim.tick_budgeted(dt, DAY_SLICE);
                 }
             }
         });
@@ -220,10 +237,11 @@ impl SimState {
     /// Block until the Sim is built, then run `f` on it.
     fn with<T>(&self, f: impl FnOnce(&mut Inner) -> Result<T, String>) -> Result<T, String> {
         let (lock, cv) = &*self.0;
+        WAITING.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        let guard = lock.lock();
+        WAITING.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         let mut inner = cv
-            .wait_while(lock.lock().unwrap(), |i| {
-                i.sim.is_none() && i.error.is_none()
-            })
+            .wait_while(guard.unwrap(), |i| i.sim.is_none() && i.error.is_none())
             .unwrap();
         if let Some(e) = &inner.error {
             return Err(format!("simulation failed to start: {e}"));
@@ -383,8 +401,12 @@ pub struct ClockOut {
     /// sim-core's clock: `game_seconds` since day 0 00:00, `timelapse`, `paused`.
     #[serde(flatten)]
     clock: Clock,
-    /// Whole game days since the start; the client re-reads results when it changes.
+    /// Whole game days since the start.
     day: u64,
+    /// Share of the day's re-run done, 0 to 1, while it computes; absent otherwise. The client
+    /// re-reads results when it ends (results stay on the previous day until then).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    day_progress: Option<f64>,
 }
 
 impl SimState {
@@ -426,9 +448,11 @@ impl SimState {
 }
 
 fn clock_out(inner: &Inner) -> ClockOut {
-    let clock = inner.sim.as_ref().unwrap().clock.clone();
+    let sim = inner.sim.as_ref().unwrap();
+    let clock = sim.clock.clone();
     ClockOut {
         day: clock.day(),
+        day_progress: sim.day_progress(),
         clock,
     }
 }

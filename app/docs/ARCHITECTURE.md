@@ -253,11 +253,18 @@ behaves the same in the browser.
 
 sim-core owns time. `SimState::spawn_clock` starts a worker thread that
 sleeps 100 ms, measures real elapsed time, takes the Sim lock and calls
-`Sim::tick(dt)`. `tick` advances sim-core's `Clock` (1 game minute per real
-second times time-lapse) and, at each day boundary, re-runs the day
-(`equilibrate_warm`, which also refreshes car congestion) and settles any
-month crossed. All of that happens under the lock, so a line edit made at
-midnight waits for it.
+`Sim::tick_budgeted(dt, DAY_SLICE)` (SIM-18, 100 ms). It advances sim-core's
+`Clock` (1 game minute per real second times time-lapse). A day boundary
+starts the day's re-run (`equilibrate_warm`'s work, which also refreshes car
+congestion) as a job, and each call runs about one slice of it; the lock is
+released between calls, so edits go in while a statewide day computes. The
+slice is a floor, not a cap: the day's final commit is one call of about
+0.6 s statewide. Months settle when the job ends. While a command waits for
+the lock (`WAITING`, a static counter bumped in `SimState::with`), the worker
+skips its slice, because std's Mutex is not fair; the skipped time carries
+into the next step. `clock` reports `day_progress` (0 to 1) while a job runs;
+the client shows "New day computing" and re-reads results when the job ends,
+or when the day changes with no job (a county day finishes inside one step).
 
 ```mermaid
 sequenceDiagram
@@ -265,12 +272,12 @@ sequenceDiagram
     participant S as Sim (Mutex)
     participant C as client
     loop every 100 ms
-        W->>S: tick(dt)
+        W->>S: tick_budgeted(dt, 100 ms)
     end
     loop every 500 ms
         C->>S: clock
         S-->>C: game_seconds, timelapse, paused, day
-        Note over C: day changed? apply(results)
+        Note over C: job ended, or day changed with no job? apply(results)
     end
     C->>S: set_clock / skip_to_next_month (buttons)
 ```
