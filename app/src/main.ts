@@ -8,7 +8,7 @@ import { createMap, GEO_FULL, SCHEMATIC_FULL, setData, zoomBand } from "./map";
 import { layoutSchematic, morph } from "./schematic";
 import { km } from "./geo";
 import { money } from "./format";
-import { isRegional, type PendingRoute, type Budget, type ClockState, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
+import { isRegional, type PendingRoute, type Budget, type Statement, type ClockState, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
 import { createSim } from "./sim";
 import { serialQueue } from "./sim/queue";
 
@@ -80,7 +80,39 @@ function renderBudget(b: Budget): void {
       ? `<div class="row"><select id="bond-size" title="${terms}">${sizes
           .map((x) => `<option value="${x}">${money(x)}${x === cover ? " (covers deficit)" : ""}</option>`)
           .join("")}</select> <button id="btn-bond" title="${terms}">Issue bond</button></div>`
-      : "");
+      : "") +
+    renderStatements(b);
+}
+
+/** Rows of the statement table: label, value, and whether it is a subtotal. */
+const STATEMENT_ROWS: [string, (m: Statement) => number, boolean?][] = [
+  ["Fares", (m) => m.fares],
+  ["Operating assistance", (m) => m.operatingAssistance],
+  ["Local sales tax", (m) => m.localTax],
+  ["Operating cost", (m) => -m.operatingCost],
+  ["Operating surplus", (m) => m.fares + m.operatingAssistance + m.localTax - m.operatingCost, true],
+  ["Debt payments", (m) => -m.debtService],
+  ["Capital spent", (m) => -m.capitalSpent],
+  ["Federal capital grants", (m) => m.federalGrants],
+  ["Bonds issued", (m) => m.bondProceeds],
+  ["Change in cash", (m) => m.net, true],
+];
+const STATEMENT_COLS = 2; // three overflow the 260 px panel
+let statementsOpen = false;
+
+/** Monthly statements (F26): the last settled months side by side, newest first. */
+function renderStatements(b: Budget): string {
+  const cols = b.statements.slice(0, STATEMENT_COLS);
+  const body = cols.length
+    ? `<table><tr><th></th>${cols.map((m) => `<th>Month ${m.month + 1}</th>`).join("")}</tr>${STATEMENT_ROWS.map(
+        ([label, f, total]) =>
+          `<tr class="${total ? "total" : ""}"><td>${label}</td>${cols
+            .map((m) => `<td class="${f(m) < 0 ? "neg" : ""}">${money(f(m))}</td>`)
+            .join("")}</tr>`,
+      ).join("")}</table>` +
+      (cols[0].interest > 0 ? `<small>Interest in last month's payments: ${money(cols[0].interest)}</small>` : "")
+    : `<small>No month has closed yet. Fares, operating cost and tax are booked when a month ends (Skip to next month to see one).</small>`;
+  return `<details id="statements" ${statementsOpen ? "open" : ""}><summary>Monthly statements</summary>${body}</details>`;
 }
 
 function makeRoute(id: string, mode: Mode, pts: LngLat[], stopNames?: string[], name?: string): RouteSpec {
@@ -326,6 +358,12 @@ $("btn-demo").onclick = () =>
     headwayMin: 32,
     offpeakHeadwayMin: 51,
   });
+
+// The budget panel re-renders every day; remember whether the statements are open.
+// "toggle" does not bubble, so listen in the capture phase.
+$("budget").addEventListener("toggle", (e) => {
+  if ((e.target as HTMLElement).id === "statements") statementsOpen = (e.target as HTMLDetailsElement).open;
+}, true);
 
 // Bonds (F26): the budget panel re-renders, so delegate from its container.
 $("budget").addEventListener("click", (e) => {

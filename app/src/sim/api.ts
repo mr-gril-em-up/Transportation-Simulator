@@ -73,6 +73,24 @@ export interface PendingRoute {
   replacesOpenLine: boolean;
 }
 
+/** One settled month of the books (sim-core `MonthStatement`), USD. */
+export interface Statement {
+  month: number; // game month index (30-day months from Day 1)
+  fares: number;
+  operatingCost: number;
+  operatingAssistance: number; // federal and state share of operating cost
+  localTax: number; // transit sales tax from the served area
+  capitalSpent: number;
+  federalGrants: number; // capital grants against that spend
+  bondProceeds: number;
+  debtService: number; // bond payments, interest plus principal
+  interest: number; // interest part of debtService
+  net: number; // change in cash over the month
+}
+
+/** Settled months kept in `Budget.statements`. */
+export const STATEMENT_MONTHS = 12;
+
 /** The transit authority's books, as the HUD shows them. */
 export interface Budget {
   cash: number; // USD on hand; can go negative (12 distressed months in a row is bankruptcy)
@@ -85,6 +103,8 @@ export interface Budget {
   bankruptMonth: number | null; // game month the authority went bankrupt
   bondRate: number; // annual rate a new bond gets (0.0543 = 5.43%)
   bondTermMonths: number;
+  /** Settled months, newest first, at most STATEMENT_MONTHS. Fares, operating cost and tax are booked only at settlement. */
+  statements: Statement[];
 }
 
 export interface SimClient {

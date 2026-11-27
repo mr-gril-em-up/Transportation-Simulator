@@ -178,6 +178,19 @@ describe("build cost (F16)", () => {
       fromLedger({
         cash: -1,
         current: { capital_spent: 2, federal_capital_grants: 1 },
+        history: [0, 1, 2].map((month) => ({
+          month,
+          fare_revenue: 10,
+          operating_cost: 100,
+          operating_assistance: 30,
+          local_tax: 50,
+          capital_spent: 0,
+          federal_capital_grants: 0,
+          bond_proceeds: 0,
+          debt_service: 4,
+          interest: 3,
+          net: -14,
+        })),
         distressed_months: 3,
         bankrupt_month: null,
         debt: 5,
@@ -197,6 +210,19 @@ describe("build cost (F16)", () => {
       bankruptMonth: null,
       bondRate: 0.0543,
       bondTermMonths: 360,
+      statements: [2, 1, 0].map((month) => ({
+        month,
+        fares: 10,
+        operatingCost: 100,
+        operatingAssistance: 30,
+        localTax: 50,
+        capitalSpent: 0,
+        federalGrants: 0,
+        bondProceeds: 0,
+        debtService: 4,
+        interest: 3,
+        net: -14,
+      })),
     });
   });
 

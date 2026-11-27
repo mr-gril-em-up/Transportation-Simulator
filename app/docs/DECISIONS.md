@@ -190,3 +190,12 @@ fixes them from sourced figures. Bankruptcy is a banner, not a modal: the
 sim keeps running (sim-core's choice) and the player should be able to look
 at why. The shell computes debt and payment totals so the client never
 re-implements bond math for sim-core's numbers.
+
+### A27. Statements as a collapsed table in the budget panel
+Two closed months side by side answer the usual question ("why did cash
+drop?") without a separate screen; a modal or tab would hide the map the
+player is changing. The table starts collapsed so the panel stays short.
+The month in progress is not a column: sim-core books fares, operating cost
+and tax only at settlement, so a partial column would show capital and no
+income and mislead. Three columns overflow the 260 px panel. The client
+keeps 12 months, enough for a year view later without changing the API.
