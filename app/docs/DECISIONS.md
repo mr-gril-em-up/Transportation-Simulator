@@ -100,3 +100,16 @@ replaced by per-stop editing (F16).
 `[profile.dev.package.sim-core] opt-level = 3` (and `rayon-core`). Debug
 sim-core built the Travis scenario in 16 s, which made `npm run tauri dev`
 feel broken. The shell stays unoptimized for fast rebuilds.
+
+### A17. Sim calls are serialized in the client
+Responses carry full state, so overlapping calls could apply out of order.
+A promise chain (`serialQueue`) is simpler than sequence numbers and also
+right when a later-issued call finishes first. Cost: one slow call delays the
+next. At about 25 ms per edit that doesn't matter. Revisit if `tick` results
+share the same channel (F21).
+
+### A18. Desire lines: top 300 pairs, width relative to the busiest pair
+300 chords is about where Travis stops being readable. Relative width
+reads the same on the synthetic and real scenarios, and statewide later.
+Color encodes transit share, so drawing a line visibly changes the layer.
+deck.gl stays deferred (A2): 300 GeoJSON lines are trivial for MapLibre.

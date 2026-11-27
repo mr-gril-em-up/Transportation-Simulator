@@ -1,0 +1,31 @@
+name: rust
+
+# Builds, tests, lints and documents the root Cargo workspace (crates/*) on
+# every PR that touches it, and on pushes to main. app/src-tauri is a separate
+# workspace covered by app.yml.
+on:
+  pull_request:
+    paths: ["crates/**", "Cargo.toml", "Cargo.lock", ".github/workflows/rust.yml"]
+  push:
+    branches: [main]
+    paths: ["crates/**", "Cargo.toml", "Cargo.lock", ".github/workflows/rust.yml"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo build --workspace --all-targets --locked
+      - run: cargo test --workspace --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo doc --workspace --no-deps --locked
+      # Fails if a line edit on a Travis-sized synthetic region takes 2 s or more (F18).
+      - run: cargo run --release --locked -p sim-core --example bench

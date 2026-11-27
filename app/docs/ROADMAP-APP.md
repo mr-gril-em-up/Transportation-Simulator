@@ -12,13 +12,14 @@ doc.
 - #5: Space no longer double-toggles pause on a focused button
 - sim-core integration: `TauriSim` over `upsert_route` / `remove_route` /
   `sim_status`; Sim built at startup from `TRANSPO_SCENARIO` or the synthetic
-  region; cost and farebox in the panel
+  region; cost and farebox in the panel (#9)
+- Desire-line layer (F06) from `desire_lines`; sim calls serialized; blocking
+  waits moved to the blocking pool (#9 review follow-ups)
 
 ## Next, M0/M1 (blocked items say on what)
 
 | Item | Blocked on |
 |---|---|
-| Desire-line layer from `Sim::desire_lines(n)` (F06) | nothing (needs a `desire_lines` command) |
 | Ship the pipeline's Travis `scenario.json` as the default scenario | pipeline output path/packaging agreed |
 | Drive `Sim::tick` from a shell worker; results-changed events to the client (F21) | nothing |
 | Snap drawn bus routes to the road graph | road graph from the pipeline; router location (sim-core vs app) to agree |

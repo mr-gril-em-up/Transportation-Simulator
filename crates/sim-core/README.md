@@ -82,8 +82,9 @@ let days_crossed = sim.tick(real_dt_seconds);
 | `zone_results() -> Vec<ZoneResult>` | ms | Per zone: daily trips, transit trips and share, stop coverage. For heatmaps. |
 | `link_flows() -> Vec<LinkFlow>` | ms | Per directed road edge: peak-hour volume, v/c, congested speed. For congestion bands. |
 | `desire_lines(n) -> Vec<DesireLine>` | ms | Top n zone pairs by daily trips, with transit trips. For the M0 desire-line view. |
-| `equilibrate()` | seconds | Full mode choice and congested car assignment. `tick` calls it at day boundaries. |
-| `tick(real_dt) -> u64` | free or seconds | Advances `sim.clock`; re-equilibrates once per game day crossed. Call from a worker thread. |
+| `equilibrate()` | seconds | Full mode choice and congested car assignment from free-flow times. Call after changing `params`. |
+| `equilibrate_warm()` | ~2 s at Travis size | Daily re-run starting from the previous day's road volumes (`daily_iterations` rounds). |
+| `tick(real_dt) -> u64` | free or ~2 s | Advances `sim.clock`; runs `equilibrate_warm` once if any game day was crossed. Call from a worker thread. |
 | `calibrate_mode_shares(ModeSplit, iters)` | ~0.1 s/iter | Fits the logit constants to target mode shares. |
 | `input() -> &ScenarioInput` | free | The scenario as loaded (lines live in `lines()`). |
 | `sim.params`, `sim.clock` | | Public fields. Change params then call `equilibrate()`. |
@@ -98,7 +99,7 @@ let days_crossed = sim.tick(real_dt_seconds);
 | `lines: Vec<LineResult>` | One per active line, in id order |
 | `peak_vehicle_km`, `peak_avg_speed_kph` | Road network health in the AM peak hour |
 | `work_peak_hour_share` | Share of commutes arriving in the busiest hour |
-| `car_times_stale` | True after a line edit until the next `equilibrate` (car congestion not yet updated) |
+| `car_times_stale` | True after a line edit until the next `equilibrate` or `equilibrate_warm` (car congestion not yet updated) |
 | `eval_ms` | Wall time of the call that produced these results |
 
 `LineResult`: `id, name, mode, length_km, run_min, daily_boardings,
@@ -172,15 +173,19 @@ performance table).
 
 | Operation | 10k road nodes | 40k road nodes | 92k road nodes | Target |
 |---|---|---|---|---|
-| `Sim::new` (baseline to equilibrium) | 1.5 s | 6.4 s | 15.2 s | none (load time) |
-| `add_line` / `update_line` / `remove_line` | 0.02 s | 0.02 s | 0.02 s | < 2 s |
-| `equilibrate` (runs once per game day) | 1.2 s | 5.5 s | 13.0 s | < 24 s (a day at 60x) |
+| `Sim::new` (baseline to equilibrium) | 0.9 s | 3.0 s | 6.8 s | none (load time) |
+| `add_line` / `update_line` / `remove_line` | 0.04 s | 0.04 s | 0.04 s | < 2 s |
+| `equilibrate_warm` (what `tick` runs once per game day) | 0.3 s | 0.9 s | 2.1 s | < 24 s (a day at 60x) |
+| `equilibrate` (full re-run from free flow) | 0.7 s | 2.3 s | 5.2 s | none (after a params change) |
 
 The 92k column (`bench 0.165`) matches the size of the real Travis build
 (766 zones, 93k road nodes). Road-side cost grows linearly with road nodes;
-line edits do not touch the road graph, so they stay flat. Before the real
-Travis graph ships in the app, contract degree-2 nodes (pipeline) or add a
-contraction hierarchy here to bring `Sim::new` back to a few seconds.
+line edits do not touch the road graph, so they stay flat. Before this PR
+the same region took 15.2 s to load and 13.0 s per game day; the gains come
+from one shortest-path tree per origin per round instead of two, warm-starting
+the daily run, and a leaner Dijkstra (see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#threading-and-performance)).
+Contracting degree-2 road nodes is the next lever for the real OSM graph.
 
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See

@@ -73,13 +73,23 @@ A line edit in sim-core takes about 20 to 30 ms on the synthetic Travis region
 (measured 31 ms in a release build), well inside the M1 target of 2 s. The
 first edit also waits for the startup build.
 
+### Calls are serialized in the client
+
+Every sim response is the full state after that call. If two calls
+overlapped (a headway change while a line upsert is still running), an
+earlier call's late response could overwrite a newer one. `main.ts` therefore
+sends every sim call through `serialQueue()` ([src/sim/queue.ts](../src/sim/queue.ts)),
+so calls run one at a time, in order. A failed call does not block the queue.
+Line edits take about 25 ms, so the queue never gets deep enough to notice.
+
 ### Why async commands and a Condvar
 
 `Sim::new` runs the baseline to equilibrium and takes seconds, so it runs on a
 background thread started in `SimState::start()`, and the window opens
-immediately. Commands are `async fn`, so Tauri runs them on its async runtime
-instead of the main thread. A command that arrives early blocks its worker
-on the `Condvar` until the build finishes or fails. A failed build stores the
+immediately. Commands are `async fn`, so Tauri runs them off the main thread, and each one
+hands its work to `tauri::async_runtime::spawn_blocking`. A command that
+arrives early waits on the `Condvar` on a blocking-pool thread, never on an
+async runtime worker, until the build finishes or fails. A failed build stores the
 error, and every later command returns it instead of hanging. This is tested in
 `load_failure_is_reported_not_hung`.
 
@@ -137,6 +147,7 @@ Drawn bottom to top over the basemap:
 
 | Layer | Source | Purpose |
 |---|---|---|
+| `desire` | `desire` | Top 300 zone pairs from `desire_lines` when toggled on. Width is sqrt(trips / busiest pair), color purple to green by transit share (0 to 10%) |
 | `wash` | world polygon | White overlay fading in below z11.5 so the schematic reads cleanly over the basemap ("roads fade to a thin layer underneath") |
 | `outlines` | Texas + Travis County outlines | Orientation, and the only geography when the basemap is offline |
 | `bus-lines` | `bus-lines` | Local modes (bus, trolleybus, BRT), `minzoom` 11 |

@@ -74,7 +74,7 @@ Owned by sim-core. Source of truth: [`crates/sim-core/src/schema.rs`](../crates/
 
 ### sim-core to app: `Sim` API and Tauri messages
 
-sim-core's side exists (#7, [sim-core README](../crates/sim-core/README.md#public-api-sim)): `Sim::new` / `from_json` build from a scenario; `add_line` returns a stable `LineId`, and `add_line` / `update_line` / `remove_line` each refresh `results()` for every line in about 20 ms. Each `LineResult` carries `daily_boardings` and `boardings_by_stop` aligned with the line's stops. `tick(real_dt)` advances the shared `Clock` and re-equilibrates at game-day boundaries (seconds; run it off the UI thread). Results are `serde::Serialize`; `Sim` is `Send`, so the app holds it in a `Mutex`.
+sim-core's side exists (#7, [sim-core README](../crates/sim-core/README.md#public-api-sim)): `Sim::new` / `from_json` build from a scenario; `add_line` returns a stable `LineId`, and `add_line` / `update_line` / `remove_line` each refresh `results()` for every line in about 20 ms. Each `LineResult` carries `daily_boardings` and `boardings_by_stop` aligned with the line's stops. `tick(real_dt)` advances the shared `Clock` and runs a warm-started re-equilibrium at game-day boundaries (about 2 s at Travis size; run it off the UI thread). Results are `serde::Serialize`; `Sim` is `Send`, so the app holds it in a `Mutex`.
 
 The app's side: [`app/src-tauri/src/sim.rs`](../app/src-tauri/src/sim.rs) holds the `Sim` in Tauri state, built at startup on a background thread from `TRANSPO_SCENARIO` or `synth::generate`. It exposes three commands: `upsert_route(routeId, line: TransitLine)`, `remove_route(routeId)` and `sim_status`. The first two return `LineResult` for every line, tagged with the client's route id, and the shell keeps the map from client ids to `LineId`. In the webview, [`app/src/sim/api.ts`](../app/src/sim/api.ts) defines `SimClient`, which `TauriSim` ([`app/src/sim/tauri.ts`](../app/src/sim/tauri.ts)) implements over those commands. `createSim()` falls back to `MockSim` only outside Tauri. Details are in [app ARCHITECTURE, "How the map and the sim talk"](../app/docs/ARCHITECTURE.md#how-the-map-and-the-sim-talk). The webview never holds simulation state. The game clock stays in the client until a shell worker drives `Sim::tick` (F21, app decision A9).
 
@@ -98,8 +98,16 @@ crates/
   data-pipeline/        tsim-data binary, public data -> game package
 app/                    Tauri desktop app: TypeScript client (src/), Rust shell (src-tauri/, own workspace)
 docs/                   this hub: roadmap, architecture, decisions, docs standard
-.github/workflows/      CI (data-pipeline workflow can build a package in Actions)
+.github/workflows/      CI, see below
 ```
+
+## Continuous integration
+
+| Workflow | Runs on PRs touching | What it runs |
+|---|---|---|
+| [data-pipeline.yml](../.github/workflows/data-pipeline.yml) | `crates/data-pipeline/**` | `cargo test` and `clippy -D warnings` for data-pipeline; manual dispatch builds a real package from Census and OSM downloads |
+| [rust.yml](../.github/workflows/rust.yml) | `crates/**`, `Cargo.toml`, `Cargo.lock` (also pushes to main) | Whole root workspace with warnings as errors: `cargo fmt --check`, `build`, `test`, `clippy -D warnings`, `doc`; then the sim-core bench, which fails if a line edit takes 2 s or more (F18) |
+| [app.yml](../.github/workflows/app.yml) | `app/**`, `crates/sim-core/**` | `npm ci`, `npm run build`, `npm test`; `cargo test` and `clippy -D warnings` in `app/src-tauri` |
 
 ## As-built deviations from the design doc
 

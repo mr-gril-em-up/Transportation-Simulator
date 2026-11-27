@@ -43,6 +43,14 @@ export interface RouteResult {
   fareboxRecovery?: number; // fare revenue / operating cost, 0..n
 }
 
+/** A zone pair and its daily travel demand (F06 desire lines). */
+export interface DesireLine {
+  from: LngLat;
+  to: LngLat;
+  trips: number; // daily person trips, both directions, all modes
+  transitTrips: number; // daily transit trips, both directions
+}
+
 export interface SimClient {
   /** Shown in the ridership panel so it is obvious which backend produced the numbers. */
   readonly label: string;
@@ -51,4 +59,6 @@ export interface SimClient {
   /** Add or replace a route, re-run demand, and return results for every route. */
   upsertRoute(route: RouteSpec): Promise<RouteResult[]>;
   removeRoute(id: string): Promise<RouteResult[]>;
+  /** Top `n` zone pairs by daily trips, largest first. */
+  desireLines(n: number): Promise<DesireLine[]>;
 }
