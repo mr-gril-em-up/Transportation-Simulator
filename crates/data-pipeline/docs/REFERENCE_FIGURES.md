@@ -1,6 +1,6 @@
 # Reference figures
 
-The overview design doc used cost, fare, ridership and zone-count figures "from memory, to be replaced with sourced numbers." This page and [`reference/figures.csv`](../reference/figures.csv) replace them. The CSV is the machine-readable source; this page explains what changed and what is still open.
+Decision D18. The overview design doc used cost, fare, ridership and zone-count figures "from memory, to be replaced with sourced numbers." This page and [`reference/figures.csv`](../reference/figures.csv) replace them. The CSV is the machine-readable source; this page explains what changed and what is still open.
 
 Collected 2026-11-27 from the pages linked in the CSV.
 
