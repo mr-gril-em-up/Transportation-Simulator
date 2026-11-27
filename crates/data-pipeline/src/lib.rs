@@ -65,6 +65,9 @@ pub struct Manifest {
     pub acs_income_zones: Option<usize>,
     pub acs_zero_car_zones: Option<usize>,
     pub area_zones: Option<usize>,
+    /// Area-wide ACS commute mode shares (B08301), for calibration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commute_mode_shares: Option<acs::CommuteShares>,
     /// `block_group`, `tract` or `county`.
     pub zone_level: &'static str,
     /// Block groups merged into `zones` (equals `zones` at block group level).
@@ -153,6 +156,7 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         acs_income_zones: None,
         acs_zero_car_zones: None,
         area_zones: None,
+        commute_mode_shares: None,
         zone_level: cfg.level.name(),
         block_groups: zones.len(),
     };
@@ -196,6 +200,17 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
     }
     if aland.is_some() {
         m.area_zones = Some(ar);
+    }
+    let b08301 = raw.join(format!("acs5_bg48_{y}_b08301.dat"));
+    if b08301.exists() {
+        m.commute_mode_shares = acs::commute_shares(
+            &std::fs::read_to_string(&b08301)?,
+            zones.iter().map(|z| z.geoid.as_str()),
+        )?;
+        if m.commute_mode_shares.is_some() {
+            m.sources
+                .push("US Census Bureau, American Community Survey 5-year estimates (B08301)");
+        }
     }
     let (zones, flows) = aggregate::aggregate(&zones, &flows, cfg.level);
     if cfg.level != aggregate::Level::BlockGroup {

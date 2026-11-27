@@ -29,16 +29,19 @@ get "tx_rac_S000_JT00_${YEAR}.csv.gz" "$LODES/rac/tx_rac_S000_JT00_${YEAR}.csv.g
 get "tx_wac_S000_JT00_${YEAR}.csv.gz" "$LODES/wac/tx_wac_S000_JT00_${YEAR}.csv.gz"
 # ACS 5-year ending in YEAR: table-based summary files (one pipe-delimited
 # file per table, every US geography; no API key needed). Only the header and
-# Texas block-group rows (GEO_ID 1500000US48...) are kept.
+# Texas block-group rows (GEO_ID 1500000US48...) are kept, plus Texas county
+# rows (0500000US48...) so published county totals can be checked against the
+# block-group sums. B08301 (commute mode) feeds the manifest's mode shares.
 # Optional: without them zones keep default income and zero-car share.
 ACS_SF="https://www2.census.gov/programs-surveys/acs/summary_file/${YEAR}/table-based-SF/data/5YRData"
-for t in b19013 b25044; do
+for t in b19013 b25044 b08301; do
   out="$RAW/acs5_bg48_${YEAR}_${t}.dat"
   if [[ -s "$out" ]]; then echo "have $out"; continue; fi
   echo "get  $ACS_SF/acsdt5y${YEAR}-${t}.dat"
   if curl -fsSL --retry 5 --retry-all-errors --retry-delay 15 "$ACS_SF/acsdt5y${YEAR}-${t}.dat" \
-       | awk -F'|' 'NR == 1 || $1 ~ /^1500000US48/' > "$out.part" && [[ $(wc -l < "$out.part") -gt 1 ]]; then
-    mv "$out.part" "$out"; echo "     $(($(wc -l < "$out") - 1)) Texas block groups"
+       | awk -F'|' 'NR == 1 || $1 ~ /^(1500000|0500000)US48/' > "$out.part" && [[ $(wc -l < "$out.part") -gt 1 ]]; then
+    mv "$out.part" "$out"; echo "     $(grep -c '^1500000US' "$out") Texas block groups"
+    if [[ $t == b08301 ]]; then head -1 "$out"; grep '^0500000US48453|' "$out" || true; fi
   else
     rm -f "$out.part"; echo "warning: ACS table $t download failed; building without ACS" >&2
   fi
