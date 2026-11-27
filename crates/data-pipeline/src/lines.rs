@@ -14,7 +14,8 @@
 //!   streetcar or trolley; 1 metro; 2 commuter rail; 3 bus; 5 tram;
 //!   11 trolleybus; 12 monorail; and the extended 100-999 ranges). Ferries,
 //!   cable cars and funiculars are left out.
-//!   `MODE` fixes feeds that code a route wrongly (TEXRail is type 0).
+//!   `MODE` fixes feeds that code a route wrongly (CapMetro 550 and TEXRail
+//!   are type 0).
 //! - Name: agency, short name and long name, the short name left out when
 //!   the long name already has it (`CapMetro 7 Duval/Dove Springs`,
 //!   `DART Red Line`).
@@ -58,9 +59,13 @@ const TIMETABLE: &[(&str, &str, [&str; 3])] = &[(
 )];
 
 /// Mode overrides by (feed id, route key) where a feed's `route_type` is
-/// wrong: Trinity Metro codes TEXRail, a diesel commuter line to DFW
-/// Airport, as type 0 (light rail).
-const MODE: &[(&str, &str, &str)] = &[("trinity", "TEXRail", "commuter_rail")];
+/// wrong: CapMetro codes the Red Line (550) and Trinity Metro codes TEXRail
+/// as type 0 (light rail); both are diesel commuter rail on freight-shared
+/// track.
+const MODE: &[(&str, &str, &str)] = &[
+    ("capmetro", "550", "commuter_rail"),
+    ("trinity", "TEXRail", "commuter_rail"),
+];
 
 /// sim-core mode for a GTFS `route_type`; `name` tells a streetcar from
 /// light rail, which share type 0.
@@ -202,7 +207,7 @@ mod tests {
             (
                 "550",
                 route(
-                    2,
+                    0,
                     "MetroRail Red Line",
                     &["Leander Station", "Lakeline Station", "Downtown"],
                     Some(40.0),
