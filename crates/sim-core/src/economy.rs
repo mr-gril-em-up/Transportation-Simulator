@@ -2,8 +2,10 @@
 //! operating cost, operating assistance and the local transit sales tax.
 //!
 //! Funding follows Collins's decision (D30): the network is paid for by
-//! federal and state grants plus a local tax base. Bonds, debt service and
-//! bankruptcy are F26 and not here yet, so cash may go negative.
+//! federal and state grants plus a local tax base, with revenue bonds to
+//! spread capital over decades (F26). Twelve distressed months in a row
+//! (debt service above operating surplus, or cash below zero) is bankruptcy,
+//! the sandbox's one fail state (SIM-5).
 //! Math and sources: docs/MODEL.md section 10.
 
 use crate::model::LineResult;
@@ -46,8 +48,78 @@ pub struct MonthStatement {
     pub capital_spent: f64,
     /// Federal capital grants received against that spend.
     pub federal_capital_grants: f64,
-    /// Change in cash: revenue + assistance + tax + grants - operating cost - capital.
+    /// Cash raised by issuing bonds this month.
+    pub bond_proceeds: f64,
+    /// Bond payments this month (interest plus principal).
+    pub debt_service: f64,
+    /// Interest part of `debt_service`.
+    pub interest: f64,
+    /// Change in cash: revenue + assistance + tax + grants + bond proceeds
+    /// - operating cost - capital - debt service.
     pub net: f64,
+}
+
+impl MonthStatement {
+    /// Fares + operating assistance + local tax - operating cost: what the
+    /// month leaves to pay debt with.
+    pub fn operating_surplus(&self) -> f64 {
+        self.fare_revenue + self.operating_assistance + self.local_tax - self.operating_cost
+    }
+}
+
+/// A level-payment bond: the same payment every month until it is repaid.
+#[derive(Debug, Clone, Serialize)]
+pub struct Bond {
+    /// Amount borrowed, dollars.
+    pub principal: f64,
+    /// Annual interest rate (0.0543 = 5.43%).
+    pub annual_rate: f64,
+    /// Monthly payments in all.
+    pub term_months: u32,
+    /// Game month it was issued; payments start the month after.
+    pub issued_month: u64,
+    /// Fixed monthly payment.
+    pub payment: f64,
+    /// Principal still owed.
+    pub balance: f64,
+    /// Payments still to make.
+    pub months_left: u32,
+}
+
+impl Bond {
+    /// A bond of `principal` at `annual_rate` repaid over `term_months`
+    /// equal monthly payments (standard annuity formula).
+    pub fn new(principal: f64, annual_rate: f64, term_months: u32, issued_month: u64) -> Self {
+        let n = term_months.max(1);
+        let r = annual_rate / 12.0;
+        let payment = if r > 0.0 {
+            principal * r / (1.0 - (1.0 + r).powi(-(n as i32)))
+        } else {
+            principal / n as f64
+        };
+        Bond {
+            principal,
+            annual_rate,
+            term_months: n,
+            issued_month,
+            payment,
+            balance: principal,
+            months_left: n,
+        }
+    }
+
+    /// Make one payment. Returns (payment, interest part).
+    fn pay(&mut self) -> (f64, f64) {
+        let interest = self.balance * self.annual_rate / 12.0;
+        let payment = if self.months_left <= 1 {
+            self.balance + interest
+        } else {
+            self.payment
+        };
+        self.balance = (self.balance + interest - payment).max(0.0);
+        self.months_left -= 1;
+        (payment, interest)
+    }
 }
 
 impl MonthStatement {
@@ -70,6 +142,15 @@ pub struct Ledger {
     pub history: Vec<MonthStatement>,
     /// Residents within walking range of a stop (population x coverage share), at last settlement.
     pub served_population: f64,
+    /// Bonds not yet repaid, oldest first.
+    pub bonds: Vec<Bond>,
+    /// Distressed months in a row so far (debt service above operating
+    /// surplus, or cash below zero at month end). Resets on a healthy month.
+    pub distressed_months: u32,
+    /// Month the authority went bankrupt (`bankruptcy_months` distressed
+    /// months in a row). The game is over from then on; the sim keeps running
+    /// so the player can see why.
+    pub bankrupt_month: Option<u64>,
 }
 
 impl Ledger {
@@ -89,6 +170,21 @@ impl Ledger {
         self.cash += grant - spend;
     }
 
+    /// Borrow `principal` now at `annual_rate` over `term_months`. The cash
+    /// arrives at once; payments start at the next month's settlement.
+    pub fn issue_bond(&mut self, principal: f64, annual_rate: f64, term_months: u32) -> &Bond {
+        let bond = Bond::new(principal, annual_rate, term_months, self.current.month);
+        self.current.bond_proceeds += principal;
+        self.cash += principal;
+        self.bonds.push(bond);
+        self.bonds.last().unwrap()
+    }
+
+    /// Principal still owed on all bonds.
+    pub fn debt(&self) -> f64 {
+        self.bonds.iter().map(|b| b.balance).sum()
+    }
+
     /// Close the current month using today's daily line results and the
     /// served population, then open the next month.
     pub fn settle(&mut self, lines: &[LineResult], served_population: f64, p: &Params) {
@@ -99,10 +195,26 @@ impl Ledger {
         m.operating_assistance = m.operating_cost * p.operating_assistance_share;
         m.local_tax =
             served_population * p.taxable_sales_per_capita * p.local_sales_tax_rate / 12.0;
-        let operating = m.fare_revenue + m.operating_assistance + m.local_tax - m.operating_cost;
-        self.cash += operating;
-        m.net = operating + m.federal_capital_grants - m.capital_spent;
+        let operating = m.operating_surplus();
+        for b in self.bonds.iter_mut().filter(|b| b.issued_month < m.month) {
+            let (payment, interest) = b.pay();
+            m.debt_service += payment;
+            m.interest += interest;
+        }
+        self.bonds.retain(|b| b.months_left > 0);
+        self.cash += operating - m.debt_service;
+        m.net = operating + m.federal_capital_grants + m.bond_proceeds
+            - m.capital_spent
+            - m.debt_service;
         self.served_population = served_population;
+        if m.debt_service > operating || self.cash < 0.0 {
+            self.distressed_months += 1;
+        } else {
+            self.distressed_months = 0;
+        }
+        if self.bankrupt_month.is_none() && self.distressed_months >= p.bankruptcy_months {
+            self.bankrupt_month = Some(m.month);
+        }
         let next = MonthStatement::new(m.month + 1);
         self.history
             .push(std::mem::replace(&mut self.current, next));
@@ -157,5 +269,44 @@ mod tests {
         assert!((l.cash - (-500.0 + m.net + 500.0)).abs() < 1e-9);
         assert_eq!(l.current.month, 1);
         assert_eq!(l.current.capital_spent, 0.0);
+    }
+
+    #[test]
+    fn bond_amortizes_to_zero() {
+        // $1M at 6% over 12 months: annuity payment $86,066.43.
+        let mut b = Bond::new(1e6, 0.06, 12, 0);
+        assert!((b.payment - 86_066.43).abs() < 0.01);
+        let mut paid = 0.0;
+        for _ in 0..12 {
+            paid += b.pay().0;
+        }
+        assert!(b.balance.abs() < 1e-6 && b.months_left == 0);
+        assert!((paid - 12.0 * 86_066.43).abs() < 1.0);
+        assert_eq!(Bond::new(1200.0, 0.0, 12, 0).payment, 100.0);
+    }
+
+    #[test]
+    fn bond_cash_flow_and_bankruptcy() {
+        let p = Params {
+            bankruptcy_months: 3,
+            ..Params::default()
+        };
+        let mut l = Ledger::new(0.0, 0);
+        let pay = l.issue_bond(1e6, 0.06, 12).payment;
+        assert_eq!(l.cash, 1e6);
+        // Issue month: proceeds counted, no payment yet.
+        l.settle(&[], 0.0, &p);
+        assert_eq!(l.history[0].bond_proceeds, 1e6);
+        assert_eq!(l.history[0].debt_service, 0.0);
+        assert_eq!(l.distressed_months, 0);
+        // No revenue at all: every paying month is distressed.
+        for _ in 0..3 {
+            l.settle(&[], 0.0, &p);
+        }
+        assert!((l.history[1].debt_service - pay).abs() < 1e-6);
+        assert!((l.cash - (1e6 - 3.0 * pay)).abs() < 1e-3);
+        assert_eq!(l.distressed_months, 3);
+        assert_eq!(l.bankrupt_month, Some(3));
+        assert!(l.debt() < 1e6);
     }
 }

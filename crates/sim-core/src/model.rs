@@ -549,6 +549,23 @@ impl Sim {
         &self.ledger
     }
 
+    /// Borrow `principal` dollars as a level-payment bond at `bond_rate`
+    /// over `bond_term_months()`. Cash arrives now; payments start at the next
+    /// month's settlement. Errors on a non-positive or non-finite amount, or
+    /// once the authority is bankrupt.
+    pub fn issue_bond(&mut self, principal: f64) -> Result<economy::Bond, SimError> {
+        if !(principal.is_finite() && principal > 0.0) {
+            return Err(SimError(format!(
+                "bond principal {principal} must be positive"
+            )));
+        }
+        if let Some(m) = self.ledger.bankrupt_month {
+            return Err(SimError(format!("bankrupt since month {m}: no new bonds")));
+        }
+        let (rate, term) = (self.params.bond_rate, self.params.bond_term_months());
+        Ok(self.ledger.issue_bond(principal, rate, term).clone())
+    }
+
     fn line_result(&self, id: LineId) -> Option<&LineResult> {
         self.results.lines.iter().find(|l| l.id == id)
     }

@@ -102,13 +102,13 @@ pub struct Params {
 
     /// Build and permitting times are divided by this (12x default, 1x-24x setting).
     pub construction_speedup: f64,
-    /// Open lines the moment they are drawn (no construction period). True by
-    /// default until the app shows lines under construction (SIM-1); set false
-    /// for the game's construction period.
+    /// Open lines the moment they are drawn (no construction period). False by
+    /// default: lines build first, as in the game (SIM-1, SIM-4). Tests,
+    /// benchmarks and calibration probes set it true.
     pub instant_build: bool,
 
     /// Transit authority cash at the start, dollars. 0: the first line is
-    /// paid from grants and future tax (bonds arrive with F26).
+    /// paid from grants, future tax and bonds (`Sim::issue_bond`, F26).
     pub starting_cash: f64,
     /// Share of a line's capital cost the federal government pays when the
     /// line passes the cost-effectiveness gate (FTA Capital Investment Grants: up to 80%, typically ~50%).
@@ -121,6 +121,16 @@ pub struct Params {
     pub local_sales_tax_rate: f64,
     /// Taxable retail sales per resident per year, dollars.
     pub taxable_sales_per_capita: f64,
+    /// Annual interest rate on the authority's bonds (0.0543 = 5.43%).
+    pub bond_rate: f64,
+    /// Bond repayment term, real years.
+    pub bond_term_years: f64,
+    /// Bond terms are divided by this in game. 1 keeps real 30-year terms;
+    /// D9 as written would set it to `construction_speedup` (SIM-5).
+    pub bond_term_speedup: f64,
+    /// Distressed months in a row (debt service above operating surplus, or
+    /// cash below zero) that make the authority bankrupt (F26).
+    pub bankruptcy_months: u32,
 }
 
 impl Default for Params {
@@ -166,7 +176,7 @@ impl Default for Params {
             feedback_iterations: 4,
             daily_iterations: 1,
             construction_speedup: 12.0,
-            instant_build: true,
+            instant_build: false,
             starting_cash: 0.0,
             federal_capital_share: 0.5,
             // Austin Light Rail Phase 1 (in the CIG pipeline): ~$7.1B for 18,700
@@ -179,6 +189,14 @@ impl Default for Params {
             local_sales_tax_rate: 0.01,
             // figures.csv `taxable_sales_per_capita`: CapMetro service area, 2023$.
             taxable_sales_per_capita: 20_600.0,
+            // figures.csv `bond_rate`: Bond Buyer Revenue Bond Index (30-year),
+            // Oct 2026; 2026 range 4.92-5.47%. `bond_term_years`: market
+            // convention (ATP caps maturities at 40 years).
+            bond_rate: 0.0543,
+            bond_term_years: 30.0,
+            bond_term_speedup: 1.0,
+            // ROADMAP F26: debt service above revenue for 12 months ends the game.
+            bankruptcy_months: 12,
         }
     }
 }
@@ -223,6 +241,13 @@ impl Params {
     /// In-game build duration for a real-world duration.
     pub fn build_days(&self, real_days: f64) -> f64 {
         real_days / self.construction_speedup.max(1.0)
+    }
+
+    /// Bond term in game months: `bond_term_years` x 12 / `bond_term_speedup`.
+    pub fn bond_term_months(&self) -> u32 {
+        (self.bond_term_years * 12.0 / self.bond_term_speedup.max(1.0))
+            .round()
+            .max(1.0) as u32
     }
 }
 

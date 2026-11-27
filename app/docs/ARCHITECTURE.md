@@ -149,7 +149,9 @@ because its old version is running; its per-stop boardings are hidden because
 `Sim::tick` or `skip_to_next_month`; the client sees it through the day change
 that already triggers a results re-read. `preview_route` adds `opens_day`
 (`Sim::opening_day(mode)`) for the drawing hint. Shell tests keep instant build
-(`start_with`) except `construction_period_holds_new_lines_until_they_open`.
+(`start_with` sets `instant_build: true` explicitly since SIM-4 made
+construction the sim-core default) except
+`construction_period_holds_new_lines_until_they_open`.
 
 ### Build cost preview and budget (F16, F23, F26)
 

@@ -350,11 +350,10 @@ Light rail's 6 years is the roadmap's F24 check and matches Austin Phase 1
   span and name changes apply at once, to the running version and to any
   version under construction. Every edit charges capital above what the line
   already paid, so a headway cut pays for its extra vehicles.
-- `params.instant_build` skips construction. It defaults to **true** until the
-  app shows lines under construction (its build panel reads `pending_lines`
-  and the `preview_line` forecast); the app then sets it false. Defaulting it
-  false now would make newly drawn lines vanish from the app's ridership
-  readout for months of game time.
+- `params.instant_build` skips construction. It defaults to **false** (SIM-4):
+  the app shows lines under construction from `pending_lines` and the
+  `preview_line` forecast (APP-3). Tests, the bench and the Red Line probe set
+  it true.
 - Simplifications: build time does not grow with length, and roads under
   works keep full capacity. Both are F24 follow-ups.
 - Lines in the input (present at start) are treated as already paid for.
@@ -398,10 +397,64 @@ residents (Austin MSA high: $26,000). Operating assistance is CapMetro NTD
 2023, federal $50.9M over $356.3M; 2023 may still carry pandemic relief, so it
 is an upper bound, and small agencies run far higher (El Paso 57%).
 
-Cash starts at `starting_cash [0]` and may go negative: bonds, debt service and
-the bankruptcy rule are F26. On the synthetic Travis bench, a 28 km light rail
+Cash starts at `starting_cash [0]` and may go negative, but a month that ends
+below zero counts toward bankruptcy (next section). On the synthetic Travis bench, a 28 km light rail
 line costs about $16B and fails the grant gate at its uncalibrated ridership;
 with 67k residents in walking range it collects about $1.2M a month in local tax against $8.6M operating cost.
+
+### Bonds, debt service and bankruptcy (F26)
+
+`Sim::issue_bond(principal)` borrows now and repays in equal monthly
+payments (a level-payment annuity, like a mortgage):
+
+`payment = P x r / (1 - (1 + r)^-n)`, with `r = bond_rate [5.43%] / 12` and
+`n = bond_term_months()` = `bond_term_years [30] x 12 / bond_term_speedup [1]` = 360.
+
+The cash arrives in the month of issue (`MonthStatement::bond_proceeds`).
+Payments start at the next month's settlement; each splits into interest on
+the remaining balance and principal (`debt_service`, `interest`). The last
+payment clears the balance and the bond leaves `Ledger::bonds`.
+`Ledger::debt()` is the principal still owed.
+
+Bankruptcy is the sandbox's only fail state (D15). At each settlement a month
+is **distressed** if either:
+
+- debt service exceeds the operating surplus (fares + operating assistance +
+  local tax - operating cost, `MonthStatement::operating_surplus`), the
+  roadmap's rule, a debt-service coverage ratio below 1; or
+- cash ends the month below zero (SIM-5).
+
+A healthy month resets `distressed_months`. `bankruptcy_months [12]`
+distressed months in a row set `Ledger::bankrupt_month`; the game is over.
+sim-core keeps simulating so the app can show what went wrong, but
+`issue_bond` refuses from then on. Ending the game is the app's call.
+
+Why cash counts: with only the debt-service test, a player could skip bonds
+and run cash negative forever, an interest-free loan. Counting negative cash
+makes bonds the way to pay for capital and makes running deficits fatal.
+
+Why real 30-year terms (SIM-5): D9 said bond terms compress with
+construction. Only construction is compressed; fares, costs and taxes are per
+real day. Compressing the term 12x alone makes each payment ~12x larger, so a
+tax base that carries $X of 30-year debt carries about X/7 at 2.5 years.
+Rough Travis scale: all 1.3M residents in reach of a stop would raise
+1.3M x $20,600 x 1% = $268M a year; at 5.43% over 30 years that services at most
+about $4.0B (annuity factor 14.8), versus about $0.6B over 2.5 years. Austin's
+light rail is priced in billions, so compression would rule it out.
+`bond_term_speedup` is the switch if Collins prefers D9 as written; the
+question is with him.
+
+Sources (figures.csv rows of the same names): `bond_rate` is the Bond Buyer
+Revenue Bond Index (25 revenue bonds maturing in 30 years) for 29 Oct 2026,
+5.43%, with the 2026 range 4.92-5.47% as low/high. It fits Austin Transit
+Partnership's contract revenue bonds, which are not yet rated; a 30-year AAA
+general obligation yielded 4.81%. `bond_term_years` 30 is the market
+convention (unverified): ATP's January 2026 resolution caps maturities at 40
+years and ATP had no bonds outstanding at the end of FY2025.
+
+Balance note: the local tax only covers residents within walking range of a
+stop, so a lone expensive line runs a large operating deficit and soon
+distresses the books. Coverage (cheap bus networks) grows the tax base first.
 
 ## Known gaps
 
@@ -418,5 +471,7 @@ In rough priority for M1 tuning:
    contracted highway graph).
 7. Park-and-ride car trips are not added to road volumes.
 8. Capital cost has no terrain or right-of-way multipliers; construction time
-   ignores length and roads under works keep full capacity; funding has no
-   bonds or state appropriation yet (F23, F24, F26).
+   ignores length and roads under works keep full capacity; bonds carry no
+   borrowing limit beyond the bankruptcy rule and no refinancing (F23, F24,
+   F26). There is no state appropriation because Texas gives big-city transit
+   authorities none (figures.csv `operating_assistance_share` note).

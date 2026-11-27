@@ -1,18 +1,18 @@
 use sim_core::synth::{generate, straight_line, SynthConfig};
 use sim_core::{Mode, ModeSplit, Params, Sim};
 
-/// Default params: lines open at once (`instant_build`).
+/// Lines open at once (`instant_build`), so ridership tests need not wait out construction.
 fn sim() -> Sim {
-    Sim::new(generate(&SynthConfig::small()), Params::default()).unwrap()
-}
-
-/// Lines build before opening, as in the game.
-fn building_sim() -> Sim {
     let p = Params {
-        instant_build: false,
+        instant_build: true,
         ..Params::default()
     };
     Sim::new(generate(&SynthConfig::small()), p).unwrap()
+}
+
+/// Default params: lines build before opening, as in the game.
+fn building_sim() -> Sim {
+    Sim::new(generate(&SynthConfig::small()), Params::default()).unwrap()
 }
 
 fn rail() -> sim_core::TransitLine {
@@ -369,4 +369,39 @@ fn offpeak_headway_thins_non_work_riders_and_cost() {
     let r = &s.results().lines[0];
     assert!(r.vehicles_required > all_day.vehicles_required);
     assert!(s.ledger().current.capital_spent > paid);
+}
+
+#[test]
+fn bond_pays_for_a_line_and_is_serviced_monthly() {
+    let mut s = sim();
+    s.add_line(rail()).unwrap();
+    let owed = -s.ledger().cash;
+    assert!(owed > 0.0, "capital left cash negative");
+    let bond = s.issue_bond(owed).unwrap();
+    assert_eq!(bond.term_months, 360, "real 30-year term by default");
+    assert!(s.ledger().cash.abs() < 1e-6);
+    assert!(s.issue_bond(0.0).is_err() && s.issue_bond(f64::NAN).is_err());
+    s.skip_to_next_month(); // issue month: no payment
+    s.skip_to_next_month();
+    let l = s.ledger();
+    assert_eq!(l.history[0].debt_service, 0.0);
+    let m = &l.history[1];
+    assert!((m.debt_service - bond.payment).abs() < 1e-6);
+    assert!(m.interest > 0.0 && m.interest < m.debt_service);
+    assert!(l.debt() < owed);
+}
+
+#[test]
+fn twelve_distressed_months_is_bankruptcy() {
+    let mut s = sim();
+    s.add_line(rail()).unwrap(); // capital unpaid: cash below zero
+    for _ in 0..11 {
+        s.skip_to_next_month();
+    }
+    assert_eq!(s.ledger().bankrupt_month, None);
+    s.skip_to_next_month();
+    let l = s.ledger();
+    assert_eq!(l.distressed_months, 12);
+    assert_eq!(l.bankrupt_month, Some(l.history.last().unwrap().month));
+    assert!(s.issue_bond(1e6).is_err(), "no borrowing once bankrupt");
 }

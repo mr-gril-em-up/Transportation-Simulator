@@ -14,7 +14,7 @@ pub mod synth;
 mod transit;
 
 pub use clock::Clock;
-pub use economy::{Ledger, MonthStatement};
+pub use economy::{Bond, Ledger, MonthStatement};
 pub use model::{
     DesireLine, LineId, LinePreview, LineResult, LinkFlow, ModeSplit, PendingLine, Results, Sim,
     ZoneResult,

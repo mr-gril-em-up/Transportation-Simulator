@@ -16,7 +16,7 @@ math is in [MODEL.md](MODEL.md); the API and schema are in the
 | `transit.rs` | Transit platforms and edges, stop coverage, path search (`Searcher`), passenger loading (`LineLoads`) | geo, params, schema |
 | `model.rs` | `Sim`: demand, skims, mode choice, feedback loop, results | everything above |
 | `clock.rs` | The one game clock | none |
-| `economy.rs` | Capital cost, federal grant gate, `Ledger` with monthly settlement | model (`LineResult`), params |
+| `economy.rs` | Capital cost, federal grant gate, `Bond` amortization, `Ledger` with monthly settlement and the bankruptcy rule | model (`LineResult`), params |
 | `synth.rs` | Synthetic Travis-like scenario and straight test lines | geo, schema |
 
 Rule of thumb: `graph.rs` and `transit.rs` know nothing about demand or choice;
