@@ -65,10 +65,13 @@ $600k, else 0. `MockSim` keeps a ledger with the same rules as sim-core:
 charge capital less grant on build, charge only the increase on an edit,
 refund nothing. There is no operating settlement in the mock.
 
+The mock ignores `offpeakHeadwayMin` and uses the peak headway for every trip.
+
 ## Calibration point
 
-The Red Line demo (the 10 real stations from the pipeline's Travis build,
-30-minute headway, MetroRail's $3.50 fare) returns about **1,970 weekday riders**. `ASC_CAR = 2.0`
+The Red Line demo at a 30-minute headway (the 10 real stations from the
+pipeline's Travis build, MetroRail's $3.50 fare) returns about **1,970 weekday
+riders**; the preset itself now uses 32 minutes (about 1,750 in the mock). `ASC_CAR = 2.0`
 was tuned to land between APTA's ~1,500 a weekday and sim-core's 2,285 for
 the same stations. A 10-stop bus line on the
 Guadalupe/Lamar corridor gives about 1,100 at 15 minutes and 1,500 at

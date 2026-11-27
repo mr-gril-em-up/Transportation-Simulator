@@ -90,6 +90,8 @@ describe("tauri adapter", () => {
     const line = toTransitLine(r);
     expect(line.mode).toBe("commuter_rail");
     expect(line.headway_min).toBe(20);
+    expect("offpeak_headway_min" in line).toBe(false); // omitted: sim-core uses the peak headway
+    expect(toTransitLine({ ...r, headwayMin: 32, offpeakHeadwayMin: 51 })).toMatchObject({ headway_min: 32, offpeak_headway_min: 51 });
     expect(line.stops[0]).toMatchObject({ lon: RED_LINE[0].lngLat[0], lat: RED_LINE[0].lngLat[1], park_ride: true });
     const res = fromLineResult(
       {

@@ -77,8 +77,8 @@ function makeRoute(id: string, mode: Mode, pts: LngLat[], stopNames?: string[], 
   };
 }
 
-function addRoute(mode: Mode, pts: LngLat[], stopNames?: string[], name?: string): void {
-  const route = makeRoute(`r${nextId++}`, mode, pts, stopNames, name);
+function addRoute(mode: Mode, pts: LngLat[], stopNames?: string[], name?: string, service?: Partial<RouteSpec>): void {
+  const route = { ...makeRoute(`r${nextId++}`, mode, pts, stopNames, name), ...service };
   routes.push(route);
   void apply(() => sim.upsertRoute(route));
 }
@@ -170,9 +170,13 @@ function renderPanel(): void {
         res?.operatingCostPerDay !== undefined
           ? `<div class="econ">$${Math.round(res.operatingCostPerDay).toLocaleString()}/day to run · farebox ${Math.round((res.fareboxRecovery ?? 0) * 100)}%</div>`
           : "";
-      const opts = [5, 10, 15, 20, 30, 60]
+      // The preset's 32 min is not a menu step; keep the current value selectable.
+      const opts = [...new Set([5, 10, 15, 20, 30, 60, r.headwayMin])]
+        .sort((a, b) => a - b)
         .map((h) => `<option value="${h}" ${h === r.headwayMin ? "selected" : ""}>every ${h} min</option>`)
         .join("");
+      const offpeak =
+        r.offpeakHeadwayMin !== undefined ? `<div class="econ">Peak headway below; every ${r.offpeakHeadwayMin} min off-peak</div>` : "";
       const p = pending.get(r.id);
       const build = p
         ? `<div class="econ building">${p.replacesOpenLine ? "Rebuild opens" : "Under construction, opens"} ${openingLabel(p.opensDay)}${p.replacesOpenLine ? "; current version keeps running" : ""}</div>`
@@ -180,7 +184,7 @@ function renderPanel(): void {
       const editing = editor.route?.id === r.id;
       return `<div class="route${editing ? " editing" : ""}" data-id="${r.id}">
         <span class="swatch" style="background:${r.color}"></span>
-        <b class="name" data-act="rename" title="Double-click to rename">${escapeHtml(r.name)}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day${econ}${build}
+        <b class="name" data-act="rename" title="Double-click to rename">${escapeHtml(r.name)}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day${econ}${build}${offpeak}
         <div class="row"><select data-act="headway">${opts}</select>
         <button data-act="edit">${editing ? "Done" : "Edit stops"}</button>
         <button data-act="del" title="Delete line">✕</button></div></div>`;
@@ -297,14 +301,19 @@ function updateEditHint(): void {
     ? `Editing ${route.name}: drag a stop to move it, click the map to add one, right-click a stop to delete it. Esc to finish.`
     : DRAW_HINT;
 }
+// Real MetroRail service: every 32 min in the peaks, 51 midday (sim-core SIM-3, figures.csv).
 $("btn-demo").onclick = () =>
-  addRoute("commuter_rail", RED_LINE.map((s) => s.lngLat), RED_LINE.map((s) => s.name), "Red Line (demo)");
+  addRoute("commuter_rail", RED_LINE.map((s) => s.lngLat), RED_LINE.map((s) => s.name), "Red Line (demo)", {
+    headwayMin: 32,
+    offpeakHeadwayMin: 51,
+  });
 
 $("route-list").addEventListener("change", (e) => {
   const el = e.target as HTMLSelectElement;
   const r = routes.find((x) => x.id === el.closest<HTMLElement>(".route")?.dataset.id);
   if (r && el.dataset.act === "headway") {
     r.headwayMin = Number(el.value);
+    delete r.offpeakHeadwayMin; // the menu sets one all-day headway
     void apply(() => sim.upsertRoute(r));
   }
 });

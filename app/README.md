@@ -77,8 +77,9 @@ then waits for the build. The terminal prints
   square root of trips relative to the busiest pair. Color runs from purple (no transit) to green
   (10%+ transit share). It refreshes after every line edit, so you can watch transit share move.
 - **Add Red Line demo**: the CapMetro Red Line's 10 real stations (OSM route 550 from the
-  pipeline's Travis build, including McKalla), commuter rail, 30-min
-  headway).
+  pipeline's Travis build, including McKalla), commuter rail, MetroRail's real service: every
+  32 min in the peaks and 51 min off-peak, $3.50 fare. Picking a headway from the menu sets one
+  all-day headway (the off-peak value is dropped).
 - **Budget** (top of the ridership panel): cash on hand, the change from the last edit, and this
   month's capital spend and federal grants. Building charges capital less any grant; extending a
   line charges only the added cost; shrinking or deleting refunds nothing (sim-core rules, F26).
@@ -153,7 +154,8 @@ interface SimClient {
 - `Budget`: `cash`, `capitalSpentThisMonth`, `grantsThisMonth` (all USD).
 
 - `RouteSpec`: `id` (client string, `r1`, `r2`, ...), `name`, `mode`, `color`, `stops[]`
-  (`id`, `name`, `lngLat` as WGS84 `[lon, lat]` in degrees), `headwayMin` (minutes), `fare`
+  (`id`, `name`, `lngLat` as WGS84 `[lon, lat]` in degrees), `headwayMin` (peak minutes), optional `offpeakHeadwayMin` (midday and evening; absent means
+  the same as the peak), `fare`
   (USD per boarding).
 - `Mode` uses sim-core's `TransitLine` mode strings exactly (`bus` ... `ferry`; no hyperloop).
   `isRegional(mode)` is false for `bus`, `trolleybus` and `brt`, and true for everything else. It
@@ -199,9 +201,9 @@ A `ScenarioInput` JSON file
 block-group zones, 1.29M people, 948k jobs, LODES 2023 commutes, OSM roads). Without it the shell
 uses `sim_core::synth::generate(&SynthConfig::default())`, a Travis-sized synthetic region (676
 zones, 1.3M people) centered on downtown Austin. On the real build, the Red Line demo returns
-about 2,450 riders/day once open (Day 151) at 30-minute headway and MetroRail's $3.50 fare
-(sim-core's own run: 2,285 on day 0; APTA: about 1,500 a weekday). At a $1.25 fare it was about
-3,200. A line edit
+about 1,860 riders/day once open (Day 151) with MetroRail's real 32/51-minute headways and
+$3.50 fare, against APTA's about 1,500 a weekday (+24%; sim-core's own probe gives 1,738 on day
+0). A line edit
 takes under 100 ms.
 
 ## Design and rationale

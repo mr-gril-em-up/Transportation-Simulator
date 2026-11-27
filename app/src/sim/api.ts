@@ -31,7 +31,9 @@ export interface RouteSpec {
   mode: Mode;
   color: string;
   stops: Stop[];
-  headwayMin: number; // minutes between vehicles
+  headwayMin: number; // minutes between vehicles in the peaks (work trips see this)
+  /** Minutes between vehicles midday and evening (non-work trips); absent = same as the peak. */
+  offpeakHeadwayMin?: number;
   fare: number; // USD per boarding
 }
 

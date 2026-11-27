@@ -10,6 +10,7 @@ interface TransitLine {
   mode: string;
   stops: { lon: number; lat: number; name: string; park_ride: boolean }[];
   headway_min: number;
+  offpeak_headway_min?: number;
   fare: number;
 }
 
@@ -74,6 +75,7 @@ export function toTransitLine(r: RouteSpec): TransitLine {
     // trips start with a drive. Refine per stop when the UI can edit stops.
     stops: r.stops.map((s) => ({ lon: s.lngLat[0], lat: s.lngLat[1], name: s.name, park_ride: isRegional(r.mode) })),
     headway_min: r.headwayMin,
+    ...(r.offpeakHeadwayMin !== undefined && { offpeak_headway_min: r.offpeakHeadwayMin }),
     fare: r.fare,
   };
 }
