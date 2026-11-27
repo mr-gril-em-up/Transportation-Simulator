@@ -36,3 +36,21 @@ fn validate_catches_dangling_references() {
     s.lines[0].stops.pop();
     assert!(s.validate().is_err());
 }
+
+#[test]
+fn validate_rejects_nan_zero_lanes_and_self_loops() {
+    let mut s = tiny();
+    s.road_links[0].lanes = 0;
+    assert!(s.validate().is_err());
+    s.road_links[0].capacity_vph = Some(800.0);
+    s.validate().unwrap(); // explicit capacity makes 0 lanes acceptable
+    let mut s = tiny();
+    s.road_links[0].speed_kph = f64::NAN;
+    assert!(s.validate().is_err());
+    let mut s = tiny();
+    s.road_links[0].to = s.road_links[0].from;
+    assert!(s.validate().is_err());
+    let mut s = tiny();
+    s.lines[0].headway_min = f64::NAN;
+    assert!(s.validate().is_err());
+}

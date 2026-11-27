@@ -8,7 +8,7 @@ Last updated 2026-11-27.
 
 A Rust data pipeline turns public data (Census, LODES, OpenStreetMap) into a game package once per release. A headless Rust library, `sim-core`, loads that package and runs the travel model: aggregate zone-to-zone flows for the whole state, with individual agents only near the camera. A Tauri desktop app links `sim-core` as native code, talks to it through a message interface, and draws the map in its webview with MapLibre GL (deck.gl planned for the local tier in M2, see [app decision 2](../app/docs/DECISIONS.md)). There is no server.
 
-As built today (2026-11-27): the pipeline writes `scenario.json` for Travis County; sim-core has the input schema but no `Sim` API yet; the app runs against a TypeScript mock sim behind the same client interface it will use for sim-core.
+As built today (2026-11-27): the pipeline writes `scenario.json` for Travis County; sim-core has the input schema, the travel model and the `Sim` API (#7); the app runs against a TypeScript mock sim behind the same client interface it will use for sim-core.
 
 ## Components
 
@@ -74,7 +74,7 @@ Owned by sim-core. Source of truth: [`crates/sim-core/src/schema.rs`](../crates/
 
 ### sim-core to app: `Sim` API and Tauri messages
 
-sim-core's side is not built yet (roadmap F15). Planned surface from the sim-core README: build a `Sim` from a scenario, add/update/remove lines with sub-2-second re-evaluation, read results, advance the shared clock.
+sim-core's side exists (#7, [sim-core README](../crates/sim-core/README.md#public-api-sim)): `Sim::new` / `from_json` build from a scenario; `add_line` returns a stable `LineId`, and `add_line` / `update_line` / `remove_line` each refresh `results()` for every line in about 20 ms. Each `LineResult` carries `daily_boardings` and `boardings_by_stop` aligned with the line's stops. `tick(real_dt)` advances the shared `Clock` and re-equilibrates at game-day boundaries (seconds; run it off the UI thread). Results are `serde::Serialize`; `Sim` is `Send`, so the app holds it in a `Mutex`.
 
 The app's side exists: [`app/src/sim/api.ts`](../app/src/sim/api.ts) defines `SimClient` (`upsertRoute`, `removeRoute`, each returning results for every route) with `RouteSpec` modes copied from sim-core's `TransitLine`. Today `createSim()` returns a TypeScript `MockSim`. The swap plan (Tauri state holding `sim_core::Sim`, `upsert_route`/`remove_route` commands, a `TauriSim` client) is in [app ARCHITECTURE, "Swapping in sim-core"](../app/docs/ARCHITECTURE.md#swapping-in-sim-core). The webview never holds simulation state. The game clock lives in the client until sim-core exposes clock advance (app decision 9).
 

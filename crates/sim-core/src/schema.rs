@@ -12,8 +12,11 @@ use serde::{Deserialize, Serialize};
 /// Everything the simulation needs for one region (a county for M0/M1).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScenarioInput {
+    /// Demand zones.
     pub zones: Vec<Zone>,
+    /// Road graph nodes.
     pub road_nodes: Vec<RoadNode>,
+    /// Road graph links.
     pub road_links: Vec<RoadLink>,
     /// Home-zone to work-zone worker flows (LODES, aggregated to zones).
     pub commutes: Vec<Commute>,
@@ -25,9 +28,11 @@ pub struct ScenarioInput {
 /// A demand zone (census block group for M0/M1).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Zone {
+    /// Unique zone id.
     pub id: u32,
     /// Centroid (population-weighted if available).
     pub lon: f64,
+    /// Centroid latitude, degrees.
     pub lat: f64,
     /// Residents.
     pub population: f64,
@@ -49,18 +54,25 @@ pub struct Zone {
     pub area_km2: Option<f64>,
 }
 
+/// A road graph node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoadNode {
+    /// Unique node id.
     pub id: u32,
+    /// Longitude, degrees.
     pub lon: f64,
+    /// Latitude, degrees.
     pub lat: f64,
 }
 
 /// A drivable road segment between two nodes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoadLink {
+    /// Start node id.
     pub from: u32,
+    /// End node id.
     pub to: u32,
+    /// Length, meters.
     pub length_m: f64,
     /// Free-flow speed.
     pub speed_kph: f64,
@@ -81,8 +93,11 @@ pub struct RoadLink {
 /// Workers living in `home` and working in `work` (zone ids).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Commute {
+    /// Home zone id.
     pub home: u32,
+    /// Work zone id.
     pub work: u32,
+    /// Workers making this commute (LODES S000).
     pub workers: f64,
 }
 
@@ -92,26 +107,41 @@ pub struct Commute {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
+    /// Diesel or electric bus in mixed traffic.
     Bus,
+    /// Electric bus on overhead wire.
     Trolleybus,
+    /// Bus rapid transit (dedicated lanes, stations).
     Brt,
+    /// Street-running tram.
     Tram,
+    /// Light rail, mostly segregated.
     LightRail,
+    /// Commuter or regional rail.
     CommuterRail,
+    /// Metro / subway (heavy rail).
     Metro,
+    /// High-speed rail (300+ km/h).
     HighSpeedRail,
+    /// Monorail.
     Monorail,
+    /// Automated people mover.
     PeopleMover,
+    /// Urban gondola (aerial cable car).
     Gondola,
+    /// Maglev (500 km/h class).
     Maglev,
+    /// Ferry or water taxi.
     Ferry,
 }
 
 /// A two-way transit line drawn by the player (or present at start).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransitLine {
+    /// Display name.
     #[serde(default)]
     pub name: String,
+    /// Transit technology; sets the defaults.
     pub mode: Mode,
     /// Stops in order. At least two.
     pub stops: Vec<Stop>,
@@ -131,10 +161,14 @@ pub struct TransitLine {
     pub span_hours: Option<f64>,
 }
 
+/// A stop on a line.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stop {
+    /// Longitude, degrees.
     pub lon: f64,
+    /// Latitude, degrees.
     pub lat: f64,
+    /// Display name.
     #[serde(default)]
     pub name: String,
     /// Has a park-and-ride lot (enables drive-to-transit access).
