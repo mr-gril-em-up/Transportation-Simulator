@@ -228,6 +228,42 @@ densely so Dijkstra's arrays shrink with the graph.
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#what-is-recomputed-when).
+### Calibration probe: CapMetro Red Line (F19)
+
+`examples/redline.rs` builds the Red Line from the real stop positions in the
+pipeline's `transit.json` (OSM route 550, 10 stations Downtown to Leander, all
+with park-and-ride), adds it to the real Travis build as commuter rail, and
+prints daily boardings per stop:
+
+```
+cargo run --release -p sim-core --example redline -- \
+  ../data-pipeline/data/out/48453-2023/scenario.json \
+  ../data-pipeline/data/out/48453-2023/transit.json 30
+```
+
+First results, default `Params` (logit constants not yet calibrated to ACS):
+
+| Uniform headway | Model boardings/day |
+|---|---|
+| 30 min | 2,285 |
+| 35 min | 2,074 |
+| 45 min | 1,710 |
+| 60 min | 1,282 |
+
+The reference is NTD 2023: 477,322 unlinked trips a year
+(`ridership_capmetro_rail_annual` in figures.csv), about 1,600 to 1,700 a
+service day if spread over roughly 280 to 300 weekday-equivalent days (an
+assumption until a sourced average-weekday row exists). The real service runs
+about every 30 to 35 minutes in the peaks and less often midday, so the
+model's single headway sits between the 35 and 45 minute rows: within about
+10 to 25% of the reference, inside the F19 band of 30%. Caveats:
+- Leander and Lakeline sit in Williamson County, whose residents are not zones
+  in the Travis build, so the north end is undercounted (24 and 28 boardings).
+- Nearly all riders arrive by park-and-ride (`transit_drive` 0.07% of trips vs
+  `transit_walk` 0.006%); the walk side needs checking against stop-level counts.
+- The model has one headway per line; a peak/off-peak headway (or the
+  service-weighted average) is needed for a fair comparison.
+
 ## Design and rationale
 
 The full reasoning is in [docs/MODEL.md](docs/MODEL.md) (math, parameter sources,
