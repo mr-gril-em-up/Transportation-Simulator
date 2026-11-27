@@ -53,10 +53,15 @@ impl SimState {
         Self::start_with_params(load_scenario, game_params())
     }
 
-    /// Instant build (sim-core defaults); tests use it.
+    /// Instant build, so tests see lines open at once (sim-core's default
+    /// became construction-on in SIM-4); tests use it.
     #[cfg(test)]
     fn start_with(load: impl FnOnce() -> Result<ScenarioInput, String> + Send + 'static) -> Self {
-        Self::start_with_params(load, Params::default())
+        let params = Params {
+            instant_build: true,
+            ..Params::default()
+        };
+        Self::start_with_params(load, params)
     }
 
     fn start_with_params(
