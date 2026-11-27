@@ -106,9 +106,8 @@ docs/                   this hub: roadmap, architecture, decisions, docs standar
 | Workflow | Runs on PRs touching | What it runs |
 |---|---|---|
 | [data-pipeline.yml](../.github/workflows/data-pipeline.yml) | `crates/data-pipeline/**` | `cargo test` and `clippy -D warnings` for data-pipeline; manual dispatch builds a real package from Census and OSM downloads |
+| [rust.yml](../.github/workflows/rust.yml) | `crates/**`, `Cargo.toml`, `Cargo.lock` (also pushes to main) | Whole root workspace with warnings as errors: `cargo fmt --check`, `build`, `test`, `clippy -D warnings`, `doc`; then the sim-core bench, which fails if a line edit takes 2 s or more (F18) |
 | [app.yml](../.github/workflows/app.yml) | `app/**`, `crates/sim-core/**` | `npm ci`, `npm run build`, `npm test`; `cargo test` and `clippy -D warnings` in `app/src-tauri` |
-
-Gap: no job runs `cargo test --workspace` at the root. A sim-core change triggers `app.yml`, which compiles sim-core as a dependency of the Tauri shell but does not run sim-core's own tests. Until a root workspace job exists, run `cargo test --workspace` locally before opening a PR (CLAUDE.md says so).
 
 ## As-built deviations from the design doc
 
