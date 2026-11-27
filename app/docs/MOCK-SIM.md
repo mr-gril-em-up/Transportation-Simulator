@@ -75,8 +75,10 @@ The mock ignores `offpeakHeadwayMin` and uses the peak headway for every trip.
 The Red Line demo at a 30-minute headway (the 10 real stations from the
 pipeline's Travis build, MetroRail's $3.50 fare) returns about **1,970 weekday
 riders**; the preset itself now uses 32 minutes (about 1,750 in the mock). `ASC_CAR = 2.0`
-was tuned to land between APTA's ~1,500 a weekday and sim-core's 2,285 for
-the same stations. A 10-stop bus line on the
+was tuned to land a little above APTA's ~1,500 a weekday. sim-core has since
+been fitted to Travis ACS commute shares (SIM-10) and gives 861/day for the
+line alone and 1,917/day inside today's network, so the mock sits between the
+two; it is not re-tuned because it exists for UI work, not forecasts. A 10-stop bus line on the
 Guadalupe/Lamar corridor gives about 1,100 at 15 minutes and 1,500 at
 10 minutes, below the real 801/1-corridor numbers; acceptable for a mock.
 

@@ -25,7 +25,8 @@ doc.
 - Construction period on: lines under construction draw faded with their
   opening day in the panel and the drawing hint (F24) (#27)
 - Real Red Line preset: OSM route 550 stations, $3.50 fare, 32/51-minute
-  peak/off-peak headways (`offpeakHeadwayMin`); about 1,860 riders/day vs APTA 1,500 (#31, #38)
+  peak/off-peak headways (`offpeakHeadwayMin`); about 640 riders/day alone on an empty map
+  since SIM-10 (APTA 1,500; sim-core 1,917 inside today's network) (#31, #38)
 - Monthly statements: last two closed months under the budget (F26)
 - Line inspector: boardings by stop, segment loads both ways, peak load vs capacity (F17)
 - Bus lines drawn along the streets from sim-core's `segment_shapes`, draft included (SIM-8, A29)
