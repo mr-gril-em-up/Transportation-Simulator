@@ -75,9 +75,15 @@ fn main() {
         sim.results().mode_share.transit() * 100.0
     );
     let t = Instant::now();
+    sim.equilibrate_warm();
+    println!(
+        "daily re-run (equilibrate_warm): {:.2} s",
+        t.elapsed().as_secs_f64()
+    );
+    let t = Instant::now();
     sim.equilibrate();
     println!(
-        "re-equilibrate with lines: {:.2} s",
+        "full re-run from free flow (equilibrate): {:.2} s",
         t.elapsed().as_secs_f64()
     );
     assert!(dt < 2.0, "line edit must re-evaluate in under 2 s");

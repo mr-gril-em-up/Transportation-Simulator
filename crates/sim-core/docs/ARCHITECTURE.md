@@ -34,7 +34,7 @@ All zone-pair data is dense row-major `Z x Z` (`index = i * Z + j`).
 | `hbw` | Z x Z daily work trips | `new` | never |
 | `hbo` | Z x Z daily other trips | `new` (free-flow car times) | never |
 | `car_free` | Z x Z skim | `new` | never |
-| `car_peak`, `link_time`, `link_vol` | skim / per edge | `equilibrate` | each game day |
+| `car_peak`, `link_time`, `link_vol` | skim / per edge | `equilibrate` | each game day (`equilibrate_warm`) |
 | `net` (TransitNet) | platforms, edges, coverage | `new` | every line edit |
 | `tsk_walk`, `tsk_drive` | Z x Z transit components | every line edit and `equilibrate` | |
 | `results`, `transit_od`, `zone_trips` | | every state change | |
@@ -46,10 +46,16 @@ Sim::new
   validate -> road graph -> zone sizes, VOT -> work trips
   -> free-flow car skim -> gravity (other trips) -> transit net -> equilibrate
 
-equilibrate  (seconds; once per game day via tick)
-  repeat feedback_iterations:
-    car skim (peak) -> transit skims -> mode choice -> AON car assignment -> MSA average -> BPR times
-  car skim -> transit skims -> finish
+equilibrate  (cold, from free flow; Sim::new and after params changes)
+  repeat feedback_iterations [4]:  pass(assign) -> MSA average (step 1/n) -> BPR times
+  pass -> finish
+
+equilibrate_warm  (once per game day via tick; keeps yesterday's link volumes)
+  repeat daily_iterations [1]:     pass(assign) -> MSA average (step 1/(4+n)) -> BPR times
+  pass -> finish
+
+pass  (one parallel loop over origins, ONE shortest-path tree each)
+  tree -> car skim row -> transit skim row -> mode choice row -> [AON load of the row's car demand on the same tree]
 
 add_line / update_line / remove_line  (~20 ms)
   rebuild transit net -> transit skims -> finish        (car times held; results.car_times_stale = true)
@@ -97,7 +103,19 @@ agents.
 - Rayon parallelizes every per-origin loop (car skims, car assignment, transit
   skims, transit loading, mode choice). Each worker reuses its own Dijkstra or
   transit-search buffers (`map_init` / `fold`), so the hot loops do not allocate.
-- Dijkstra stops once every zone's road node is settled.
+- **Fused pass.** Mode choice for origin `i` needs only row `i` of the car and
+  transit skims, and that row's car demand can be loaded on the tree that just
+  produced the skim. So each feedback round builds one tree per origin and does
+  skim, transit search, mode choice and loading in one go, instead of a skim
+  pass and a separate assignment pass. This halved the trees per equilibrium.
+- **Warm daily start.** `equilibrate_warm` keeps the previous day's link
+  volumes and treats them as `feedback_iterations` rounds of MSA history, so one
+  round plus a final pass holds the equilibrium (a test checks speeds, vehicle-km
+  and drive share stay within 1–3% of a cold run).
+- Dijkstra stops once every zone's road node is settled. The heap key packs the
+  cost (as f32 bits) and node into one `u64`, the settled flag guards against
+  stale entries, and distances accumulate in f64 so they do not drift. Edge
+  targets live in a dense `to` array next to the times the inner loop reads.
 - Car assignment pushes demand up the shortest-path tree in reverse settle order
   (one pass per origin) instead of tracing each destination's path.
 - `Sim` is `Send` and has no interior mutability. The app holds it in a

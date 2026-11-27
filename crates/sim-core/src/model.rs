@@ -188,6 +188,25 @@ struct CarSkim {
     toll: Vec<f32>,
 }
 
+/// One origin's skim rows (peak car and transit) for mode choice.
+struct RowInputs<'a> {
+    peak_t: &'a [f32],
+    peak_km: &'a [f32],
+    peak_toll: &'a [f32],
+    tw: &'a [TOd],
+    td: &'a [TOd],
+}
+
+/// Everything one origin produces in a fused pass.
+struct OriginOut {
+    t: Vec<f32>,
+    k: Vec<f32>,
+    tl: Vec<f32>,
+    w: Vec<TOd>,
+    d: Vec<TOd>,
+    row: Row,
+}
+
 /// One origin's mode-choice output.
 struct Row {
     car_peak: Vec<f64>,
@@ -393,38 +412,54 @@ impl Sim {
     }
 
     /// Advance the shared clock by `real_dt` real seconds. Each game-day boundary
-    /// re-runs the full equilibrium (strategic tier runs once per game day).
+    /// re-runs the equilibrium, warm-started from the previous day (strategic
+    /// tier runs once per game day).
     /// Returns the number of days crossed. Call from a worker thread.
     pub fn tick(&mut self, real_dt: f64) -> u64 {
         let days = self.clock.advance(real_dt);
         if days > 0 {
-            self.equilibrate();
+            self.equilibrate_warm();
         }
         days
     }
 
-    /// Full run: mode choice <-> congested car assignment to a stable state, then
-    /// transit loading. Seconds per county; the app calls it at day boundaries.
+    /// Full run from free-flow: mode choice <-> congested car assignment to a
+    /// stable state, then transit loading. `Sim::new` calls it; call it again
+    /// after changing `params`. Costs `feedback_iterations + 1` shortest-path
+    /// trees per zone.
     pub fn equilibrate(&mut self) {
         let t0 = Instant::now();
-        let k = self.params.feedback_iterations.max(1);
         self.link_time = self.graph.free_flow_times();
         self.link_vol.iter_mut().for_each(|v| *v = 0.0);
-        for n in 1..=k {
-            self.car_peak = self.skim_car(&self.link_time);
-            self.transit_skims();
-            let rows = self.choose_all();
-            let demand = Self::flatten(&rows, |r| &r.car_peak);
-            let aon = self.assign_car(&self.link_time, &demand);
-            let step = 1.0 / n as f64;
+        let k = self.params.feedback_iterations.max(1);
+        self.feedback(k, 0);
+        let (rows, _) = self.pass(false);
+        self.finish(t0, false, Some(rows));
+    }
+
+    /// Daily re-run, warm-started from the previous day's link volumes, so
+    /// `daily_iterations` rounds suffice. `tick` calls it at day boundaries.
+    pub fn equilibrate_warm(&mut self) {
+        let t0 = Instant::now();
+        // The previous solution counts as `feedback_iterations` rounds of MSA,
+        // so each new round moves volumes by a correspondingly small step.
+        let prior = self.params.feedback_iterations;
+        self.feedback(self.params.daily_iterations.max(1), prior);
+        let (rows, _) = self.pass(false);
+        self.finish(t0, false, Some(rows));
+    }
+
+    /// `rounds` of: one fused pass (skims, mode choice, all-or-nothing load on
+    /// the same trees), MSA averaging with step 1/(prior + n), BPR times.
+    fn feedback(&mut self, rounds: usize, prior: usize) {
+        for n in 1..=rounds {
+            let (_, aon) = self.pass(true);
+            let step = 1.0 / (prior + n) as f64;
             for (v, a) in self.link_vol.iter_mut().zip(&aon) {
                 *v += step * (a - *v);
             }
             self.update_link_times();
         }
-        self.car_peak = self.skim_car(&self.link_time);
-        self.transit_skims();
-        self.finish(t0, false);
     }
 
     /// Re-fit the alternative-specific constants so the model reproduces
@@ -449,7 +484,7 @@ impl Sim {
                     (tgt[m] / (tot[m] / sum)).ln() - (tgt[DRIVE] / (tot[DRIVE] / sum)).ln();
             }
         }
-        self.finish(Instant::now(), self.results.car_times_stale);
+        self.finish(Instant::now(), self.results.car_times_stale, None);
     }
 
     /// Per-zone trips, transit trips and stop coverage.
@@ -518,7 +553,7 @@ impl Sim {
         let t0 = Instant::now();
         self.rebuild_transit();
         self.transit_skims();
-        self.finish(t0, true);
+        self.finish(t0, true, None);
     }
 
     fn rebuild_transit(&mut self) {
@@ -532,8 +567,8 @@ impl Sim {
     }
 
     /// Mode choice on current skims, transit loading, and results.
-    fn finish(&mut self, t0: Instant, stale: bool) {
-        let rows = self.choose_all();
+    fn finish(&mut self, t0: Instant, stale: bool, rows: Option<Vec<Row>>) {
+        let rows = rows.unwrap_or_else(|| self.choose_all());
         let z = self.nz;
         let wt_work = Self::flatten(&rows, |r| &r.wt_work);
         let dt_work = Self::flatten(&rows, |r| &r.dt_work);
@@ -664,6 +699,7 @@ impl Sim {
         dist_km(a.lon, a.lat, b.lon, b.lat)
     }
 
+    /// Car skims for every origin on `times` (used once, for free-flow times).
     fn skim_car(&self, times: &[f64]) -> CarSkim {
         let z = self.nz;
         let g = &self.graph;
@@ -680,24 +716,7 @@ impl Sim {
                 |(tree, km, toll), i| {
                     tree.run(g, times, self.zone_node[i]);
                     tree.km_and_toll(g, km, toll);
-                    let mut t = vec![f32::INFINITY; z];
-                    let mut k = vec![0f32; z];
-                    let mut tl = vec![0f32; z];
-                    for j in 0..z {
-                        let n = self.zone_node[j] as usize;
-                        if i == j || n == self.zone_node[i] as usize {
-                            // Same zone or same loading node: local streets at ~25 km/h.
-                            let d = self.crow_km(i, j).max(self.intra_km[i])
-                                * self.params.detour_factor;
-                            t[j] = (d / 25.0 * 60.0) as f32;
-                            k[j] = d as f32;
-                        } else if tree.dist[n].is_finite() {
-                            t[j] = tree.dist[n] as f32;
-                            k[j] = km[n] as f32;
-                            tl[j] = toll[n] as f32;
-                        }
-                    }
-                    (t, k, tl)
+                    self.car_row(i, tree, km, toll)
                 },
             )
             .collect();
@@ -712,46 +731,6 @@ impl Sim {
             s.toll.extend(tl);
         }
         s
-    }
-
-    /// All-or-nothing assignment of a Z x Z vehicle demand matrix on `times`.
-    fn assign_car(&self, times: &[f64], demand: &[f64]) -> Vec<f64> {
-        let z = self.nz;
-        let g = &self.graph;
-        let ne = g.edges.len();
-        (0..z)
-            .into_par_iter()
-            .fold(
-                || {
-                    (
-                        Tree::new(g.n_nodes, &self.zone_node),
-                        vec![0.0; g.n_nodes],
-                        vec![0.0; ne],
-                    )
-                },
-                |(mut tree, mut nd, mut vol), i| {
-                    let row = &demand[i * z..(i + 1) * z];
-                    if row.iter().any(|&d| d > 0.0) {
-                        tree.run(g, times, self.zone_node[i]);
-                        for (j, &d) in row.iter().enumerate() {
-                            nd[self.zone_node[j] as usize] += d;
-                        }
-                        nd[self.zone_node[i] as usize] = 0.0; // same-node trips stay off the network
-                        tree.load(g, &mut nd, &mut vol);
-                    }
-                    (tree, nd, vol)
-                },
-            )
-            .map(|(_, _, v)| v)
-            .reduce(
-                || vec![0.0; ne],
-                |mut a, b| {
-                    for (x, y) in a.iter_mut().zip(b) {
-                        *x += y;
-                    }
-                    a
-                },
-            )
     }
 
     fn update_link_times(&mut self) {
@@ -858,28 +837,184 @@ impl Sim {
     }
 
     fn choose_all(&self) -> Vec<Row> {
-        (0..self.nz)
+        let z = self.nz;
+        (0..z)
             .into_par_iter()
-            .map(|i| self.choose_row(i))
+            .map(|i| {
+                let r = i * z..(i + 1) * z;
+                let inp = RowInputs {
+                    peak_t: &self.car_peak.time[r.clone()],
+                    peak_km: &self.car_peak.km[r.clone()],
+                    peak_toll: &self.car_peak.toll[r.clone()],
+                    tw: &self.tsk_walk[r.clone()],
+                    td: &self.tsk_drive[r],
+                };
+                self.choose_row(i, &inp)
+            })
             .collect()
     }
 
+    /// One parallel pass over origins: shortest-path tree on current link
+    /// times, car skim row, transit skim row, mode choice row and (if `vol`)
+    /// all-or-nothing loading of that row's peak car demand on the same tree.
+    /// Updates `car_peak`, `tsk_walk`, `tsk_drive`. One tree per origin
+    /// instead of two (skim, then assign).
+    fn pass(&mut self, assign: bool) -> (Vec<Row>, Vec<f64>) {
+        let z = self.nz;
+        let g = &self.graph;
+        let ne = if assign { g.edges.len() } else { 0 };
+        let times = &self.link_time;
+        let (net, p) = (&self.net, &self.params);
+        let has_transit = !net.is_empty();
+        type Acc<'a> = (
+            Tree,
+            Vec<f64>,
+            Vec<f64>,
+            Searcher<'a>,
+            Vec<f64>,
+            Vec<(usize, OriginOut)>,
+        );
+        let (vol, mut outs) = (0..z)
+            .into_par_iter()
+            .fold(
+                || -> (Vec<f64>, Option<Acc>) { (vec![0.0; ne], None) },
+                |(mut vol, acc), i| {
+                    let (mut tree, mut km, mut toll, mut srch, mut nd, mut outs) = acc
+                        .unwrap_or_else(|| {
+                            (
+                                Tree::new(g.n_nodes, &self.zone_node),
+                                vec![0.0; g.n_nodes],
+                                vec![0.0; g.n_nodes],
+                                Searcher::new(net, p, z),
+                                vec![0.0; g.n_nodes],
+                                Vec::new(),
+                            )
+                        });
+                    tree.run(g, times, self.zone_node[i]);
+                    tree.km_and_toll(g, &mut km, &mut toll);
+                    let (t, k, tl) = self.car_row(i, &tree, &km, &toll);
+                    let mut w = vec![TOd::NONE; z];
+                    let mut d = vec![TOd::NONE; z];
+                    if has_transit {
+                        if !net.walk_access[i].is_empty() {
+                            srch.run(i, Access::Walk, &t, &k);
+                            (0..z).for_each(|j| w[j] = srch.od(j));
+                        }
+                        if !net.pnr.is_empty() {
+                            srch.run(i, Access::Drive, &t, &k);
+                            (0..z).for_each(|j| d[j] = srch.od(j));
+                        }
+                    }
+                    let inp = RowInputs {
+                        peak_t: &t,
+                        peak_km: &k,
+                        peak_toll: &tl,
+                        tw: &w,
+                        td: &d,
+                    };
+                    let row = self.choose_row(i, &inp);
+                    if assign {
+                        for (j, &dm) in row.car_peak.iter().enumerate() {
+                            nd[self.zone_node[j] as usize] += dm;
+                        }
+                        nd[self.zone_node[i] as usize] = 0.0; // same-node trips stay off the network
+                        tree.load(g, &mut nd, &mut vol);
+                    }
+                    outs.push((
+                        i,
+                        OriginOut {
+                            t,
+                            k,
+                            tl,
+                            w,
+                            d,
+                            row,
+                        },
+                    ));
+                    (vol, Some((tree, km, toll, srch, nd, outs)))
+                },
+            )
+            .map(|(vol, acc)| (vol, acc.map(|a| a.5).unwrap_or_default()))
+            .reduce(
+                || (vec![0.0; ne], Vec::new()),
+                |(mut va, mut oa), (vb, ob)| {
+                    for (x, y) in va.iter_mut().zip(vb) {
+                        *x += y;
+                    }
+                    oa.extend(ob);
+                    (va, oa)
+                },
+            );
+        outs.sort_by_key(|(i, _)| *i);
+        let mut rows = Vec::with_capacity(z);
+        self.car_peak.time.clear();
+        self.car_peak.km.clear();
+        self.car_peak.toll.clear();
+        self.tsk_walk.clear();
+        self.tsk_drive.clear();
+        for (_, o) in outs {
+            self.car_peak.time.extend(o.t);
+            self.car_peak.km.extend(o.k);
+            self.car_peak.toll.extend(o.tl);
+            self.tsk_walk.extend(o.w);
+            self.tsk_drive.extend(o.d);
+            rows.push(o.row);
+        }
+        (rows, vol)
+    }
+
+    /// Car skim row for origin `i` from its shortest-path tree.
+    fn car_row(
+        &self,
+        i: usize,
+        tree: &Tree,
+        km: &[f64],
+        toll: &[f64],
+    ) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+        let z = self.nz;
+        let mut t = vec![f32::INFINITY; z];
+        let mut k = vec![0f32; z];
+        let mut tl = vec![0f32; z];
+        for j in 0..z {
+            let n = self.zone_node[j] as usize;
+            if i == j || n == self.zone_node[i] as usize {
+                // Same zone or same loading node: local streets at ~25 km/h.
+                let d = self.crow_km(i, j).max(self.intra_km[i]) * self.params.detour_factor;
+                t[j] = (d / 25.0 * 60.0) as f32;
+                k[j] = d as f32;
+            } else if tree.dist[n].is_finite() {
+                t[j] = tree.dist[n] as f32;
+                k[j] = km[n] as f32;
+                tl[j] = toll[n] as f32;
+            }
+        }
+        (t, k, tl)
+    }
+
     /// Generalized cost (minutes) of each choice for one OD pair, or None if unavailable.
-    fn costs(&self, i: usize, j: usize, work: bool) -> [Option<f64>; N_CHOICES] {
+    fn costs(&self, i: usize, j: usize, work: bool, inp: &RowInputs) -> [Option<f64>; N_CHOICES] {
         let p = &self.params;
         let k = i * self.nz + j;
         let vot = self.vot_min[i];
-        let car = if work { &self.car_peak } else { &self.car_free };
+        let (t, km, toll) = if work {
+            (inp.peak_t[j], inp.peak_km[j], inp.peak_toll[j])
+        } else {
+            (
+                self.car_free.time[k],
+                self.car_free.km[k],
+                self.car_free.toll[k],
+            )
+        };
         let mut c = [None; N_CHOICES];
-        let t = car.time[k] as f64;
+        let t = t as f64;
         if t.is_finite() {
             let share = if work {
                 p.parking_share_work
             } else {
                 p.parking_share_other
             };
-            let money = car.km[k] as f64 * p.car_cost_per_km
-                + car.toll[k] as f64
+            let money = km as f64 * p.car_cost_per_km
+                + toll as f64
                 + self.input.zones[j].parking_cost * share;
             c[DRIVE] = Some(t + p.car_terminal_min + money / vot);
             c[CARPOOL] = Some(
@@ -900,11 +1035,11 @@ impl Sim {
                 + (o.fare + o.drive_cost) as f64 / vot
                 + sd
         };
-        let tw = &self.tsk_walk[k];
+        let tw = &inp.tw[j];
         if tw.ok() {
             c[TRANSIT_WALK] = Some(transit(tw));
         }
-        let td = &self.tsk_drive[k];
+        let td = &inp.td[j];
         if td.ok() {
             c[TRANSIT_DRIVE] = Some(transit(td));
         }
@@ -918,7 +1053,7 @@ impl Sim {
         c
     }
 
-    fn choose_row(&self, i: usize) -> Row {
+    fn choose_row(&self, i: usize, inp: &RowInputs) -> Row {
         let z = self.nz;
         let p = &self.params;
         let mut r = Row {
@@ -944,7 +1079,7 @@ impl Sim {
                 if trips <= 0.0 {
                     continue;
                 }
-                let c = self.costs(i, j, work);
+                let c = self.costs(i, j, work, inp);
                 let near = cov_i * self.net.coverage[j];
                 let mut prob = [0.0; N_CHOICES];
                 // Four segments: car / no car x origin+destination near a stop or not.

@@ -190,15 +190,23 @@ Peak-hour vehicle demand (section 4) is loaded all-or-nothing onto shortest
 paths. Link times follow the BPR curve
 `t = t0 x (1 + bpr_alpha [0.15] x (v/c)^bpr_beta [4])`.
 
-`equilibrate` runs `feedback_iterations [4]` rounds of:
+`equilibrate` starts from free-flow times and runs `feedback_iterations [4]`
+rounds of:
 1. car skims on current link times,
 2. transit skims (park-and-ride drive times depend on car skims),
 3. mode choice,
-4. all-or-nothing assignment, averaged into link volumes with step `1/n`
-   (method of successive averages),
+4. all-or-nothing assignment on the same shortest-path trees, averaged into
+   link volumes with step `1/n` (method of successive averages),
 5. new link times.
 
 Then it skims once more, runs mode choice and loads transit.
+
+`equilibrate_warm` (what the game runs once per game day) starts from the
+previous day's volumes and runs `daily_iterations [1]` round with step
+`1/(feedback_iterations + n)`, i.e. it treats the previous solution as four
+rounds of history. Demand does not change between days unless the player
+changed lines, so the previous equilibrium is already close; one round absorbs
+the line edits made during the day.
 
 Why MSA with feedback and not Frank-Wolfe user equilibrium: MSA with feedback
 converges to the same combined mode-and-route equilibrium, needs no line

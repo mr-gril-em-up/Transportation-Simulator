@@ -185,3 +185,15 @@ fn sim_is_send_for_the_app_mutex() {
     fn assert_send<T: Send>() {}
     assert_send::<Sim>();
 }
+
+#[test]
+fn warm_daily_rerun_stays_at_the_cold_equilibrium() {
+    let mut s = sim();
+    let cold = s.results().clone();
+    s.equilibrate_warm();
+    let warm = s.results();
+    let rel = |a: f64, b: f64| (a - b).abs() / b.abs().max(1e-9);
+    assert!(rel(warm.peak_avg_speed_kph, cold.peak_avg_speed_kph) < 0.03);
+    assert!(rel(warm.mode_share.drive, cold.mode_share.drive) < 0.01);
+    assert!(rel(warm.peak_vehicle_km, cold.peak_vehicle_km) < 0.03);
+}
