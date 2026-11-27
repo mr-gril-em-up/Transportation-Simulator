@@ -103,6 +103,8 @@ let days_crossed = sim.tick(real_dt_seconds);
 | `equilibrate()` | seconds | Full mode choice and congested car assignment from free-flow times. Call after changing `params`. |
 | `equilibrate_warm()` | ~2 s at Travis size | Daily re-run starting from the previous day's road volumes (`daily_iterations` rounds). |
 | `tick(real_dt) -> u64` | free or ~2 s | Advances `sim.clock`; at a day boundary opens lines whose construction finished, runs `equilibrate_warm` once, and settles the ledger at month boundaries. Call from a worker thread. |
+| `tick_budgeted(real_dt, budget) -> u64` | about `budget` | Same day, spread over calls (SIM-18): a boundary opens due lines and starts the day's re-run as a job, and each call runs at most about `budget` of it, so line edits go in between. Results and car times stay the previous day's until the job ends; months settle when it does. Statewide with a 100 ms budget: the longest call is 0.5 s instead of a 14 s block. Use instead of `tick`, not alongside it. |
+| `day_progress() -> Option<f64>` | free | Share of the running day job done (0 to 1), None when none runs. For a "new day computing" indicator. |
 | `calibrate_mode_shares(ModeSplit, iters)` | ~0.1 s/iter | Fits the logit constants so commute trips reproduce target shares (ACS journey to work); transit as one share unless `transit_drive` has its own target (SIM-10). |
 | `commute_mode_shares() -> ModeSplit` | ~0.3 s | Commute (home-work) shares under current constants: the quantity the fit targets. |
 | `input() -> &ScenarioInput` | free | The scenario as loaded (lines live in `lines()`). |

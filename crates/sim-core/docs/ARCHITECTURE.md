@@ -87,6 +87,15 @@ tick / skip_to_next_month
   clock -> at a day boundary: open finished pending lines -> equilibrate_warm
   -> ledger.settle once per month boundary crossed
 
+tick_budgeted (SIM-18)  (each call about `budget`)
+  clock -> at a day boundary: open finished pending lines (re-evaluate transit at once)
+  -> start a DayJob; each call runs part of it:
+     round 0: park-and-ride prices -> rounds 1..daily_iterations: pass_range over slices of
+     origins, summing their AON loads -> Frank-Wolfe step -> final round: pass_range slices
+     -> commit car (and transit) skims -> finish -> settle months
+  line edits between calls run as usual on the previous day's car times; if one
+  lands during the final round, transit is re-skimmed at commit
+
 finish
   mode choice (origins with no transit reuse their totals, SIM-17) -> transit loading
   -> line economics -> Results
@@ -290,12 +299,24 @@ Travis results are unchanged (calibration, Red Line 1,352/day, buses
 77,349/day; `bench` preview 0.036 s, add 0.039 s). A game day is unchanged
 (14 s).
 
+**Day rollover (SIM-18).** `tick` runs the whole day under the caller's
+lock, so the app paused edits for about 20 s at every statewide day.
+`tick_budgeted` runs it as a `DayJob` in slices of origins
+(`rayon` threads x 32 per slice) until the call's budget is used. The pass is
+split into `pass_range` (reads state, changes nothing) and `commit_outs`, so
+the blocking path and the job share the code. Statewide with a 100 ms
+budget (`examples/statewide.rs`): the day takes 17.0 s of compute over 85
+calls (vs 14.3 s blocking; slices balance cores less well), and the longest
+call is 0.50 s (the final commit). Results are the previous day's until the
+job ends; a test checks the budgeted day lands within 1e-6 of the blocking
+one, and that a line added mid-day is in the day's results.
+
 ## Testing
 
 | Test | Covers |
 |---|---|
 | `tests/schema.rs` | Fixture parses with defaults, round trip, validation errors (dangling ids, NaN, zero lanes, self-loops) |
-| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
+| `tests/model.rs` | Car-dominated baseline, trip conservation, line adds ridership and shifts share, fare and headway elasticities have the right sign, stable ids on remove, transfers used, congestion feedback, line-searched assignment unjams in two rounds where MSA does not (SIM-15), jammed pairs past the tree guard keep the car (SIM-16), preview puts results back bit for bit and edits after a params change re-choose origins without transit (SIM-17), budgeted day matches the blocking one and keeps a mid-day edit (SIM-18), calibration hits targets, tick re-equilibrates, results serialize, tiny fixture runs, preview charges nothing and matches build, extensions pay the difference, monthly settlement, lines open after compressed construction, service changes apply at once while realignments wait |
 | `tests/figures.rs` | Sourced defaults (trip rate, NTD cost per car hour, CapMetro fares, walk/wait weights, capital per mile and vehicle prices, sales tax rate, taxable sales per capita, operating assistance share, bond rate and term) equal their rows in `crates/data-pipeline/reference/figures.csv` (D25, D29) |
 | `graph.rs` contraction tests | Zone-to-zone times unchanged by pruning and contraction (synthetic always; real build with `TRANSPO_SCENARIO=... cargo test --release -- --ignored`) |
 | unit tests in `graph.rs`, `transit.rs`, `geo.rs`, `clock.rs`, `model.rs`, `economy.rs` | Dijkstra and loading, coverage shapes, distance, clock rates, logit, grant gate and settlement arithmetic |
