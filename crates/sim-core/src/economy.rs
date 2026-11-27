@@ -84,6 +84,10 @@ pub struct Bond {
     pub balance: f64,
     /// Payments still to make.
     pub months_left: u32,
+    /// First month whose payment counts in the coverage test. Months before
+    /// it are the construction period the bond funds (capitalized interest,
+    /// SIM-7); the cash test applies throughout.
+    pub coverage_from_month: u64,
 }
 
 impl Bond {
@@ -105,6 +109,7 @@ impl Bond {
             payment,
             balance: principal,
             months_left: n,
+            coverage_from_month: issued_month + 1,
         }
     }
 
@@ -171,13 +176,26 @@ impl Ledger {
     }
 
     /// Borrow `principal` now at `annual_rate` over `term_months`. The cash
-    /// arrives at once; payments start at the next month's settlement.
-    pub fn issue_bond(&mut self, principal: f64, annual_rate: f64, term_months: u32) -> &Bond {
-        let bond = Bond::new(principal, annual_rate, term_months, self.current.month);
+    /// arrives at once; payments start at the next month's settlement and
+    /// enter the coverage test after `grace_months` more (SIM-7).
+    pub fn issue_bond(
+        &mut self,
+        principal: f64,
+        annual_rate: f64,
+        term_months: u32,
+        grace_months: u64,
+    ) -> &Bond {
+        let mut bond = Bond::new(principal, annual_rate, term_months, self.current.month);
+        bond.coverage_from_month += grace_months;
         self.current.bond_proceeds += principal;
         self.cash += principal;
         self.bonds.push(bond);
         self.bonds.last().unwrap()
+    }
+
+    /// Monthly payments due on all outstanding bonds.
+    pub fn monthly_debt_service(&self) -> f64 {
+        self.bonds.iter().map(|b| b.payment).sum()
     }
 
     /// Principal still owed on all bonds.
@@ -187,18 +205,7 @@ impl Ledger {
 
     /// Close the current month using today's daily line results and the
     /// served population, then open the next month.
-    ///
-    /// `building`: a line or new alignment is under construction. Those
-    /// months skip the coverage test (debt service vs operating surplus),
-    /// as capitalized interest does for real projects; the cash test still
-    /// applies (SIM-6).
-    pub fn settle(
-        &mut self,
-        lines: &[LineResult],
-        served_population: f64,
-        building: bool,
-        p: &Params,
-    ) {
+    pub fn settle(&mut self, lines: &[LineResult], served_population: f64, p: &Params) {
         const DAYS: f64 = crate::clock::DAYS_PER_MONTH as f64;
         let m = &mut self.current;
         m.fare_revenue = DAYS * lines.iter().map(|l| l.fare_revenue_per_day).sum::<f64>();
@@ -207,10 +214,14 @@ impl Ledger {
         m.local_tax =
             served_population * p.taxable_sales_per_capita * p.local_sales_tax_rate / 12.0;
         let operating = m.operating_surplus();
+        let mut covered_service = 0.0;
         for b in self.bonds.iter_mut().filter(|b| b.issued_month < m.month) {
             let (payment, interest) = b.pay();
             m.debt_service += payment;
             m.interest += interest;
+            if m.month >= b.coverage_from_month {
+                covered_service += payment;
+            }
         }
         self.bonds.retain(|b| b.months_left > 0);
         self.cash += operating - m.debt_service;
@@ -218,7 +229,7 @@ impl Ledger {
             - m.capital_spent
             - m.debt_service;
         self.served_population = served_population;
-        let coverage_fails = !building && m.debt_service > operating;
+        let coverage_fails = covered_service > operating;
         if coverage_fails || self.cash < 0.0 {
             self.distressed_months += 1;
         } else {
@@ -272,7 +283,7 @@ mod tests {
         let mut l = Ledger::new(0.0, 0);
         l.charge_capital(1000.0, 500.0);
         assert_eq!(l.cash, -500.0);
-        l.settle(&[line(100.0, 10.0, 1.0)], 1000.0, false, &p);
+        l.settle(&[line(100.0, 10.0, 1.0)], 1000.0, &p);
         let m = &l.history[0];
         assert_eq!(m.operating_cost, 300.0);
         assert_eq!(m.fare_revenue, 30.0);
@@ -304,16 +315,16 @@ mod tests {
             ..Params::default()
         };
         let mut l = Ledger::new(0.0, 0);
-        let pay = l.issue_bond(1e6, 0.06, 12).payment;
+        let pay = l.issue_bond(1e6, 0.06, 12, 0).payment;
         assert_eq!(l.cash, 1e6);
         // Issue month: proceeds counted, no payment yet.
-        l.settle(&[], 0.0, false, &p);
+        l.settle(&[], 0.0, &p);
         assert_eq!(l.history[0].bond_proceeds, 1e6);
         assert_eq!(l.history[0].debt_service, 0.0);
         assert_eq!(l.distressed_months, 0);
         // No revenue at all: every paying month is distressed.
         for _ in 0..3 {
-            l.settle(&[], 0.0, false, &p);
+            l.settle(&[], 0.0, &p);
         }
         assert!((l.history[1].debt_service - pay).abs() < 1e-6);
         assert!((l.cash - (1e6 - 3.0 * pay)).abs() < 1e-3);
@@ -323,21 +334,23 @@ mod tests {
     }
 
     #[test]
-    fn construction_months_skip_the_coverage_test_not_the_cash_test() {
+    fn grace_months_skip_the_coverage_test_not_the_cash_test() {
         let p = Params::default();
         let mut l = Ledger::new(0.0, 0);
-        l.issue_bond(1e6, 0.06, 12);
-        l.settle(&[], 0.0, true, &p);
-        l.settle(&[], 0.0, true, &p); // pays debt service from bond cash
-        assert!(l.history[1].debt_service > 0.0);
-        assert_eq!(l.distressed_months, 0, "building: coverage not tested");
-        l.settle(&[], 0.0, false, &p);
-        assert_eq!(l.distressed_months, 1, "open: coverage fails");
+        // Issued in month 0 with 2 grace months: payments in months 1 and 2
+        // are outside the coverage test, month 3 is inside.
+        assert_eq!(l.issue_bond(1e6, 0.06, 12, 2).coverage_from_month, 3);
+        l.settle(&[], 0.0, &p);
+        l.settle(&[], 0.0, &p);
+        l.settle(&[], 0.0, &p);
+        assert!(l.history[2].debt_service > 0.0);
+        assert_eq!(l.distressed_months, 0, "grace: coverage not tested");
+        l.settle(&[], 0.0, &p);
+        assert_eq!(l.distressed_months, 1, "after grace: coverage fails");
+        let mut l = Ledger::new(-1.0, 0);
+        l.issue_bond(1.0, 0.06, 12, 6);
         l.cash = -1.0;
-        l.settle(&[], 0.0, true, &p);
-        assert_eq!(
-            l.distressed_months, 2,
-            "negative cash counts while building"
-        );
+        l.settle(&[], 0.0, &p);
+        assert_eq!(l.distressed_months, 1, "negative cash counts in grace");
     }
 }
