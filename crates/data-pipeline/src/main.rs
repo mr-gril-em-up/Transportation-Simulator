@@ -2,12 +2,13 @@ use anyhow::{bail, Result};
 use data_pipeline::{aggregate::Level, build, census::Area, Config};
 use std::path::PathBuf;
 
-const USAGE: &str = "usage: tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--margin 0.05] [--level bg|tract|county] [--existing-lines]
+const USAGE: &str = "usage: tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--margin 0.05] [--level bg|tract|county] [--existing-lines] [--roads all|highway]
 
 Builds scenario.json (sim-core input), zones.json, roads.json, transit.json and manifest.json.
 --area takes GEOID prefixes: 48453 = Travis County, 48 = all of Texas.
 --level merges block groups into census tracts or counties (default bg).
---existing-lines puts today's transit network into scenario.json lines (always in existing_lines.json).";
+--existing-lines puts today's transit network into scenario.json lines (always in existing_lines.json).
+--roads highway keeps motorway through secondary only (statewide tier).";
 
 fn main() -> Result<()> {
     let mut cfg = Config {
@@ -20,6 +21,7 @@ fn main() -> Result<()> {
         margin_deg: 0.05,
         level: Level::BlockGroup,
         existing_lines: false,
+        highway_only: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -35,6 +37,13 @@ fn main() -> Result<()> {
             "--margin" => cfg.margin_deg = val()?.parse()?,
             "--level" => cfg.level = Level::parse(&val()?)?,
             "--existing-lines" => cfg.existing_lines = true,
+            "--roads" => {
+                cfg.highway_only = match val()?.as_str() {
+                    "all" => false,
+                    "highway" => true,
+                    v => bail!("unknown --roads {v:?} (all, highway)"),
+                }
+            }
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return Ok(());

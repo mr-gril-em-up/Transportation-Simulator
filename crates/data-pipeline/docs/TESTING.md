@@ -21,6 +21,7 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 | `commute_shares_sum_listed_block_groups` | `src/acs.rs` | B08301 shares sum only the listed block groups, skip county rows, and add to 1 |
 | `red_line_uses_timetable_and_park_and_ride` | `src/lines.rs` | One line per ref (most stops), routes without headways dropped, `train` becomes commuter rail with the figures.csv 32/51 min timetable, Leander and Lakeline stops get park-and-ride and Downtown does not, midday headway carried |
 | `headways_from_a_tiny_feed` | `src/gtfs.rs` | Busiest-Wednesday service selection with a calendar_dates removal, weekend service ignored, directions combined per window, peak and midday headways, span, empty windows give `None` |
+| `highway_roads_keep_only_motorway_to_secondary` | `tests/sample.rs` | `--roads highway`: only motorway to secondary classes in `roads.json`, fewer edges than the full build, manifest `road_classes` |
 | `only_capmetro_operators_match` | `src/gtfs.rs` | Missing or CapMetro operator matches; Amtrak and CARTS do not |
 | `dates_and_weekdays` | `src/gtfs.rs` | GTFS date to day number, Wednesday test, times past 24:00 |
 | `acs_parses_and_flags_suppressed` | `src/acs.rs` | Summary-file table parsing (block-group rows only, state row skipped), suppressed sentinels, blanks and zero-household rows become `None` |

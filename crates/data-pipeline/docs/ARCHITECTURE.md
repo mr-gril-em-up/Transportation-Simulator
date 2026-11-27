@@ -95,6 +95,10 @@ Speed, lane and one-way rules are in [ASSUMPTIONS.md](ASSUMPTIONS.md).
 
 If `texas-latest.osm.pbf` is missing, this step is skipped with a note, and the scenario gets one placeholder road node so it still validates. That mode exists for quick census-only checks; real builds always include roads.
 
+### 5a. Road classes (`--roads`, DATA-8)
+
+`--roads all` (default) reads every class in `class_defaults`. `--roads highway` keeps only `osm::is_highway_class`: motorway, trunk, primary, secondary and their `_link` ramps. It is meant for statewide tract or county builds feeding the strategic tier (F34), where local streets would make the graph too large and their detail is lost in tract-sized zones anyway. Zones still connect only to non-freeway nodes, so they load onto primary or secondary roads. Transit routes are read either way.
+
 ### 5b. GTFS headways (`gtfs::read_headways`, `gtfs::apply`, DATA-6)
 
 OSM route relations give stops in order but no frequencies. When `raw/gtfs_capmetro/routes.txt` exists, the timetable is reduced to three numbers per route and copied onto OSM routes whose `ref` equals the GTFS `route_short_name` (both directions get the same values):
