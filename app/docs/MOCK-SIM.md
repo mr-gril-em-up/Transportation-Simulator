@@ -49,7 +49,7 @@ other mode).
    - transit = `2 * headway/2` (wait, double weight) + `2 * access`
      (double weight) + ride time + fare / VoT
    - car = 6 min (parking/access) + `1.3 * dist` at 40 km/h + `$0.25/km` / VoT
-   - `share = 1 / (1 + exp(0.06 * (transit - car) + 2.4))`
+   - `share = 1 / (1 + exp(0.06 * (transit - car) + 2.0))`
 4. **Results.** `trips_ij * share * networkFactor` is added to boardings at
    stop i. Daily riders = the sum. Every route is simulated independently: no
    competition between lines, no congestion, no transfers between drawn lines.
@@ -68,14 +68,14 @@ refund nothing. There is no operating settlement in the mock.
 ## Calibration point
 
 The Red Line demo (the 10 real stations from the pipeline's Travis build,
-30-minute headway) returns about **2,070 weekday riders**. `ASC_CAR = 2.4`
+30-minute headway, MetroRail's $3.50 fare) returns about **1,970 weekday riders**. `ASC_CAR = 2.0`
 was tuned to land between NTD's 1,600 to 1,700 a day and sim-core's 2,285 for
 the same stations. A 10-stop bus line on the
 Guadalupe/Lamar corridor gives about 1,100 at 15 minutes and 1,500 at
 10 minutes, below the real 801/1-corridor numbers; acceptable for a mock.
 
-Ridership is quite elastic to headway (Red Line: ~850 at 45 min,
-~2,070 at 30, ~3,700 at 20, ~6,600 at 10). Real elasticities are lower; the design doc
+Ridership is quite elastic to headway (Red Line: ~810 at 45 min,
+~1,970 at 30, ~3,550 at 20, ~6,300 at 10). Real elasticities are lower; the design doc
 already expects a tunable exaggeration factor for gameplay, which belongs in
 sim-core, not here.
 

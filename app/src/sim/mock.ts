@@ -58,7 +58,7 @@ const decay = (d: number) => 1 / Math.max(d, 1) ** 1.2;
 // Binary logit: utility per generalized-cost minute, and the car's constant.
 // ASC tuned so the Red Line demo at 30-min headway lands near its real ~2,500/day.
 const COST_COEF = 0.06;
-const ASC_CAR = 2.4;
+const ASC_CAR = 2.0;
 
 /** Weekday boardings for one route against the synthetic zones (no line interaction). */
 export function simulateRoute(route: RouteSpec, zones: Zone[]): RouteResult {

@@ -199,9 +199,9 @@ A `ScenarioInput` JSON file
 block-group zones, 1.29M people, 948k jobs, LODES 2023 commutes, OSM roads). Without it the shell
 uses `sim_core::synth::generate(&SynthConfig::default())`, a Travis-sized synthetic region (676
 zones, 1.3M people) centered on downtown Austin. On the real build, the Red Line demo returns
-about 3,200 riders/day at 30-minute headway once open (NTD: about 1,600 to 1,700). The app gives
-park-and-ride to every stop of a regional line, which likely explains most of the gap to
-sim-core's own 2,285 for the same stations (see Known gaps) and a line edit
+about 2,450 riders/day once open (Day 151) at 30-minute headway and MetroRail's $3.50 fare
+(sim-core's own run: 2,285 on day 0; NTD: about 1,600 to 1,700). At a $1.25 fare it was about
+3,200. A line edit
 takes under 100 ms.
 
 ## Design and rationale
@@ -240,8 +240,8 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (well under a second on the synthetic region, about 2 s on real Travis) | Fine for M1; revisit with the statewide scenario (M3) |
 | `npm run tauri build` bundles no scenario: an installed app on another machine opens on the synthetic region | Bundle the build as a Tauri resource when packaging matters (M3 release) |
 | Startup on real Travis takes about 11 s in `tauri dev` | sim-core startup work (graph contraction, SIM stream) |
-| Mode picker is two buttons (bus, light rail); fare fixed at $1.25 | F16 |
-| `park_ride` is all-or-nothing per line, which inflates the Red Line demo (about 3,200/day against NTD 1,600 to 1,700) | Per-stop properties in the stop editor (F16) |
+| Mode picker is two buttons (bus, light rail); fare fixed per mode ($3.50 commuter rail like MetroRail, $1.25 otherwise) | F16 |
+| `park_ride` is all-or-nothing per line | Per-stop properties in the stop editor (F16) |
 | Clock is client-side; `Sim::tick` is not called, so car congestion only updates at sim build | F21 |
 | Schematic is greedy: parallel lines can overlap, no station pins | F41 |
 | Basemap tiles come from OpenFreeMap over the network; CSP is off | Bundled tiles (F33), then tighten CSP |
