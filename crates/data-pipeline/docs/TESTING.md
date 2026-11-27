@@ -14,10 +14,11 @@ CI runs both on every PR that touches this crate (`.github/workflows/data-pipeli
 
 | Test | File | Checks |
 |---|---|---|
-| `builds_travis_sample` | `tests/sample.rs` | Full `build()` on the synthetic sample: zone filtering and GEOID order; block-to-block-group roll-up of RAC, WAC and OD; `commute_in`/`commute_out`; road splitting at shared nodes; clipping (a road to Dallas and a footway are dropped); `maxspeed` in mph; motorway one-way and tagged lanes; transit stop order and names; a route outside the area dropped; `scenario.json` loads with `ScenarioInput::from_json` and passes `validate()`; zones never connect to a freeway-only node or to a disconnected fragment closer to the centroid; per-direction lane conversion; empty `lines` |
+| `builds_travis_sample` | `tests/sample.rs` | Full `build()` on the synthetic sample: zone filtering and GEOID order; block-to-block-group roll-up of RAC, WAC and OD; `commute_in`/`commute_out`; road splitting at shared nodes; clipping (a road to Dallas and a footway are dropped); `maxspeed` in mph; motorway one-way and tagged lanes; transit stop order and names; a route outside the area dropped; `scenario.json` loads with `ScenarioInput::from_json` and passes `validate()`; zones never connect to a freeway-only node or to a disconnected fragment closer to the centroid; per-direction lane conversion; routing simplification leaves only the two connectors and the link between them, with matching manifest counts; empty `lines` |
 | `whole_state_area_keeps_both_counties` | `tests/sample.rs` | `--area 48` keeps both counties; flows between them become internal; census-only build (no PBF) still validates |
 | `zones_without_header_row` | `src/census.rs` | Centers of Population file without a header |
-| `speeds`, `distance` | `src/osm.rs` | `maxspeed` parsing; haversine length |
+| `simplify_contracts_chains_and_prunes_dead_ends` | `src/scenario.rs` | Dead-end pruning, fragment removal, contraction only across equal speed and lanes, one-way contraction only when traffic flows through, summed lengths |
+| `speeds`, `distance` | `src/osm.rs` | `maxspeed` parsing, including rejecting 0, negative, NaN, inf and >200 km/h; haversine length |
 
 ## The synthetic Travis sample
 
@@ -60,3 +61,25 @@ Actions run [45932728431](https://github.com/mr-gril-em-up/Transportation-Simula
 Largest flow: 183 workers from block group 484530003081 to 484530004013 (downtown). Not yet done: comparing the top 20 against OnTheMap independently (F07).
 
 Second run (Actions run 45935018791, from the release-publishing branch) produced the same totals and published release `data-48453-2023`. Loading its `scenario.json` into `sim_core::Sim::from_json` with default `Params` gave a baseline in 12 s on a 4-core cloud container with sim-core as of D28 (23 s before it; 93k road nodes); drive 76%, carpool 21%, walk and bike 3.5%. That is far above the 2-second line-edit target, mostly from the size of the road graph (see ASSUMPTIONS: residential streets are kept).
+
+Routing simplification (DATA-2), checked by re-running `scenario::to_scenario` on that release's `zones.json` and `roads.json`: road nodes 93,461 → 52,210, links 121,120 → 79,583, summed link length 18,483 → 15,410 km (the dropped km are dead ends and fragments). sim-core baseline 11.96 s → 6.79 s, with mode shares and peak average speed equal to the full graph to 12 significant digits. Still above the 2 s line-edit target; the next lever is a coarser road class cut, which changes results and needs a decision.
+
+## First statewide build (2026-11-27)
+
+Actions run [45938347124](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45938347124), `--area 48`, LODES 2023, published as release `data-48-2023` (tarball 220 MB). An earlier attempt (run 45936886984) failed `validate()` on a link with a zero or unparseable `maxspeed`; `parse_speed` now rejects those.
+
+Timing on a standard `ubuntu-latest` runner: download 7.5 min, compile plus build 81 s (the build alone is about 40 s), publish 30 s. Memory was not a problem.
+
+| Manifest field | Value | Check |
+|---|---|---|
+| `zones` | 18,638 | Exact match to the 2020 Texas block group count (`tx_block_groups`) |
+| `population` | 29,145,505 | Exact match to the 2020 census Texas total |
+| `resident_workers` / `jobs` | 13,543,462 / 13,543,073 | |
+| `internal_commuters` | 13,335,103 | 98.5% of resident workers; the rest work out of state (RAC includes them, `od_main` does not) |
+| `commute_out` / `commute_in` | 0 / 0 | Expected: nothing in Texas is outside the area |
+| `flows` | 6,596,749 block-group pairs | |
+| `road_nodes` / `road_edges` / `road_km` | 1,969,256 / 2,599,358 / 747,040 km | Clip box covers the whole state |
+| `scenario_road_nodes` / `scenario_road_links` | 1,092,465 / 1,712,605 | Simplification removes 45% of nodes, as on Travis |
+| `transit_routes` | 691 | 65 rail routes (33 light rail, 22 train, 6 tram, 4 monorail): DART light rail and Silver Line, Houston METRORail, CapMetro Red Line (route 550), TEXRail, TRE, DCTA A-Train, three Amtrak services |
+
+Not yet done: loading the statewide scenario into sim-core. With 18.6k zones and 1.1M road nodes it is far beyond the Travis timing; the statewide performance chain (F31–F33) addresses that with coarser zones and a binary format.

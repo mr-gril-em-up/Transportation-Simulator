@@ -231,10 +231,16 @@ fn builds_travis_sample() {
     let stops: Vec<&str> = r.stops.iter().map(|s| s.name.as_deref().unwrap()).collect();
     assert_eq!(stops, ["Congress/5th", "Capitol Station"]);
 
-    // Scenario roads: same nodes; two-way 4-lane-default primary -> 2 per direction;
+    // Scenario roads: two-way 4-lane-default primary -> 2 per direction;
     // zones load onto local nodes, never the freeway-only node 6.
-    assert_eq!(sc.road_nodes.len(), 8);
-    assert_eq!(sc.road_links.len(), 6);
+    // Simplified for routing: dead ends with no zone (Congress south end, the two
+    // residential stubs, the freeway) are pruned and the fragment is dropped, so only
+    // the two zone connectors and the Congress link between them remain. Ids are
+    // roads.json ids.
+    let ids: Vec<u32> = sc.road_nodes.iter().map(|n| n.id).collect();
+    assert_eq!(ids, [1, 2]);
+    assert_eq!(sc.road_links.len(), 1);
+    assert_eq!((m.scenario_road_nodes, m.scenario_road_links), (2, 1));
     let fwy_end = roads
         .nodes
         .iter()

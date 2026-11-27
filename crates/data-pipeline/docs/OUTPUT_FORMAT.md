@@ -5,7 +5,7 @@ A build writes five files to `--out`. All are JSON. `scenario.json` follows sim-
 ## Id rules
 
 - **Zone id** = position in `zones.json` `zones` array = `id` in `scenario.json` `zones`. Zones are sorted by GEOID, so ids are stable for the same inputs and area.
-- **Road node id** = position in `roads.json` `nodes` = `id` in `scenario.json` `road_nodes`.
+- **Road node id** = position in `roads.json` `nodes` = `id` in `scenario.json` `road_nodes`. `scenario.json` holds only the nodes left after routing simplification (see below), so its ids are a sparse subset; look coordinates up by id, not position.
 - Ids are dense (0..n-1) but consumers should not rely on that; sim-core's schema allows sparse ids.
 - Ids are not stable across different areas or OSM snapshots. Use GEOID (zones) or OSM id (transit) for anything that must survive a rebuild.
 
@@ -41,6 +41,8 @@ Coordinates are WGS84 longitude, latitude in degrees. Lengths in meters, speeds 
 | `lines` | Always empty | The game starts with no transit; see `transit.json` |
 
 Zero-length links and self-loops are dropped from `scenario.json` (they remain in `roads.json`).
+
+`scenario.json`'s road graph is simplified for routing (DATA-2): fragments outside the largest connected component are dropped, dead ends without a zone are pruned, and chains of identical links through non-connector nodes are merged into one link (`length_m` summed). A scenario link therefore may span several `roads.json` edges; to draw it, follow `roads.json` from `from` to `to`. Zone-to-zone paths and lengths are unchanged.
 
 ## `zones.json`
 
@@ -90,7 +92,7 @@ Zero-length links and self-loops are dropped from `scenario.json` (they remain i
 
 ## `manifest.json`
 
-Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, and `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, sorted, so known lines can be checked from the manifest alone).
+Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, sorted, so known lines can be checked from the manifest alone). `scenario_road_nodes` and `scenario_road_links` count the simplified graph in `scenario.json`; `road_nodes` and `road_edges` count `roads.json`.
 
 ## Distribution
 

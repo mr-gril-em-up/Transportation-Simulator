@@ -121,6 +121,97 @@ pub fn nearest_nodes(roads: &Roads, points: &[(f64, f64)]) -> Vec<Option<u32>> {
         .collect()
 }
 
+/// Shrinks the routable graph without changing any zone-to-zone path:
+///
+/// 1. Drops links outside the largest connected component.
+/// 2. Prunes dead ends repeatedly: a node with one neighbor that is not a
+///    zone connector can carry no zone-to-zone trip.
+/// 3. Contracts pass-through nodes: a non-connector node with exactly two
+///    links of equal speed, lanes and direction becomes one longer link.
+///
+/// Node ids are kept (sim-core allows sparse ids), so scenario links still
+/// join roads.json by id. Returns the surviving node mask and links.
+pub fn simplify(
+    n_nodes: usize,
+    links: Vec<RoadLink>,
+    main: &[bool],
+    protect: &[bool],
+) -> (Vec<bool>, Vec<RoadLink>) {
+    let mut links: Vec<Option<RoadLink>> = links
+        .into_iter()
+        .map(|l| (main[l.from as usize] && main[l.to as usize]).then_some(l))
+        .collect();
+    let mut inc: Vec<Vec<usize>> = vec![vec![]; n_nodes];
+    for (i, l) in links.iter().enumerate() {
+        if let Some(l) = l {
+            inc[l.from as usize].push(i);
+            inc[l.to as usize].push(i);
+        }
+    }
+    let other = |l: &RoadLink, v: usize| if l.from as usize == v { l.to } else { l.from } as usize;
+
+    // 2. Dead-end pruning.
+    let mut queue: Vec<usize> = (0..n_nodes).collect();
+    while let Some(v) = queue.pop() {
+        if protect[v] || inc[v].is_empty() {
+            continue;
+        }
+        let mut nbrs = inc[v].iter().map(|&i| other(links[i].as_ref().unwrap(), v));
+        let first = nbrs.next().unwrap();
+        if !nbrs.all(|u| u == first) || first == v {
+            continue;
+        }
+        for i in std::mem::take(&mut inc[v]) {
+            inc[first].retain(|&j| j != i);
+            links[i] = None;
+        }
+        queue.push(first);
+    }
+
+    // 3. Degree-2 contraction. Merging v leaves its neighbors' link counts
+    // unchanged, so one pass is enough.
+    for v in 0..n_nodes {
+        if protect[v] || inc[v].len() != 2 {
+            continue;
+        }
+        let (i, j) = (inc[v][0], inc[v][1]);
+        let (li, lj) = (links[i].clone().unwrap(), links[j].clone().unwrap());
+        let (a, b) = (other(&li, v), other(&lj, v));
+        if a == b || a == v || b == v {
+            continue;
+        }
+        let same = li.speed_kph == lj.speed_kph && li.lanes == lj.lanes && li.oneway == lj.oneway;
+        // One-way: must flow a -> v -> b (or b -> v -> a).
+        let (from, to) = if !li.oneway || (li.to as usize == v && lj.from as usize == v) {
+            (a, b)
+        } else if lj.to as usize == v && li.from as usize == v {
+            (b, a)
+        } else {
+            continue;
+        };
+        if !same {
+            continue;
+        }
+        links[i] = Some(RoadLink {
+            from: from as u32,
+            to: to as u32,
+            length_m: li.length_m + lj.length_m,
+            ..li
+        });
+        links[j] = None;
+        inc[v].clear();
+        for x in &mut inc[b] {
+            if *x == j {
+                *x = i;
+            }
+        }
+    }
+    let keep: Vec<bool> = (0..n_nodes)
+        .map(|v| !inc[v].is_empty() || protect[v])
+        .collect();
+    (keep, links.into_iter().flatten().collect())
+}
+
 /// Builds the scenario. Zones with no reachable road node (no roads file)
 /// get road node 0 and a single placeholder node, so census-only builds still
 /// validate; real builds always carry roads.
@@ -132,10 +223,36 @@ pub fn to_scenario(zones: &[Zone], flows: &[Flow], roads: Option<&Roads>) -> Sce
     let roads = roads.unwrap_or(&empty);
     let pts: Vec<(f64, f64)> = zones.iter().map(|z| (z.lon, z.lat)).collect();
     let nearest = nearest_nodes(roads, &pts);
+    let links: Vec<RoadLink> = roads
+        .edges
+        .iter()
+        .filter(|e| e.length_m > 0.0 && e.from != e.to)
+        .map(|e| RoadLink {
+            from: e.from,
+            to: e.to,
+            length_m: e.length_m as f64,
+            speed_kph: e.speed_kph as f64,
+            lanes: lanes_per_direction(e),
+            capacity_vph: None,
+            toll: 0.0,
+            oneway: e.oneway,
+        })
+        .collect();
+    let mut protect = vec![false; roads.nodes.len()];
+    for n in nearest.iter().flatten() {
+        protect[*n as usize] = true;
+    }
+    let (keep, road_links) = simplify(
+        roads.nodes.len(),
+        links,
+        &largest_component(roads),
+        &protect,
+    );
     let mut road_nodes: Vec<RoadNode> = roads
         .nodes
         .iter()
         .enumerate()
+        .filter(|(i, _)| keep[*i])
         .map(|(i, n)| RoadNode {
             id: i as u32,
             lon: n[0],
@@ -168,21 +285,7 @@ pub fn to_scenario(zones: &[Zone], flows: &[Flow], roads: Option<&Roads>) -> Sce
             })
             .collect(),
         road_nodes,
-        road_links: roads
-            .edges
-            .iter()
-            .filter(|e| e.length_m > 0.0 && e.from != e.to)
-            .map(|e| RoadLink {
-                from: e.from,
-                to: e.to,
-                length_m: e.length_m as f64,
-                speed_kph: e.speed_kph as f64,
-                lanes: lanes_per_direction(e),
-                capacity_vph: None,
-                toll: 0.0,
-                oneway: e.oneway,
-            })
-            .collect(),
+        road_links,
         commutes: flows
             .iter()
             .map(|f| Commute {
@@ -192,5 +295,61 @@ pub fn to_scenario(zones: &[Zone], flows: &[Flow], roads: Option<&Roads>) -> Sce
             })
             .collect(),
         lines: vec![],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn link(from: u32, to: u32, speed: f64, oneway: bool) -> RoadLink {
+        RoadLink {
+            from,
+            to,
+            length_m: 100.0,
+            speed_kph: speed,
+            lanes: 1,
+            capacity_vph: None,
+            toll: 0.0,
+            oneway,
+        }
+    }
+
+    #[test]
+    fn simplify_contracts_chains_and_prunes_dead_ends() {
+        // Zones at 0 and 4. 0-1-2-3-4 is a two-way chain whose 2-3 link is faster.
+        // 5 is a dead-end stub off 1. 6 -> 7 -> 8 is a one-way detour 0 -> 4.
+        // 9 and 10 are a fragment outside the main component.
+        let links = vec![
+            link(0, 1, 50.0, false),
+            link(1, 2, 50.0, false),
+            link(2, 3, 80.0, false),
+            link(3, 4, 80.0, false),
+            link(1, 5, 50.0, false),
+            link(0, 6, 50.0, true),
+            link(6, 7, 50.0, true),
+            link(8, 7, 50.0, true), // wrong way: 7 cannot be contracted
+            link(8, 4, 50.0, true),
+            link(9, 10, 50.0, false),
+        ];
+        let mut main = vec![true; 11];
+        main[9] = false;
+        main[10] = false;
+        let mut protect = vec![false; 11];
+        protect[0] = true;
+        protect[4] = true;
+        let (keep, out) = simplify(11, links, &main, &protect);
+        let kept: Vec<usize> = (0..11).filter(|&i| keep[i]).collect();
+        // 5 pruned; 1 and 3 contracted; 2 kept (speed changes); 6 contracted into
+        // 0 -> 7; 7 (two in-links) and 8 (two out-links) are not pass-through.
+        assert_eq!(kept, [0, 2, 4, 7, 8]);
+        let has = |f, t, len: f64| {
+            out.iter()
+                .any(|l| l.from == f && l.to == t && (l.length_m - len).abs() < 1e-9)
+        };
+        assert!(has(0, 2, 200.0), "{out:?}");
+        assert!(has(2, 4, 200.0), "{out:?}");
+        assert!(has(0, 7, 200.0), "{out:?}");
+        assert_eq!(out.len(), 5, "{out:?}");
     }
 }

@@ -20,12 +20,13 @@ Every number or rule in the code that is not read straight from a source. Each e
 | Classes kept: motorway, trunk, primary, secondary, tertiary, their links, unclassified, residential, living_street | `osm.rs` `class_defaults` | Covers every road a commute trip uses; dropping `service` (parking aisles, driveways) roughly halves the graph | Add `service` if local-tier agents need driveways |
 | Default speeds (km/h): motorway 105, trunk 90, primary 72, secondary 64, tertiary 56, motorway/trunk links 72, other links 48, unclassified 48, residential 40, living_street 16 | `osm.rs` | Typical Texas posted limits (65, 55, 45, 40, 35, 30, 25 mph) where `maxspeed` is untagged | TxDOT speed data or calibration against observed travel times |
 | Default total lanes: motorway 4, trunk 4, primary 4, secondary 2, tertiary 2, links 1, unclassified 2, residential 2, living_street 1; one-way roads get half (rounded up) | `osm.rs` | Common US cross-sections | Tagged `lanes` (already used when present) |
-| `maxspeed` without a unit is km/h; `"NN mph"` is converted | `osm.rs` `parse_speed` | OSM convention | n/a |
+| `maxspeed` without a unit is km/h; `"NN mph"` is converted; values that are zero, negative, non-numeric or above 200 km/h fall back to the class default | `osm.rs` `parse_speed` | OSM convention. The first statewide build failed validation on a link tagged with a zero or unparseable speed that the Travis build never met | n/a |
 | Motorways and roundabouts are one-way unless `oneway=no` | `osm.rs` | OSM convention: motorway carriageways are mapped separately per direction | n/a |
 | Lanes per direction in the scenario = total / 2 for two-way roads (min 1) | `scenario.rs` | sim-core's `lanes` is per direction | n/a. Odd totals (3 = two lanes plus a center turn lane) round down on purpose |
 | Clip box = zone bbox + 0.05° | `lib.rs`, `--margin` | Keeps the roads just past the county line that boundary zones use | Clip by county polygon if the bbox pulls in too much of neighboring counties |
 | Edges that cross the clip box are dropped, not cut | `osm.rs` `build_roads` | No dangling half-edges; the margin makes the loss irrelevant | n/a |
 | Zone connector = nearest node on a non-motorway, non-trunk road in the largest connected component, straight line | `scenario.rs` | One connector per zone is what sim-core's schema takes; freeway nodes would make access free; fragments cut off by clipping would leave a zone with no paths | Multiple connectors per zone if sim-core adds them |
+| Routing graph in scenario.json is simplified: fragments dropped, dead ends without a zone pruned, identical pass-through links merged | `scenario.rs` | None of these can carry a zone-to-zone trip or change a path length, and sim-core's run time scales with nodes (DATA-2) | Keep a node if sim-core later loads transit stops or non-work destinations onto road nodes: add it to the protected set |
 
 ## Transit
 

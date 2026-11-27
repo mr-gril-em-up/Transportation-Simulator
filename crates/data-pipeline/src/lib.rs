@@ -47,6 +47,10 @@ pub struct Manifest {
     pub road_edges: Option<usize>,
     pub road_km: Option<f64>,
     pub transit_routes: Option<usize>,
+    /// Road nodes and links in scenario.json after routing simplification
+    /// (`scenario::simplify`); smaller than `road_nodes`/`road_edges`.
+    pub scenario_road_nodes: usize,
+    pub scenario_road_links: usize,
     /// Non-bus routes as "mode | ref | name | operator | stops", one per OSM
     /// relation (usually one per direction). Lets a build be checked for known
     /// lines, e.g. CapMetro's Red Line, from the manifest alone.
@@ -139,6 +143,8 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         road_edges: None,
         road_km: None,
         transit_routes: None,
+        scenario_road_nodes: 0,
+        scenario_road_links: 0,
         rail_routes: None,
     };
 
@@ -175,6 +181,8 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
     }
 
     let scenario = scenario::to_scenario(&zones, &flows, roads.as_ref());
+    m.scenario_road_nodes = scenario.road_nodes.len();
+    m.scenario_road_links = scenario.road_links.len();
     scenario
         .validate()
         .map_err(|e| anyhow::anyhow!("scenario failed sim-core validation: {e}"))?;

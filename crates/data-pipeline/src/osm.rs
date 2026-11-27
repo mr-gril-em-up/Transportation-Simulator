@@ -46,12 +46,16 @@ const TRANSIT_MODES: &[&str] = &[
 ];
 
 /// "65 mph" -> 104.6, "50" -> 50 (OSM default unit is km/h).
+/// Parses OSM `maxspeed` to km/h. Anything that is not a plausible speed
+/// (`0`, `nan`, `inf`, typos above 200 km/h) returns `None` so the class
+/// default applies; sim-core rejects links with non-positive speed.
 fn parse_speed(s: &str) -> Option<f32> {
     let s = s.trim();
-    if let Some(n) = s.strip_suffix("mph") {
-        return n.trim().parse::<f32>().ok().map(|v| v * 1.609_344);
-    }
-    s.parse().ok()
+    let v = match s.strip_suffix("mph") {
+        Some(n) => n.trim().parse::<f32>().ok()? * 1.609_344,
+        None => s.parse::<f32>().ok()?,
+    };
+    (v.is_finite() && v > 0.0 && v <= 200.0).then_some(v)
 }
 
 fn haversine_m(a: [f64; 2], b: [f64; 2]) -> f64 {
@@ -325,6 +329,9 @@ mod tests {
         assert!((parse_speed("65 mph").unwrap() - 104.6).abs() < 0.1);
         assert_eq!(parse_speed("50"), Some(50.0));
         assert_eq!(parse_speed("none"), None);
+        for bad in ["0", "0 mph", "-30", "nan", "inf", "550"] {
+            assert_eq!(parse_speed(bad), None, "{bad}");
+        }
     }
 
     #[test]
