@@ -200,6 +200,7 @@ fn builds_travis_sample() {
         margin_deg: 0.05,
         level: Level::BlockGroup,
         existing_lines: false,
+        highway_only: false,
     };
     let m = build(&cfg).unwrap();
 
@@ -369,6 +370,7 @@ fn whole_state_area_keeps_both_counties() {
         margin_deg: 0.05,
         level: Level::BlockGroup,
         existing_lines: false,
+        highway_only: false,
     };
     let m = build(&cfg).unwrap();
     assert_eq!(m.zones, 5);
@@ -395,6 +397,7 @@ fn county_level_merges_block_groups() {
         margin_deg: 0.05,
         level: Level::County,
         existing_lines: false,
+        highway_only: false,
     };
     let m = build(&cfg).unwrap();
     assert_eq!((m.zones, m.block_groups, m.zone_level), (2, 5, "county"));
@@ -406,5 +409,35 @@ fn county_level_merges_block_groups() {
     assert_eq!(zones.zones[0].population, 6600);
     let s: sim_core::ScenarioInput = read(&out, "scenario.json");
     assert_eq!(s.zones.len(), 2);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn highway_roads_keep_only_motorway_to_secondary() {
+    let root = tmp("highway");
+    let (raw, out) = (root.join("raw"), root.join("out"));
+    write_sample(&raw);
+    let cfg = |out: PathBuf, highway_only| Config {
+        raw: raw.clone(),
+        out,
+        area: Area {
+            prefixes: vec!["48453".into()],
+        },
+        year: 2022,
+        margin_deg: 0.05,
+        level: Level::BlockGroup,
+        existing_lines: false,
+        highway_only,
+    };
+    let all = build(&cfg(root.join("all"), false)).unwrap();
+    let m = build(&cfg(out.clone(), true)).unwrap();
+    assert_eq!(m.road_classes, "highway");
+    let roads: Roads = read(&out, "roads.json");
+    assert!(!roads.edges.is_empty());
+    assert!(roads
+        .edges
+        .iter()
+        .all(|e| data_pipeline::osm::is_highway_class(&e.class)));
+    assert!(m.road_edges.unwrap() < all.road_edges.unwrap());
     let _ = std::fs::remove_dir_all(root);
 }

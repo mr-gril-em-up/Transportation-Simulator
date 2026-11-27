@@ -16,6 +16,11 @@ on:
         type: choice
         options: [bg, tract, county]
         default: bg
+      roads:
+        description: "Road classes: all, or highway (motorway through secondary, for the statewide tier)"
+        type: choice
+        options: [all, highway]
+        default: all
       existing_lines:
         description: "Put today's transit network into scenario.json lines (off until the app can drop them; always in existing_lines.json)"
         type: boolean
@@ -39,7 +44,7 @@ jobs:
       - run: cargo clippy --all-targets --locked -- -D warnings
 
   # Manual run: downloads real Census + OSM data, builds the area, and
-  # publishes the output as GitHub Release "data-<area>-<year>[-<level>]" (replacing
+  # publishes the output as GitHub Release "data-<area>-<year>[-<level>][-highway]" (replacing
   # assets on re-run) so consumers fetch it with scripts/download-build.sh.
   build-data:
     if: github.event_name == 'workflow_dispatch'
@@ -50,13 +55,13 @@ jobs:
       AREA: ${{ inputs.area }}
       YEAR: ${{ inputs.year }}
       LEVEL: ${{ inputs.level }}
-      # Block-group builds keep the old tag; coarser levels get a suffix.
-      SUFFIX: ${{ inputs.level != 'bg' && format('-{0}', inputs.level) || '' }}
+      # Block-group builds keep the old tag; coarser levels and highway-only roads get suffixes.
+      SUFFIX: ${{ inputs.level != 'bg' && format('-{0}', inputs.level) || '' }}${{ inputs.roads == 'highway' && '-highway' || '' }}
       SKIP_OSM: ${{ inputs.skip_osm && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
       - run: ./scripts/fetch.sh
-      - run: cargo run --release -- --area "$AREA" --year "$YEAR" --level "$LEVEL" ${{ inputs.existing_lines && '--existing-lines' || '' }} --out data/out/area
+      - run: cargo run --release -- --area "$AREA" --year "$YEAR" --level "$LEVEL" --roads "${{ inputs.roads || 'all' }}" ${{ inputs.existing_lines && '--existing-lines' || '' }} --out data/out/area
       - uses: actions/upload-artifact@v4
         with:
           name: tsim-data-${{ inputs.area }}-${{ inputs.year }}-${{ inputs.level }}

@@ -53,6 +53,7 @@ tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--mar
 | `--area` | `48453` | Comma-separated GEOID prefixes. `48453` = Travis County, `48453,48491` = Travis + Williamson, `48` = Texas |
 | `--year` | `2023` | LODES data year, and the end year of the ACS 5-year estimates (must match the downloaded file names) |
 | `--level` | `bg` | Zone level of the outputs: `bg` (block group), `tract` or `county`. Coarser levels merge block groups after ACS and land area are filled (DATA-5). Texas has 18,638 block groups, about 6,900 tracts and 254 counties |
+| `--roads` | `all` | `highway` keeps motorway, trunk, primary and secondary roads and their ramps only (DATA-8), for the statewide tier. Releases get a `-highway` tag suffix |
 | `--margin` | `0.05` | Degrees of padding around the zones' bounding box when clipping OSM (about 5 km) |
 
 The build prints `manifest.json` to stdout and the elapsed time to stderr.
@@ -78,6 +79,7 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 - **Today's network as existing lines** (DATA-7): `existing_lines.json` holds one sim-core line per GTFS-matched route, so calibration and a later "start with today's network" setting use the same network. `--existing-lines` also puts them in `scenario.json` `lines`; it is off by default because sim-core loads `lines` with no switch.
 - **GTFS headways** (DATA-6): CapMetro routes in `transit.json` carry weekday peak and midday headways and span from the GTFS feed, matched by route number.
 - **Commute mode shares** from ACS B08301, summed over the area, go in the manifest for mode-choice calibration (F14).
+- **Highway-only roads** (DATA-8): `--roads highway` drops roads below secondary, so a statewide tract build has a road graph small enough for the strategic tier (F34).
 - **Tract and county zone levels** (DATA-5): `--level tract|county` merges block groups by GEOID prefix after the block-group build. Counts add; centroid, income and zero-car share are population-weighted; flows inside one coarse zone become intrazonal. The statewide scenario at block-group level is far too large for a sub-20 s day, so coarser levels come first.
 - **Zone connectors** (D19) go to the nearest local-road node (never motorway or trunk) in the largest connected component, so access is not free and clipping fragments cannot strand a zone.
 - **Lanes per direction in `scenario.json`**, because sim-core capacity is per direction; `roads.json` keeps OSM's total for drawing.

@@ -35,6 +35,13 @@ fn class_defaults(class: &str) -> Option<(f32, u8)> {
     })
 }
 
+/// Classes kept by `--roads highway` (DATA-8): motorway through secondary and
+/// their ramps, for the statewide strategic tier (F34).
+pub fn is_highway_class(class: &str) -> bool {
+    let base = class.strip_suffix("_link").unwrap_or(class);
+    matches!(base, "motorway" | "trunk" | "primary" | "secondary")
+}
+
 const TRANSIT_MODES: &[&str] = &[
     "bus",
     "trolleybus",
@@ -85,7 +92,9 @@ struct RouteRec {
     stop_ids: Vec<i64>,
 }
 
-pub fn read_osm(path: &Path, bbox: &BBox) -> Result<(Roads, Transit)> {
+/// With `highway_only`, roads below secondary are skipped (see
+/// [`is_highway_class`]); transit is read either way.
+pub fn read_osm(path: &Path, bbox: &BBox, highway_only: bool) -> Result<(Roads, Transit)> {
     // Pass 1: ways and route relations.
     let mut ways: Vec<WayRec> = Vec::new();
     let mut routes: Vec<RouteRec> = Vec::new();
@@ -99,6 +108,9 @@ pub fn read_osm(path: &Path, bbox: &BBox) -> Result<(Roads, Transit)> {
             let Some((def_speed, def_lanes)) = class_defaults(class) else {
                 return;
             };
+            if highway_only && !is_highway_class(class) {
+                return;
+            }
             if tags.get("area") == Some(&"yes") {
                 return;
             }

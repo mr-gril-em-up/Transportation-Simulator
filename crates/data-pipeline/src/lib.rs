@@ -33,6 +33,8 @@ pub struct Config {
     /// Put today's network into `scenario.json` `lines` (DATA-7). It is always
     /// written to `existing_lines.json`.
     pub existing_lines: bool,
+    /// Keep only motorway through secondary roads (`--roads highway`, DATA-8).
+    pub highway_only: bool,
 }
 
 /// Summary written next to the data: counts, totals and the M0 exit-test
@@ -78,6 +80,8 @@ pub struct Manifest {
     pub existing_lines: usize,
     /// OSM transit routes given GTFS headways (`null` without a GTFS feed).
     pub gtfs_routes_matched: Option<usize>,
+    /// `all` or `highway` (`--roads`).
+    pub road_classes: &'static str,
     /// `block_group`, `tract` or `county`.
     pub zone_level: &'static str,
     /// Block groups merged into `zones` (equals `zones` at block group level).
@@ -169,6 +173,7 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         commute_mode_shares: None,
         gtfs_routes_matched: None,
         existing_lines: 0,
+        road_classes: if cfg.highway_only { "highway" } else { "all" },
         zone_level: cfg.level.name(),
         block_groups: zones.len(),
     };
@@ -246,7 +251,7 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
                     b[3].max(z.lat + mg),
                 ]
             });
-        let (r, mut transit) = osm::read_osm(&pbf, &bbox)?;
+        let (r, mut transit) = osm::read_osm(&pbf, &bbox, cfg.highway_only)?;
         let gtfs_dir = raw.join("gtfs_capmetro");
         if gtfs_dir.join("routes.txt").exists() {
             let hw = gtfs::read_headways(&gtfs_dir)?;
