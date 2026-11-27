@@ -58,10 +58,29 @@ function renderBudget(b: Budget): void {
   // The change since the last call shows what the edit just cost (or the grant it won).
   const delta = lastCash === null ? 0 : b.cash - lastCash;
   lastCash = b.cash;
+  // Bond sizes offered: what covers the deficit (rounded up to $10M), then fixed steps.
+  const cover = b.cash < 0 ? Math.ceil(-b.cash / 1e7) * 1e7 : 0;
+  const sizes = [...new Set([cover, 100e6, 500e6, 1e9].filter((x) => x > 0))];
+  const terms = `${(b.bondRate * 100).toFixed(2)}% over ${Math.round(b.bondTermMonths / 12)} years, payments start next month`;
+  const status =
+    b.bankruptMonth !== null
+      ? `<div class="alert">Bankrupt since month ${b.bankruptMonth + 1}: the game is over. The sim keeps running so you can see why.</div>`
+      : b.distressedMonths > 0
+        ? `<div class="warn">${b.distressedMonths} of ${b.bankruptcyMonths} months in a row in distress (cash below zero or debt payments above the operating surplus). Reaching ${b.bankruptcyMonths} is bankruptcy.</div>`
+        : b.cash < 0
+          ? `<div class="warn">Cash is negative. Each month that ends below zero counts toward bankruptcy (${b.bankruptcyMonths} in a row).</div>`
+          : "";
   $("budget").innerHTML =
     `Cash <b class="${b.cash < 0 ? "neg" : ""}">${money(b.cash)}</b>` +
     (Math.abs(delta) >= 1 ? ` (${delta > 0 ? "+" : ""}${money(delta)} last change)` : "") +
-    `<br>This month: ${money(b.capitalSpentThisMonth)} built, ${money(b.grantsThisMonth)} federal grants`;
+    `<br>This month: ${money(b.capitalSpentThisMonth)} built, ${money(b.grantsThisMonth)} federal grants` +
+    (b.debt > 0 ? `<br>Debt ${money(b.debt)}, ${money(b.debtServicePerMonth)}/month in payments` : "") +
+    status +
+    (b.bankruptMonth === null
+      ? `<div class="row"><select id="bond-size" title="${terms}">${sizes
+          .map((x) => `<option value="${x}">${money(x)}${x === cover ? " (covers deficit)" : ""}</option>`)
+          .join("")}</select> <button id="btn-bond" title="${terms}">Issue bond</button></div>`
+      : "");
 }
 
 function makeRoute(id: string, mode: Mode, pts: LngLat[], stopNames?: string[], name?: string): RouteSpec {
@@ -307,6 +326,15 @@ $("btn-demo").onclick = () =>
     headwayMin: 32,
     offpeakHeadwayMin: 51,
   });
+
+// Bonds (F26): the budget panel re-renders, so delegate from its container.
+$("budget").addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).id !== "btn-bond") return;
+  const principal = Number(($("bond-size") as HTMLSelectElement).value);
+  void queued(() => sim.issueBond(principal)).then(renderBudget, (err) => {
+    $("sim-ms").textContent = `${sim.label} error: ${err}`;
+  });
+});
 
 $("route-list").addEventListener("change", (e) => {
   const el = e.target as HTMLSelectElement;

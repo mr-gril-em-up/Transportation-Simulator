@@ -202,8 +202,49 @@ impl SimState {
     }
 
     /// The transit authority's books (cash, month in progress, settled months).
-    pub fn ledger(&self) -> Result<Ledger, String> {
-        self.with(|inner| Ok(inner.sim.as_ref().unwrap().ledger().clone()))
+    pub fn ledger(&self) -> Result<LedgerOut, String> {
+        self.with(|inner| Ok(ledger_out(inner.sim.as_ref().unwrap())))
+    }
+
+    /// Borrow `principal` dollars as a bond at the game's rate and term (F26).
+    /// Errors once the authority is bankrupt. Returns the ledger after.
+    pub fn issue_bond(&self, principal: f64) -> Result<LedgerOut, String> {
+        self.with(|inner| {
+            let sim = inner.sim.as_mut().unwrap();
+            sim.issue_bond(principal).map_err(|e| e.to_string())?;
+            Ok(ledger_out(sim))
+        })
+    }
+}
+
+/// sim-core's `Ledger` plus the figures the HUD needs to explain debt and
+/// bankruptcy without knowing sim-core's parameters.
+#[derive(Serialize, Debug)]
+pub struct LedgerOut {
+    /// Cash, month in progress, history, bonds, distressed months, bankrupt month.
+    #[serde(flatten)]
+    ledger: Ledger,
+    /// Principal still owed on all bonds.
+    debt: f64,
+    /// Sum of the monthly payments on outstanding bonds.
+    debt_service_per_month: f64,
+    /// Distressed months in a row that end the game (`Params::bankruptcy_months`).
+    bankruptcy_months: u32,
+    /// Rate and term a new bond gets.
+    bond_rate: f64,
+    bond_term_months: u32,
+}
+
+fn ledger_out(sim: &Sim) -> LedgerOut {
+    let l = sim.ledger();
+    let p = &sim.params;
+    LedgerOut {
+        debt: l.debt(),
+        debt_service_per_month: l.bonds.iter().map(|b| b.payment).sum(),
+        bankruptcy_months: p.bankruptcy_months,
+        bond_rate: p.bond_rate,
+        bond_term_months: p.bond_term_months(),
+        ledger: l.clone(),
     }
 }
 
@@ -444,9 +485,19 @@ pub async fn pending_routes(state: tauri::State<'_, SimState>) -> Result<Vec<Pen
 
 /// The ledger: cash and this month's capital spend and grants.
 #[tauri::command]
-pub async fn ledger(state: tauri::State<'_, SimState>) -> Result<Ledger, String> {
+pub async fn ledger(state: tauri::State<'_, SimState>) -> Result<LedgerOut, String> {
     let s = state.inner().clone();
     blocking(move || s.ledger()).await
+}
+
+/// Issue a bond for `principal` dollars; returns the ledger after (F26).
+#[tauri::command]
+pub async fn issue_bond(
+    state: tauri::State<'_, SimState>,
+    principal: f64,
+) -> Result<LedgerOut, String> {
+    let s = state.inner().clone();
+    blocking(move || s.issue_bond(principal)).await
 }
 
 /// Current game clock (F21). The client polls it and interpolates in between.
@@ -529,17 +580,21 @@ mod tests {
             r#"{"name":"R","mode":"light_rail","headway_min":10,
             "stops":[{"lon":-97.76,"lat":30.25},{"lon":-97.743,"lat":30.268},{"lon":-97.73,"lat":30.29}]}"#,
         );
-        let cash0 = state.ledger().unwrap().cash;
+        let cash0 = state.ledger().unwrap().ledger.cash;
         let p = state.preview(rail.clone()).unwrap().preview;
         assert!(p.capital_cost > 0.0 && p.line.daily_boardings > 0.0);
-        assert_eq!(state.ledger().unwrap().cash, cash0, "preview is free");
+        assert_eq!(
+            state.ledger().unwrap().ledger.cash,
+            cash0,
+            "preview is free"
+        );
         assert!(
             state.remove("none").unwrap().is_empty(),
             "preview kept no line"
         );
 
         state.upsert("r1".into(), rail).unwrap();
-        let l = state.ledger().unwrap();
+        let l = state.ledger().unwrap().ledger;
         assert!((l.current.capital_spent - p.capital_cost).abs() < 1.0);
         assert!((cash0 - l.cash - (p.capital_cost - p.federal_grant)).abs() < 1.0);
     }
@@ -560,7 +615,11 @@ mod tests {
         state.upsert("b".into(), bus).unwrap();
         let c = state.skip_to_next_month().unwrap();
         assert_eq!(c.day, 30);
-        assert_eq!(state.ledger().unwrap().history.len(), 1, "month settled");
+        assert_eq!(
+            state.ledger().unwrap().ledger.history.len(),
+            1,
+            "month settled"
+        );
         assert_eq!(state.results().unwrap().len(), 1);
     }
 
@@ -611,6 +670,31 @@ mod tests {
         }
         assert!(state.pending().unwrap().is_empty());
         assert_eq!(state.results().unwrap().len(), 1, "open now");
+    }
+
+    #[test]
+    fn bonds_add_cash_and_debt_and_stop_at_bankruptcy() {
+        let state = SimState::start_with(|| Ok(synth::generate(&synth::SynthConfig::small())));
+        let l = state.issue_bond(100e6).unwrap();
+        assert!((l.ledger.cash - 100e6).abs() < 1.0);
+        assert!((l.debt - 100e6).abs() < 1.0);
+        assert!(l.debt_service_per_month > 0.0 && l.bond_term_months > 0);
+        assert!(state.issue_bond(-5.0).is_err());
+
+        // Run deep into the red: a big bond's payments exceed the small
+        // region's operating surplus every month until bankruptcy.
+        state.issue_bond(50e9).unwrap();
+        let months = state.ledger().unwrap().bankruptcy_months;
+        for _ in 0..=months {
+            state.skip_to_next_month().unwrap();
+        }
+        let l = state.ledger().unwrap();
+        assert!(
+            l.ledger.bankrupt_month.is_some(),
+            "{} distressed",
+            l.ledger.distressed_months
+        );
+        assert!(state.issue_bond(1e6).unwrap_err().contains("bankrupt"));
     }
 
     #[test]

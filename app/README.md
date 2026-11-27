@@ -13,6 +13,7 @@ from a TypeScript mock when the client runs in a plain browser.
 ![Browser client (mock sim): Red Line demo and a drawn bus line](docs/img/city-view.png)
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
 ![Editing a line: stops ringed in black can be dragged, added or deleted](docs/img/stop-editing.png)
+![Budget after a bond: debt, payments and the distress count toward bankruptcy](docs/img/bonds.png)
 ![A line under construction: faded on the map, opening day in the panel](docs/img/under-construction.png)
 ![Sim-driven clock after Skip to next month: Day 31, budget settled, ridership re-run](docs/img/sim-clock.png)
 ![Drawing a rail line: the hint box previews capital cost, grant and riders before you build](docs/img/cost-preview.png)
@@ -83,7 +84,16 @@ then waits for the build. The terminal prints
 - **Budget** (top of the ridership panel): cash on hand, the change from the last edit, and this
   month's capital spend and federal grants. Building charges capital less any grant; extending a
   line charges only the added cost; shrinking or deleting refunds nothing (sim-core rules, F26).
-  Cash starts at $0 and can go negative until bonds exist.
+  Cash starts at $0, so the first line puts it below zero.
+- **Bonds and bankruptcy** (F26, in the budget panel): pick an amount (the first option covers the
+  current deficit, rounded up to $10M) and **Issue bond**. Cash arrives at once; monthly payments
+  (30-year level payment at 5.43%, the rates in the button tooltip) start next month. The panel
+  shows debt and monthly payments. A month that ends with cash below zero, or with debt payments
+  above the operating surplus (fares + operating assistance + local tax - operating cost), is
+  distressed; the panel counts them ("3 of 12 months in a row in distress"). Twelve in a row is
+  bankruptcy: a red banner says the game is over, the bond button disappears, and the sim keeps
+  running so you can see why. Note that a line under construction carries no riders and taxes
+  no one, so bond payments taken out to build it count as distress until it opens.
 - **Construction** (F24): a new line is paid for when you draw it but opens only after its
   mode's build time divided by 12 (light rail about 6 months, so about 183 game days; the Red
   Line demo, commuter rail, about 122). Until then the panel says "Under construction, opens Day
@@ -141,7 +151,8 @@ interface SimClient {
   upsertRoute(route: RouteSpec): Promise<RouteResult[]>; // add or replace; results for EVERY route
   removeRoute(id: string): Promise<RouteResult[]>;
   previewRoute(route: RouteSpec): Promise<RoutePreview>; // cost + forecast, nothing charged
-  budget(): Promise<Budget>;                             // cash and this month's capital/grants
+  budget(): Promise<Budget>;                             // cash, month, debt, distress, bankruptcy
+  issueBond(principal: number): Promise<Budget>;         // borrow; rejects once bankrupt
   results(): Promise<RouteResult[]>;                     // re-read after the daily re-run
   clock(): Promise<ClockState>;                          // { gameSeconds, timelapse, paused, day }
   setClock(c: { paused?; timelapse? }): Promise<ClockState>;
@@ -151,7 +162,9 @@ interface SimClient {
 
 - `RoutePreview`: `dailyRiders`, `capitalCost` (USD), `federalGrant` (USD, 0 when capital per
   daily rider exceeds $600k), optional `operatingCostPerDay`.
-- `Budget`: `cash`, `capitalSpentThisMonth`, `grantsThisMonth` (all USD).
+- `Budget`: `cash`, `capitalSpentThisMonth`, `grantsThisMonth`, `debt`, `debtServicePerMonth` (all
+  USD), `distressedMonths`, `bankruptcyMonths` (12), `bankruptMonth` (game month or `null`),
+  `bondRate`, `bondTermMonths`.
 
 - `RouteSpec`: `id` (client string, `r1`, `r2`, ...), `name`, `mode`, `color`, `stops[]`
   (`id`, `name`, `lngLat` as WGS84 `[lon, lat]` in degrees), `headwayMin` (peak minutes), optional `offpeakHeadwayMin` (midday and evening; absent means
@@ -176,7 +189,8 @@ interface SimClient {
 | `desire_lines` | `n: number` | Top `n` zone pairs by daily trips: `{ from: [lon,lat], to: [lon,lat], trips, transit_trips }[]`, largest first |
 | `pending_routes` | none | Routes under construction: `{ route_id, opens_day, replaces_open_line }[]` (sim-core `PendingLine` with client ids) |
 | `preview_route` | `line: TransitLine` | sim-core `LinePreview` plus `opens_day`: `{ line: LineResult, capital_cost, federal_grant, capital_per_daily_boarding, opens_day }`. Runs under the Sim lock (sim-core adds and removes the line while it evaluates, 40 to 80 ms) |
-| `ledger` | none | sim-core `Ledger`: `{ cash, current: MonthStatement, history: MonthStatement[], served_population }` |
+| `ledger` | none | sim-core `Ledger` (`cash`, `current`, `history`, `served_population`, `bonds`, `distressed_months`, `bankrupt_month`) plus `debt`, `debt_service_per_month`, `bankruptcy_months`, `bond_rate`, `bond_term_months` |
+| `issue_bond` | `principal: number` | Same as `ledger`, after borrowing. Errors on a non-positive amount or once bankrupt |
 | `clock` | none | `{ game_seconds, timelapse, paused, day }` (sim-core `Clock` plus whole days) |
 | `set_clock` | `paused?: boolean`, `timelapse?: number` | Same as `clock`; omitted fields unchanged, non-positive time-lapse ignored |
 | `skip_to_next_month` | none | Same as `clock`, after re-running the day and settling the month |
@@ -259,6 +273,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | F16 Line drawing | Partial: draw with capital cost, grant and ridership preview; edit stops (move, insert, delete), rename, headway, delete line. Missing: mode and fare pickers |
 | F17 Ridership readout | Done for line totals and per-stop boardings, plus cost and farebox from sim-core |
 | F24 Construction period | Done (app): lines under construction draw faded, opening day in panel and drawing hint; rebuilds keep the old version running |
+| F26 Funding | Partial (app): bonds, debt and payments, distress count and bankruptcy banner. Missing: monthly statement view, state appropriation (sim-core) |
 | F21 Clock and time-lapse | Done (app): sim-core's clock driven by a shell worker; pause, 1/2/10/60x, skip to next month; daily re-run refreshes ridership |
 | F41 / F42 Schematic and morph | Prototype: heuristic layout, no pins |
 | F06 Desire lines | Done (app): layer from `Sim::desire_lines`; the M0 exit check (F07) is the pipeline's |

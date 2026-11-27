@@ -140,7 +140,18 @@ export class MockSim implements SimClient {
   private routes = new Map<string, RouteSpec>();
   // Same rules as sim-core: an edit pays only capital beyond what the line already paid.
   private paid = new Map<string, number>();
-  private ledger: Budget = { cash: 0, capitalSpentThisMonth: 0, grantsThisMonth: 0 };
+  private ledger: Budget = {
+    cash: 0,
+    capitalSpentThisMonth: 0,
+    grantsThisMonth: 0,
+    debt: 0,
+    debtServicePerMonth: 0,
+    distressedMonths: 0,
+    bankruptcyMonths: 12,
+    bankruptMonth: null,
+    bondRate: 0.0543,
+    bondTermMonths: 360,
+  };
 
   async upsertRoute(route: RouteSpec): Promise<RouteResult[]> {
     this.routes.set(route.id, route);
@@ -163,6 +174,16 @@ export class MockSim implements SimClient {
   /** The mock builds instantly: nothing is ever under construction. */
   async pendingRoutes(): Promise<PendingRoute[]> {
     return [];
+  }
+
+  /** Cash and debt only: the mock never settles months, so no payments or bankruptcy. */
+  async issueBond(principal: number): Promise<Budget> {
+    if (!(principal > 0)) throw new Error(`bond principal ${principal} must be positive`);
+    const r = this.ledger.bondRate / 12;
+    this.ledger.cash += principal;
+    this.ledger.debt += principal;
+    this.ledger.debtServicePerMonth += (principal * r) / (1 - (1 + r) ** -this.ledger.bondTermMonths);
+    return { ...this.ledger };
   }
 
   async budget(): Promise<Budget> {

@@ -174,11 +174,39 @@ describe("build cost (F16)", () => {
     expect(
       fromPreview({ line: { daily_boardings: 1234.6, operating_cost_per_day: 900 }, capital_cost: 5e6, federal_grant: 2.5e6, opens_day: 183 }),
     ).toEqual({ dailyRiders: 1235, capitalCost: 5e6, federalGrant: 2.5e6, operatingCostPerDay: 900, opensDay: 183 });
-    expect(fromLedger({ cash: -1, current: { capital_spent: 2, federal_capital_grants: 1 } })).toEqual({
+    expect(
+      fromLedger({
+        cash: -1,
+        current: { capital_spent: 2, federal_capital_grants: 1 },
+        distressed_months: 3,
+        bankrupt_month: null,
+        debt: 5,
+        debt_service_per_month: 0.5,
+        bankruptcy_months: 12,
+        bond_rate: 0.0543,
+        bond_term_months: 360,
+      }),
+    ).toEqual({
       cash: -1,
       capitalSpentThisMonth: 2,
       grantsThisMonth: 1,
+      debt: 5,
+      debtServicePerMonth: 0.5,
+      distressedMonths: 3,
+      bankruptcyMonths: 12,
+      bankruptMonth: null,
+      bondRate: 0.0543,
+      bondTermMonths: 360,
     });
+  });
+
+  it("mock bonds add cash and debt with a level monthly payment", async () => {
+    const s = new MockSim();
+    const b = await s.issueBond(100e6);
+    expect(b.cash).toBe(100e6);
+    expect(b.debt).toBe(100e6);
+    expect(b.debtServicePerMonth).toBeCloseTo(563_440, -2); // 30-year annuity at 5.43%
+    await expect(s.issueBond(0)).rejects.toThrow();
   });
 
   it("formats money for the HUD", async () => {

@@ -106,6 +106,7 @@ interface SimClient {
   desireLines(n: number): Promise<DesireLine[]>;
   previewRoute(route: RouteSpec): Promise<RoutePreview>; // preview_route: nothing charged
   budget(): Promise<Budget>;                             // ledger
+  issueBond(principal: number): Promise<Budget>;         // issue_bond
 }
 interface RouteSpec { id; name; mode: Mode; color; stops: Stop[]; headwayMin; fare }
 interface RouteResult { routeId; dailyRiders; boardingsByStop: Record<stopId, number>;
@@ -136,6 +137,17 @@ And back (`fromLineResult`): `daily_boardings` becomes `dailyRiders`,
 `LineResult` fields (segment loads, peak load against capacity, vehicles
 required) already cross the IPC boundary and are ignored until the UI renders
 them.
+
+### Bonds and bankruptcy (F26)
+
+All money rules are sim-core's (`Sim::issue_bond`, `Ledger::settle`). The
+shell's `LedgerOut` adds what the HUD needs to explain them without knowing
+sim-core's `Params`: total debt, monthly payments, the bankruptcy threshold
+and the rate and term a new bond would get. `renderBudget` turns
+`distressed_months` and `bankrupt_month` into a warning or a game-over
+banner and offers bond sizes (deficit cover first). The bond button goes
+through the serial sim queue like every other call. The mock adds cash and
+debt but never settles months, so it shows no payments or distress.
 
 ### Construction period (F24)
 
