@@ -69,7 +69,7 @@ refund nothing. There is no operating settlement in the mock.
 
 The Red Line demo (the 10 real stations from the pipeline's Travis build,
 30-minute headway, MetroRail's $3.50 fare) returns about **1,970 weekday riders**. `ASC_CAR = 2.0`
-was tuned to land between NTD's 1,600 to 1,700 a day and sim-core's 2,285 for
+was tuned to land between APTA's ~1,500 a weekday and sim-core's 2,285 for
 the same stations. A 10-stop bus line on the
 Guadalupe/Lamar corridor gives about 1,100 at 15 minutes and 1,500 at
 10 minutes, below the real 801/1-corridor numbers; acceptable for a mock.

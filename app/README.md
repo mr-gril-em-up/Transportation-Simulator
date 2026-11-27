@@ -200,7 +200,7 @@ block-group zones, 1.29M people, 948k jobs, LODES 2023 commutes, OSM roads). Wit
 uses `sim_core::synth::generate(&SynthConfig::default())`, a Travis-sized synthetic region (676
 zones, 1.3M people) centered on downtown Austin. On the real build, the Red Line demo returns
 about 2,450 riders/day once open (Day 151) at 30-minute headway and MetroRail's $3.50 fare
-(sim-core's own run: 2,285 on day 0; NTD: about 1,600 to 1,700). At a $1.25 fare it was about
+(sim-core's own run: 2,285 on day 0; APTA: about 1,500 a weekday). At a $1.25 fare it was about
 3,200. A line edit
 takes under 100 ms.
 
@@ -239,7 +239,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map laye
 | No monthly statement view; settlement shows only as the cash change | Budget panel (M2) |
 | A day boundary re-runs the day while holding the Sim lock, so an edit made at midnight waits for it (well under a second on the synthetic region, about 2 s on real Travis) | Fine for M1; revisit with the statewide scenario (M3) |
 | `npm run tauri build` bundles no scenario: an installed app on another machine opens on the synthetic region | Bundle the build as a Tauri resource when packaging matters (M3 release) |
-| Startup on real Travis takes about 11 s in `tauri dev` | sim-core startup work (graph contraction, SIM stream) |
+| Startup on real Travis takes about 11 s in `tauri dev` (measured before SIM-2 and DATA-2 merged; expect less now) | Re-measure; further gains are sim-core startup work |
 | Mode picker is two buttons (bus, light rail); fare fixed per mode ($3.50 commuter rail like MetroRail, $1.25 otherwise) | F16 |
 | `park_ride` is all-or-nothing per line | Per-stop properties in the stop editor (F16) |
 | Clock is client-side; `Sim::tick` is not called, so car congestion only updates at sim build | F21 |
