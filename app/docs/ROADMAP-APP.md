@@ -4,25 +4,27 @@ App-side work only. The project-wide Gantt roadmap lives in the root
 `docs/ROADMAP.md` (owned by the docs stream). Milestones follow the design
 doc.
 
-## Done (this PR)
+## Done
 
-- Tauri 2 shell + Vite/TypeScript/MapLibre client
-- Texas-to-neighborhood zoom with zoom bands, Travis County focus
-- Draw bus and rail lines; Red Line demo; ridership panel with headway control
-- `SimClient` interface with a mock backend
-- Tube-style schematic for regional lines with zoom morph
-- Game clock with separate time-lapse button
+- #2: Tauri 2 shell + Vite/TypeScript/MapLibre client; Texas-to-neighborhood
+  zoom; bus and rail drawing; Red Line demo; ridership panel; `SimClient` with
+  a mock; tube schematic with zoom morph; game clock with time-lapse
+- #5: Space no longer double-toggles pause on a focused button
+- sim-core integration: `TauriSim` over `upsert_route` / `remove_route` /
+  `sim_status`; Sim built at startup from `TRANSPO_SCENARIO` or the synthetic
+  region; cost and farebox in the panel
 
 ## Next, M0/M1 (blocked items say on what)
 
 | Item | Blocked on |
 |---|---|
-| `TauriSim`: real sim-core behind `SimClient` | sim-core public `Sim` API |
-| Load the Travis County scenario (zones, desire lines layer: top OD flows) | data-pipeline output in `ScenarioInput` format |
+| Desire-line layer from `Sim::desire_lines(n)` (F06) | nothing (needs a `desire_lines` command) |
+| Ship the pipeline's Travis `scenario.json` as the default scenario | pipeline output path/packaging agreed |
+| Drive `Sim::tick` from a shell worker; results-changed events to the client (F21) | nothing |
 | Snap drawn bus routes to the road graph | road graph from the pipeline; router location (sim-core vs app) to agree |
 | Stop editing: drag, insert, delete stops; rename lines | nothing |
-| Line inspector: per-stop boardings chart, load profile | richer `RouteResult` from sim-core |
-| M1 exit check in the UI: Red Line replica vs reported ridership | sim-core |
+| Line inspector: per-stop boardings chart, segment load profile, peak load vs capacity | nothing (fields already cross IPC) |
+| M1 exit check in the UI: Red Line replica vs reported ridership | calibrated mode split (F14) and real scenario |
 
 ## M2 (money, clock, agents)
 

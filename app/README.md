@@ -1,69 +1,181 @@
 # Transpo-Sim app
 
-The desktop game client for Transpo-Sim: a [Tauri 2](https://tauri.app) shell
-wrapping a browser map client (Vite + TypeScript + [MapLibre GL](https://maplibre.org)).
-This directory is owned by the app build stream. It is **not** part of the root
-Cargo workspace (see [Repo layout](#repo-layout)).
+The desktop game client: a [Tauri 2](https://tauri.app) shell (`src-tauri/`, Rust) that links
+[`sim-core`](../crates/sim-core/README.md) as native code, around a map client in the webview
+(Vite + TypeScript + [MapLibre GL](https://maplibre.org), `src/`). It delivers the app side of
+roadmap features F05 (shell and map), F15 (Tauri command interface to the `Sim` API), F16 (line
+drawing), F17 (ridership readout), F21 (one clock with time-lapse, client-side prototype) and
+F41/F42 (tube-style schematic and its zoom morph). Scope today is the Travis County test bench for
+M0/M1. The app holds no simulation logic: the numbers come from sim-core in the desktop app, or
+from a TypeScript mock when the client runs in a plain browser.
 
-Current scope is milestones **M0/M1** on the Travis County test bench, as set in
-the [design doc](https://claude.ai/artifact/Hjw86789MWbzev8BMVZBz8):
-
-| Feature | Status | Where |
-|---|---|---|
-| Map that zooms from all of Texas down to neighborhood level | Done | [src/map.ts](src/map.ts) |
-| Draw a bus line (click stops) and see ridership come back from the sim | Done, against a mock sim | [src/draw.ts](src/draw.ts), [src/sim/](src/sim/) |
-| Draw a rail line; Red Line demo preset | Done | [src/main.ts](src/main.ts), [src/data/geo.ts](src/data/geo.ts) |
-| Zoomed-out regional lines as a London Tube style schematic, morphing back to geography | Done (heuristic layout) | [src/schematic.ts](src/schematic.ts) |
-| One game clock with a separate time-lapse button; zoom never changes speed | Done | [src/clock.ts](src/clock.ts) |
-| Real simulation (crates/sim-core) | Waiting on sim-core's public API | swap point: [src/sim/index.ts](src/sim/index.ts) |
-| Road-snapped routes, desire lines, real zones | Waiting on data pipeline output | see [docs/ROADMAP-APP.md](docs/ROADMAP-APP.md) |
-
-![City view with the Red Line demo and a drawn bus line](docs/img/city-view.png)
+![Desktop app: Red Line demo with ridership, cost and farebox from sim-core](docs/img/desktop-sim-core.png)
+![Browser client (mock sim): Red Line demo and a drawn bus line](docs/img/city-view.png)
 ![Region zoom: the same Red Line as a tube-style schematic](docs/img/region-schematic.png)
 
-## Quick start
+## Run
 
-Prerequisites: Node 20+ and npm. For the desktop shell also Rust (stable) and
-the [Tauri system dependencies](https://tauri.app/start/prerequisites/)
-(on Debian/Ubuntu: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev`).
+Prerequisites: Node 20+, npm, Rust stable, and the
+[Tauri system dependencies](https://tauri.app/start/prerequisites/). On Debian/Ubuntu that is
+`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev`.
 
 ```bash
 cd app
-npm ci              # install exact versions from package-lock.json
-npm run dev         # browser client at http://localhost:1420 (no Rust needed)
-npm run tauri dev   # same client inside the desktop window
+npm ci              # exact versions from package-lock.json
+npm run tauri dev   # desktop app with the real sim-core (first Rust build takes a few minutes)
+npm run dev         # browser only at http://localhost:1420, mock sim, no Rust needed
 ```
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Vite dev server on port 1420 (fixed; Tauri expects it) |
-| `npm run build` | Type-check (`tsc --noEmit`) then production build into `dist/` |
-| `npm test` | Unit tests (Vitest): clock, schematic layout, mock sim |
-| `npm run tauri dev` | Desktop app with hot reload |
+| `npm run tauri dev` | Desktop app with hot reload. Builds `src-tauri` and starts the Vite server on port 1420 (fixed; Tauri expects it) |
 | `npm run tauri build` | Installable desktop bundle |
-| `cd src-tauri && cargo check` | Check the Rust shell without building the frontend |
+| `npm run dev` | Browser client against `MockSim` |
+| `npm run build` | Type-check (`tsc --noEmit`) then production build into `dist/` |
+| `TRANSPO_SCENARIO=path/to/scenario.json npm run tauri dev` | Load a real `ScenarioInput` (data-pipeline output) instead of the synthetic region |
 
-One-line CI check: `cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo check)`
+On startup, sim-core builds the scenario on a background thread. That takes about 4 s for the
+synthetic Travis-sized region in `tauri dev`, where sim-core is optimized even in dev builds
+(decision A16), and about 2 s in a release build. The window opens right away,
+and the first line edit waits for the build to finish. The terminal prints
+`[sim] ready in N ms` or `[sim] failed to start: ...`.
 
-## How to play the prototype
+### Controls
 
-- **Draw bus line / Draw rail line**: click the map to drop stops; **Enter** or
-  double-click finishes, **Esc** cancels. Clicking on an existing stop snaps to
-  it, so two lines can share an interchange.
-- **Add Red Line demo**: loads an approximate CapMetro Red Line (9 stations).
-- **Ridership panel** (top right): weekday riders per line, re-computed on every
-  change. Change the headway dropdown to see ridership respond. `sim N ms`
-  shows the round-trip time of the last simulation call (M1 target: under 2 s).
-- **Clock** (top center): pause with the button or **Space** (ignored while a button or dropdown has focus, so it never double-toggles); **Time-lapse**
-  (or **T**) cycles 1x, 2x, 10x, 60x. At 1x one real second is one game minute.
-- **Zoom badge** (bottom left): current zoom band (State, Region, City,
-  Neighborhood), whether lines are drawn schematic or geographic, and jump
-  buttons for Texas and Travis County.
+- **Draw bus line / Draw rail line**: click the map to drop stops. **Enter** or double-click
+  finishes, **Esc** cancels. Clicking an existing stop snaps to it, so lines can share an
+  interchange.
+- **Add Red Line demo**: an approximate CapMetro Red Line (9 stations, commuter rail, 30-min
+  headway).
+- **Ridership panel** (top right): weekday boardings per line. With sim-core it also shows
+  operating cost per day and farebox recovery. The header shows which backend answered and the
+  round-trip time of the last call (M1 target: under 2 s). Changing the headway dropdown re-runs
+  the sim.
+- **Clock** (top center): pause with the button or **Space**. Space is ignored while a button or
+  dropdown has focus, so it never toggles twice. **Time-lapse** (or **T**) cycles 1x, 2x, 10x and
+  60x. At 1x, one real second is one game minute.
+- **Zoom badge** (bottom left): the current zoom band (State, Region, City, Neighborhood), whether
+  lines are drawn schematic or geographic, and jump buttons for Texas and Travis County.
 
-Bus lines appear only from City zoom (z11) and closer; that is intentional
-(design doc: local routes stay geographic and only show from City zoom down).
+Bus lines only appear from City zoom (z11) in. That follows the design doc: local routes stay
+geographic and only show from City zoom down.
 
-## Repo layout
+## Test
+
+```bash
+cd app && npm ci && npm run build && npm test && (cd src-tauri && cargo check && cargo test)
+```
+
+- `npm test` (Vitest, [test/core.test.ts](test/core.test.ts)): clock arithmetic and zoom
+  independence; schematic invariants (octilinear elbows, one point per stop, interchange merging);
+  mock-sim sanity (Red Line ridership in a plausible band and rising with frequency); the Tauri
+  adapter mapping `RouteSpec` to `TransitLine` and per-stop results back by stop id. No fixtures.
+- `cargo test` in `src-tauri` ([src/sim.rs](src-tauri/src/sim.rs)): the add, update and remove
+  round trip through the command layer against `synth::SynthConfig::small()`, including that the
+  same client id updates in place, and that a failed scenario load returns an error instead of
+  hanging. It runs in about 0.1 s.
+- The root `cargo test --workspace` does **not** cover `app/`, because `src-tauri` is its own
+  workspace.
+
+## Interfaces
+
+### Client to simulation: `SimClient` ([src/sim/api.ts](src/sim/api.ts))
+
+```ts
+interface SimClient {
+  readonly label: string;                                // shown in the ridership panel
+  upsertRoute(route: RouteSpec): Promise<RouteResult[]>; // add or replace; results for EVERY route
+  removeRoute(id: string): Promise<RouteResult[]>;
+}
+```
+
+- `RouteSpec`: `id` (client string, `r1`, `r2`, ...), `name`, `mode`, `color`, `stops[]`
+  (`id`, `name`, `lngLat` as WGS84 `[lon, lat]` in degrees), `headwayMin` (minutes), `fare`
+  (USD per boarding).
+- `Mode` uses sim-core's `TransitLine` mode strings exactly (`bus` ... `ferry`; no hyperloop).
+  `isRegional(mode)` is false for `bus`, `trolleybus` and `brt`, and true for everything else. It
+  decides schematic versus geographic drawing.
+- `RouteResult`: `routeId`, `dailyRiders` (weekday boardings, rounded), `boardingsByStop` (keyed by
+  stop id), plus optional `operatingCostPerDay` (USD) and `fareboxRecovery` (fare revenue over
+  operating cost). The mock leaves the optional fields out.
+
+`createSim()` ([src/sim/index.ts](src/sim/index.ts)) returns `TauriSim` when
+`"__TAURI_INTERNALS__" in window`, and `MockSim` otherwise.
+
+### Tauri commands ([src-tauri/src/sim.rs](src-tauri/src/sim.rs))
+
+| Command | Args (JSON, camelCase from JS) | Returns |
+|---|---|---|
+| `upsert_route` | `routeId: string`, `line: TransitLine` | `RouteResultOut[]` for every client route |
+| `remove_route` | `routeId: string` | `RouteResultOut[]` |
+| `sim_status` | none | `{ ready, error, source }`; `source` is the scenario path or `"synthetic"` |
+
+`RouteResultOut` is sim-core's `LineResult` with `route_id` (the client id) flattened into it.
+`boardings_by_stop` is aligned with the line's stops. The shell keeps the map from client
+route id to sim-core `LineId`, so the webview never sees `LineId`s and never holds simulation
+state. Errors come back as rejected promises with sim-core's readable message.
+
+`TransitLine` conversion ([src/sim/tauri.ts](src/sim/tauri.ts) `toTransitLine`): `lngLat` becomes
+`lon`/`lat`, and `headwayMin` becomes `headway_min`. `park_ride` is true on every stop of a
+regional line and false for local lines. Speed, span and per-km fare are left to sim-core's mode
+defaults.
+
+### Scenario input
+
+The `TRANSPO_SCENARIO` environment variable points to a `ScenarioInput` JSON file
+([schema](../crates/sim-core/README.md#input-schema-contract-with-data-pipeline)). Without it the
+shell uses `sim_core::synth::generate(&SynthConfig::default())`, a Travis-sized synthetic region
+(676 zones, 1.3M people) centered on downtown Austin.
+
+## Design and rationale
+
+The full rationale is in [docs/DECISIONS.md](docs/DECISIONS.md) (A1 to A13). In short:
+
+- **Two backends behind one interface.** The real sim runs in Rust, but `npm run dev` should still
+  work in a browser with no Rust toolchain. The mock covers that, and also keeps the UI testable
+  in CI.
+- **Upserts return every line's results.** Lines compete for riders in sim-core, so one edit can
+  move every line's numbers.
+- **Sim built off the main thread; commands are async.** `Sim::new` takes seconds. Async Tauri
+  commands run on the async runtime's worker threads, so waiting for the build never freezes the
+  window.
+- **The client still owns the clock.** sim-core's `tick()` re-equilibrates at day boundaries,
+  which takes seconds and needs a worker loop. That lands with F21's move into sim-core. Until
+  then, line edits refresh results directly.
+- **Schematic computed in the client.** It is a pure function of the line geometry and zoom
+  ([docs/SCHEMATIC.md](docs/SCHEMATIC.md)), not simulation state.
+- **`src-tauri` is its own Cargo workspace** (empty `[workspace]` table). The root workspace
+  (`members = ["crates/*"]`) belongs to sim-core, and sim-core is consumed as a path dependency.
+
+More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (modules, data flow, map layers, clock).
+
+## Known gaps
+
+| Gap | Fixed by |
+|---|---|
+| Lines are straight from stop to stop, not snapped to roads | Road graph from the pipeline plus a router (F16 follow-up) |
+| No desire-line layer | F06 (needs `Sim::desire_lines`, which sim-core already has) |
+| No cost preview while drawing | F16 / F23 |
+| `park_ride` is all-or-nothing per line | Per-stop editing (F16) |
+| Clock is client-side; `Sim::tick` is not called, so car congestion only updates at sim build | F21 |
+| Schematic is greedy: parallel lines can overlap, no station pins | F41 |
+| Basemap tiles come from OpenFreeMap over the network; CSP is off | Bundled tiles (F33), then tighten CSP |
+| Mock numbers are uncalibrated outside the Red Line point ([docs/MOCK-SIM.md](docs/MOCK-SIM.md)) | Browser-only; the desktop app uses sim-core |
+| Placeholder icons | F46 |
+
+## Status
+
+| Feature | Status in `app/` |
+|---|---|
+| F05 Tauri shell and map | Done: shell, map and sim-core linked |
+| F15 Tauri command interface | Done (app side): `upsert_route`, `remove_route`, `sim_status`. Clock advance not wired |
+| F16 Line drawing | Partial: draw, headway and delete work; no stop editing or cost preview |
+| F17 Ridership readout | Done for line totals and per-stop boardings, plus cost and farebox from sim-core |
+| F21 Clock and time-lapse | Prototype: client clock at 1/2/10/60x, no skip-to-month |
+| F41 / F42 Schematic and morph | Prototype: heuristic layout, no pins |
+| F06 Desire lines | Not started |
+
+## Layout
 
 ```
 app/
@@ -78,23 +190,13 @@ app/
 │   ├── data/geo.ts       Texas/Travis outlines, bounds, Red Line preset
 │   └── sim/
 │       ├── api.ts        SimClient interface + shared types (the contract)
-│       ├── mock.ts       MockSim: stand-in model until sim-core lands
-│       └── index.ts      createSim(): the single swap point
+│       ├── tauri.ts      TauriSim: sim-core through Tauri commands
+│       ├── mock.ts       MockSim: browser-only stand-in model
+│       └── index.ts      createSim(): picks the backend
 ├── test/core.test.ts     Vitest unit tests
-├── src-tauri/            Rust desktop shell (own [workspace], not in root workspace)
-└── docs/                 Deeper docs (below)
+├── src-tauri/
+│   ├── src/main.rs       Tauri builder: state + command registration
+│   ├── src/sim.rs        Sim lifecycle, client-id to LineId map, commands, tests
+│   └── Cargo.toml        Own [workspace]; sim-core by path
+└── docs/                 ARCHITECTURE, SCHEMATIC, MOCK-SIM, DECISIONS, ROADMAP-APP
 ```
-
-The root `Cargo.toml` workspace (owned by sim-core) has `members = ["crates/*"]`.
-`app/src-tauri/Cargo.toml` declares an empty `[workspace]` table so Cargo
-treats it as its own root and never tries to join or conflict with the root
-workspace. sim-core will be added as a path dependency
-(`sim-core = { path = "../../crates/sim-core" }`, already stubbed as a comment).
-
-## Further docs
-
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): modules, data flow, how the map and the sim talk, and the sim-core swap plan.
-- [docs/SCHEMATIC.md](docs/SCHEMATIC.md): the tube-map layout algorithm and the zoom morph.
-- [docs/MOCK-SIM.md](docs/MOCK-SIM.md): the stand-in demand model, its formulas and calibration.
-- [docs/DECISIONS.md](docs/DECISIONS.md): choices made in this directory, with the reason and the trade-off.
-- [docs/ROADMAP-APP.md](docs/ROADMAP-APP.md): what the app does next and what it is waiting on.

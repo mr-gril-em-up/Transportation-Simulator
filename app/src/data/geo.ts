@@ -1,12 +1,15 @@
 import type { LngLat } from "../sim/api";
 
+/** Texas bounding box, [southwest, northeast], WGS84 degrees. */
 export const TEXAS_BOUNDS: [LngLat, LngLat] = [
   [-106.65, 25.84],
   [-93.51, 36.5],
 ];
+/** Default camera center (Travis County test bench). */
 export const TRAVIS_CENTER: LngLat = [-97.75, 30.3];
 
 // Coarse outlines used when the basemap cannot load (offline, CI).
+/** Coarse Texas border (~35 points), hand-simplified. */
 export const TEXAS_OUTLINE: LngLat[] = [
   [-106.63, 31.99], [-103.06, 32.0], [-103.04, 36.5], [-100.0, 36.5], [-100.0, 34.56],
   [-99.2, 34.3], [-98.1, 34.13], [-96.5, 33.77], [-95.3, 33.88], [-94.48, 33.64],
@@ -17,6 +20,7 @@ export const TEXAS_OUTLINE: LngLat[] = [
   [-103.3, 29.0], [-104.0, 29.32], [-104.7, 30.0], [-105.0, 30.6], [-105.95, 31.36],
   [-106.63, 31.99],
 ];
+/** Coarse Travis County border (8 points), hand-simplified. */
 export const TRAVIS_OUTLINE: LngLat[] = [
   [-98.17, 30.36], [-97.77, 30.63], [-97.37, 30.42], [-97.37, 30.2],
   [-97.65, 30.07], [-97.92, 30.03], [-98.17, 30.25], [-98.17, 30.36],

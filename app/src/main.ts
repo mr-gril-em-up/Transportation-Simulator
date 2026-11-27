@@ -21,8 +21,13 @@ let nextId = 1;
 // ---- Simulation round trip -------------------------------------------------
 async function apply(call: Promise<RouteResult[]>): Promise<void> {
   const t0 = performance.now();
-  results = new Map((await call).map((r) => [r.routeId, r]));
-  $("sim-ms").textContent = `sim ${Math.round(performance.now() - t0)} ms`;
+  try {
+    results = new Map((await call).map((r) => [r.routeId, r]));
+    $("sim-ms").textContent = `${sim.label} · ${Math.round(performance.now() - t0)} ms`;
+  } catch (e) {
+    $("sim-ms").textContent = `${sim.label} error: ${e}`;
+    console.error(e);
+  }
   render();
   renderPanel();
 }
@@ -105,13 +110,18 @@ function renderPanel(): void {
   }
   list.innerHTML = routes
     .map((r) => {
-      const riders = results.get(r.id)?.dailyRiders ?? 0;
+      const res = results.get(r.id);
+      const riders = res?.dailyRiders ?? 0;
+      const econ =
+        res?.operatingCostPerDay !== undefined
+          ? `<div class="econ">$${Math.round(res.operatingCostPerDay).toLocaleString()}/day to run · farebox ${Math.round((res.fareboxRecovery ?? 0) * 100)}%</div>`
+          : "";
       const opts = [5, 10, 15, 20, 30, 60]
         .map((h) => `<option value="${h}" ${h === r.headwayMin ? "selected" : ""}>every ${h} min</option>`)
         .join("");
       return `<div class="route" data-id="${r.id}">
         <span class="swatch" style="background:${r.color}"></span>
-        <b>${r.name}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day
+        <b>${r.name}</b> <span class="riders">${riders.toLocaleString()}</span> riders/day${econ}
         <div class="row"><select data-act="headway">${opts}</select>
         <button data-act="del" title="Delete line">✕</button></div></div>`;
     })

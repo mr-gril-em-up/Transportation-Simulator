@@ -1,12 +1,13 @@
 # Mock simulation
 
 `MockSim` ([src/sim/mock.ts](../src/sim/mock.ts)) stands in for
-`crates/sim-core` until sim-core's public API lands. It exists so the M1 loop
-(draw a line, see ridership) can be built and played now. It is
+`crates/sim-core` when the client runs in a plain browser (`npm run dev`).
+The desktop app always uses sim-core (decision A12). The mock keeps UI work
+possible without a Rust toolchain. It is
 **deterministic, fast (a few ms per run), responsive to stop placement,
 headway and fare, and not calibrated beyond one sanity point**. Do not tune
-game balance against it; it will be deleted from the default path when
-`TauriSim` arrives (see [ARCHITECTURE.md](ARCHITECTURE.md#swapping-in-sim-core)).
+game balance against it. The ridership panel header says which backend
+answered.
 
 ## Synthetic Travis County
 

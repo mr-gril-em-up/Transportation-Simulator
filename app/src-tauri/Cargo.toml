@@ -14,4 +14,12 @@ tauri-build = { version = "2.5", features = [] }
 tauri = { version = "2.12", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# sim-core = { path = "../../crates/sim-core" }  # enable when it lands
+sim-core = { path = "../../crates/sim-core" }
+
+# Optimize the simulation even in dev builds: unoptimized sim-core takes ~16 s to
+# build the Travis scenario at startup; optimized it is ~4 s. The shell itself
+# stays at opt-level 0 for fast rebuilds.
+[profile.dev.package.sim-core]
+opt-level = 3
+[profile.dev.package.rayon-core]
+opt-level = 3

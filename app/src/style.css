@@ -19,3 +19,4 @@ button:hover { background: #f1f3f6; }
 .riders { font-variant-numeric: tabular-nums; font-weight: 600; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
 #zoom-badge { bottom: 12px; left: 12px; display: flex; gap: 6px; align-items: center; }
+.econ { color: #5b616b; font-size: 12px; }

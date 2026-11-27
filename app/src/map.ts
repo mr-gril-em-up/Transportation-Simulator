@@ -6,10 +6,14 @@ import { TEXAS_OUTLINE, TRAVIS_CENTER, TRAVIS_OUTLINE } from "./data/geo";
 const STYLE_URL = import.meta.env.VITE_MAP_STYLE ?? "https://tiles.openfreemap.org/styles/liberty";
 
 // Zoom bands from the design doc (view width -> zone unit).
-export const SCHEMATIC_FULL = 10; // at or below: pure schematic
-export const GEO_FULL = 11.5; // at or above: pure geography
+/** Zoom at or below which regional lines are pure schematic. */
+export const SCHEMATIC_FULL = 10;
+/** Zoom at or above which regional lines are pure geography; the morph runs in between. */
+export const GEO_FULL = 11.5;
+/** Local (bus-like) lines and their stops only render from this zoom (City band). */
 export const BUS_MINZOOM = 11;
 
+/** Design-doc zoom band name for a MapLibre zoom level. */
 export function zoomBand(z: number): string {
   if (z < 7.5) return "State";
   if (z < 10.5) return "Region";
@@ -45,6 +49,7 @@ const line = (coords: [number, number][]): GeoJSON.Feature => ({
   geometry: { type: "LineString", coordinates: coords },
 });
 
+/** Create the map, wait for load, and add every app source and layer (empty). */
 export async function createMap(container: string): Promise<maplibregl.Map> {
   const map = new maplibregl.Map({
     container,
@@ -159,6 +164,7 @@ export async function createMap(container: string): Promise<maplibregl.Map> {
   return map;
 }
 
+/** Replace the features of one of the app's GeoJSON sources. */
 export function setData(map: maplibregl.Map, id: string, features: GeoJSON.Feature[]): void {
   (map.getSource(id) as maplibregl.GeoJSONSource).setData({ type: "FeatureCollection", features });
 }

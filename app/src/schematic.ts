@@ -34,6 +34,7 @@ export function elbow(a: XY, b: XY): XY[] {
   return [[a[0] + Math.sign(dx) * d, a[1] + Math.sign(dy) * d]];
 }
 
+/** One regional line laid out both ways; `geo` and `schem` have equal length for the morph. */
 export interface LineLayout {
   routeId: string;
   color: string;
