@@ -32,7 +32,7 @@ gantt
     Pipeline zones, LODES flows, OSM roads     :done,   f02, 2026-11-26, 2d
     Pipeline writes ScenarioInput              :done,   f03, 2026-11-27, 1d
     Synthetic population (IPF from PUMS)       :        f04, 2026-11-30, 6d
-    Tauri and MapLibre shell                   :active, f05, 2026-11-26, 5d
+    Tauri and MapLibre shell                   :done,   f05, 2026-11-26, 2d
     Desire-line layer                          :        f06, after f05, 4d
     Exit check, top 20 flows vs LODES          :        f07, 2026-12-07, 2d
     v0.1.0                                     :milestone, r01, 2026-12-08, 0d
@@ -43,8 +43,8 @@ gantt
     Non-work trips (NHTS rates, gravity)       :active, f13, 2026-12-09, 6d
     Sim API and app message interface          :active, f15, 2026-12-09, 5d
     Logit mode split, ASC calibration          :active, f14, after f11, 6d
-    Line drawing tool                          :        f16, after f15, 6d
-    Ridership readout                          :        f17, after f14, 3d
+    Line drawing tool                          :active, f16, after f15, 6d
+    Ridership readout                          :active, f17, after f14, 3d
     Incremental re-run under 2 s               :active, crit, f18, after f14, 5d
     Red Line calibration (GTFS, NTD)           :crit,   f19, after f17, 5d
     Holiday slack                              :        f1h, 2026-12-24, 9d
@@ -106,7 +106,7 @@ Goal: one county of real public data, turned into zones, flows and a road graph,
 | F02 | Pipeline: block-group zones, LODES OD flows, OSM drivable road graph, OSM transit relations | pipeline | none | `cargo run --release` writes zones, roads, transit and manifest for Travis | Done (#3) |
 | F03 | Pipeline writes `scenario.json` as `sim_core::ScenarioInput` (lanes per direction, `road_node` per zone, `commutes`) and runs `validate()` | pipeline, core | F01, F02 | Travis output loads in sim-core with zero validation errors. Format: [OUTPUT_FORMAT.md](../crates/data-pipeline/docs/OUTPUT_FORMAT.md) | Done (#3) |
 | F04 | Synthetic population: expand ACS PUMS households to ACS block-group totals with IPF; home block, age, income band, car availability, value of time | pipeline | F02 | Block-group marginals (household size, income, vehicles) reproduced within 5% | Planned |
-| F05 | Tauri app shell with MapLibre GL base map, sim-core linked as native Rust | app | F01 | App launches on desktop and shows the Travis base map | Partial (#2, #9): shell and map done (#2); sim-core linked as a path dependency (#9, pending review) |
+| F05 | Tauri app shell with MapLibre GL base map, sim-core linked as native Rust | app | F01 | App launches on desktop and shows the Travis base map | Done (#2, #9): shell and map (#2); sim-core linked as a path dependency (#9) |
 | F06 | Desire-line layer from zone-to-zone flows (MapLibre; deck.gl deferred to M2 per app decision 2) | app | F03, F05 | Flows render, line width scales with workers | Planned |
 | F07 | M0 exit check | all | F03, F06 | **Top 20 commute flows match LODES totals** (pipeline manifest already lists them) | Planned |
 
@@ -120,9 +120,9 @@ Goal: the core loop. Draw a transit line, see ridership respond in under 2 secon
 | F12 | Transit skims: walk access and egress, wait (half headway), in-vehicle, transfers; drive-to-transit (park-and-ride) access | core | F03 | Skims exist for every zone pair a line serves; park-and-ride stops offer drive access | Done (#7) |
 | F13 | Non-work trips: NHTS rates by purpose (~3.5 trips/person/day), gravity destinations weighted by OSM POIs and LODES jobs by sector | core, pipeline | F04 | Daily trips per person and purpose split match NHTS within 10%. *Placed in M1 because Red Line calibration (F19) counts all riders, not only commuters.* | Partial (#7): single-purpose gravity model on car time, rate in `Params`; no NHTS purpose split or POI weights |
 | F14 | Multinomial logit mode split on generalized cost (wait and walk weighted ~2x in-vehicle); ASCs calibrated per metro to ACS mode share | core | F11, F12, F13 | Baseline reproduces Travis ACS commute mode shares within 2 points | Partial (#7): six-way logit and `calibrate_mode_shares`; not yet calibrated to Travis ACS shares |
-| F15 | Sim API (`Sim`: build, add/update/remove lines, read results, advance clock) and Tauri command/event interface | core, app | F01, F05 | App calls sim-core through the message interface only, no direct state access | Partial (#7, #9): sim-core `Sim` API done (#7); Tauri commands `upsert_route`, `remove_route`, `sim_status` wired (#9, pending review); clock advance not wired (F21) |
+| F15 | Sim API (`Sim`: build, add/update/remove lines, read results, advance clock) and Tauri command/event interface | core, app | F01, F05 | App calls sim-core through the message interface only, no direct state access | Partial (#7, #9): sim-core `Sim` API done (#7); Tauri commands `upsert_route`, `remove_route`, `sim_status` wired (#9); clock advance not wired (F21) |
 | F16 | Line drawing tool: place stops, pick mode, set headway and fare; preview cost and forecast before commit | app | F15 | A line can be drawn, edited and deleted in the app | Partial (#2, #9): drawing, headway and delete work against sim-core in the desktop app; no stop editing or cost preview |
-| F17 | Ridership readout per line and stop | app, core | F14, F16 | Boardings per line and stop shown after each edit | Partial (#2): panel works, mock-backed |
+| F17 | Ridership readout per line and stop | app, core | F14, F16 | Boardings per line and stop shown after each edit | Partial (#2, #9): daily boardings per line and per stop come from sim-core in the desktop app, from the mock in browser-only `npm run dev`; numbers uncalibrated until F14/F19 |
 | F18 | Incremental re-evaluation after a line edit | core | F14 | **A line edit updates ridership in under 2 seconds** on Travis | Partial (#7): line edit re-evaluates in ~20 ms on a synthetic Travis-sized region; confirm on real Travis data |
 | F19 | Calibration harness: CapMetro Red Line replica from GTFS, compared against NTD ridership | core, pipeline | F17 | **Red Line replica forecasts within 30% of reported ridership** | Planned |
 
