@@ -266,7 +266,8 @@ zones, 1.3M people) centered on downtown Austin. Measured on the real build afte
 SIM-12 (tax rate calibrated to CapMetro, constants refit on today's network):
 
 - **With today's network** (the default): 61 lines, 79,417 riders/day, the Red Line at 1,373
-  (APTA about 1,500; sim-core 1,367). Each month settles at fares $3.1M, operating assistance
+  (APTA about 1,500). These app figures predate sim-core's Frank-Wolfe assignment (SIM-15,
+  #70), which gives the Red Line 1,352/day and buses 77,349/day. Each month settles at fares $3.1M, operating assistance
   $4.5M and local tax $31.9M against $31.8M operating cost: a $7.7M surplus. Borrowing capacity
   $2.83B on $382M/year of pledged tax. Startup about 17 s in `tauri dev`.
 - **Blank map, Red Line demo alone** (`TRANSPO_EXISTING_NETWORK=0`): 858 riders/day at Day 181
