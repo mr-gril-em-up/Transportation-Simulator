@@ -107,7 +107,7 @@ Goal: one county of real public data, turned into zones, flows and a road graph,
 | F03 | Pipeline writes `scenario.json` as `sim_core::ScenarioInput` (lanes per direction, `road_node` per zone, `commutes`) and runs `validate()` | pipeline, core | F01, F02 | Travis output loads in sim-core with zero validation errors. Format: [OUTPUT_FORMAT.md](../crates/data-pipeline/docs/OUTPUT_FORMAT.md) | Done (#3) |
 | F04 | Synthetic population: expand ACS PUMS households to ACS block-group totals with IPF; home block, age, income band, car availability, value of time | pipeline | F02 | Block-group marginals (household size, income, vehicles) reproduced within 5% | Planned |
 | F05 | Tauri app shell with MapLibre GL base map, sim-core linked as native Rust | app | F01 | App launches on desktop and shows the Travis base map | Partial (#2, #9): shell and map done (#2); sim-core linked as a path dependency (#9, pending review) |
-| F06 | Desire-line layer from zone-to-zone flows (MapLibre; deck.gl deferred to M2 per app decision 2) | app | F03, F05 | Flows render, line width scales with workers | Planned |
+| F06 | Desire-line layer from zone-to-zone flows (MapLibre; deck.gl deferred to M2 per app decision 2) | app | F03, F05 | Flows render, line width scales with workers | Partial (pending review): layer renders sim-core `desire_lines` (top 300 pairs); width scales with daily trips (all purposes, not workers only); color shows transit share |
 | F07 | M0 exit check | all | F03, F06 | **Top 20 commute flows match LODES totals** (pipeline manifest already lists them) | Planned |
 
 ### M1, the loop on Travis County (v0.2.0)

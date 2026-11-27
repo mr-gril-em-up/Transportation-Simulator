@@ -1,7 +1,7 @@
 // Stand-in for sim-core: a tiny gravity + binary-logit model over synthetic
 // Travis County zones. Deterministic, responds to stop placement, headway and
 // fare, and runs in a few ms. Numbers are plausible, not calibrated.
-import { isRegional, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
+import { isRegional, type DesireLine, type LngLat, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 interface Zone {
   lngLat: LngLat;
@@ -127,6 +127,19 @@ export class MockSim implements SimClient {
   async removeRoute(id: string): Promise<RouteResult[]> {
     this.routes.delete(id);
     return this.run();
+  }
+
+  /** Gravity flows between the 150 busiest zones; no transit split (transitTrips = 0). */
+  async desireLines(n: number): Promise<DesireLine[]> {
+    const top = [...this.zones].sort((a, b) => b.pop + b.jobs - (a.pop + a.jobs)).slice(0, 150);
+    const out: DesireLine[] = [];
+    for (let i = 0; i < top.length; i++)
+      for (let j = i + 1; j < top.length; j++) {
+        const d = Math.max(km(top[i].lngLat, top[j].lngLat), 1);
+        const trips = ((top[i].pop * top[j].jobs + top[j].pop * top[i].jobs) * TRIPS_PER_PERSON) / 7e5 / d ** 1.2;
+        out.push({ from: top[i].lngLat, to: top[j].lngLat, trips, transitTrips: 0 });
+      }
+    return out.sort((a, b) => b.trips - a.trips).slice(0, n);
   }
 
   private run(): RouteResult[] {

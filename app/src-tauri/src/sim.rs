@@ -95,6 +95,36 @@ impl SimState {
     }
 }
 
+/// One desire line: a zone pair with both centroids and its daily trips.
+#[derive(Serialize, Debug)]
+pub struct DesireLineOut {
+    /// First zone centroid, WGS84 `[lon, lat]`.
+    from: [f64; 2],
+    /// Second zone centroid, WGS84 `[lon, lat]`.
+    to: [f64; 2],
+    /// Daily person trips between the pair, both directions, all modes.
+    trips: f64,
+    /// Daily transit trips between the pair, both directions.
+    transit_trips: f64,
+}
+
+impl SimState {
+    /// Top `n` desire lines with zone ids resolved to centroids.
+    pub fn desire_lines(&self, n: usize) -> Result<Vec<DesireLineOut>, String> {
+        self.with(|inner| {
+            let sim = inner.sim.as_ref().unwrap();
+            let at: HashMap<u32, [f64; 2]> = sim.input().zones.iter().map(|z| (z.id, [z.lon, z.lat])).collect();
+            Ok(sim
+                .desire_lines(n)
+                .into_iter()
+                .filter_map(|d| {
+                    Some(DesireLineOut { from: *at.get(&d.from)?, to: *at.get(&d.to)?, trips: d.trips, transit_trips: d.transit_trips })
+                })
+                .collect())
+        })
+    }
+}
+
 fn load_scenario() -> Result<ScenarioInput, String> {
     match std::env::var(SCENARIO_ENV) {
         Ok(path) => {
@@ -157,7 +187,8 @@ pub async fn upsert_route(
     route_id: String,
     line: TransitLine,
 ) -> Result<Vec<RouteResultOut>, String> {
-    state.upsert(route_id, line)
+    let s = state.inner().clone();
+    blocking(move || s.upsert(route_id, line)).await
 }
 
 /// Remove a line and return results for the remaining lines.
@@ -166,7 +197,23 @@ pub async fn remove_route(
     state: tauri::State<'_, SimState>,
     route_id: String,
 ) -> Result<Vec<RouteResultOut>, String> {
-    state.remove(&route_id)
+    let s = state.inner().clone();
+    blocking(move || s.remove(&route_id)).await
+}
+
+/// Top `n` zone pairs by daily trips, with endpoint coordinates (F06 desire lines).
+#[tauri::command]
+pub async fn desire_lines(state: tauri::State<'_, SimState>, n: usize) -> Result<Vec<DesireLineOut>, String> {
+    let s = state.inner().clone();
+    blocking(move || s.desire_lines(n)).await
+}
+
+/// Run a closure that may wait on the Condvar or the Sim lock on Tauri's blocking
+/// pool, so async runtime workers are never parked (review follow-up on #9).
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| format!("sim task failed: {e}"))?
 }
 
 #[cfg(test)]
@@ -196,6 +243,16 @@ mod tests {
         let out = state.remove("r1").unwrap();
         assert!(out.is_empty());
         assert!(state.remove("missing").unwrap().is_empty());
+    }
+
+    #[test]
+    fn desire_lines_resolve_to_zone_centroids() {
+        let state = SimState::start_with(|| Ok(synth::generate(&synth::SynthConfig::small())));
+        let lines = state.desire_lines(10).unwrap();
+        assert!(!lines.is_empty() && lines.len() <= 10);
+        assert!(lines.windows(2).all(|w| w[0].trips >= w[1].trips), "sorted by trips");
+        // Synthetic region is centered on downtown Austin.
+        assert!(lines.iter().all(|d| (d.from[0] + 97.7).abs() < 1.0 && (d.from[1] - 30.3).abs() < 1.0));
     }
 
     #[test]

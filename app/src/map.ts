@@ -94,6 +94,20 @@ export async function createMap(container: string): Promise<maplibregl.Map> {
     paint: { "line-color": "#8a8f98", "line-width": 1.2, "line-dasharray": [3, 2] },
   });
 
+  // Desire lines (F06): straight zone-to-zone flows under the transit layers.
+  src("desire");
+  map.addLayer({
+    id: "desire",
+    type: "line",
+    source: "desire",
+    layout: { "line-cap": "round" },
+    paint: {
+      "line-width": ["interpolate", ["linear"], ["sqrt", ["get", "rel"]], 0, 0.5, 1, 9],
+      "line-color": ["interpolate", ["linear"], ["get", "transitShare"], 0, "#7a5195", 0.1, "#2a9d8f"],
+      "line-opacity": 0.45,
+    },
+  });
+
   src("bus-lines");
   map.addLayer({
     id: "bus-lines",
