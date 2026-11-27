@@ -16,6 +16,10 @@ on:
         type: choice
         options: [bg, tract, county]
         default: bg
+      existing_lines:
+        description: "Put today's transit network into scenario.json lines (off until the app can drop them; always in existing_lines.json)"
+        type: boolean
+        default: false
       skip_osm:
         description: "Census-only check: skip OSM roads and transit, and do not publish a release"
         type: boolean
@@ -52,7 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./scripts/fetch.sh
-      - run: cargo run --release -- --area "$AREA" --year "$YEAR" --level "$LEVEL" --out data/out/area
+      - run: cargo run --release -- --area "$AREA" --year "$YEAR" --level "$LEVEL" ${{ inputs.existing_lines && '--existing-lines' || '' }} --out data/out/area
       - uses: actions/upload-artifact@v4
         with:
           name: tsim-data-${{ inputs.area }}-${{ inputs.year }}-${{ inputs.level }}
@@ -68,5 +72,5 @@ jobs:
           cp data/out/area/manifest.json "manifest-$AREA-$YEAR$SUFFIX.json"
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "$GITHUB_SHA" \
             --title "Pipeline build: area $AREA, LODES $YEAR, zones $LEVEL" \
-            --notes "Built by the data-pipeline workflow. Contents: scenario.json (sim-core input), zones.json, roads.json, transit.json, manifest.json. Data: US Census Bureau (public domain); OpenStreetMap contributors (ODbL)."
+            --notes "Built by the data-pipeline workflow. Contents: scenario.json (sim-core input), existing_lines.json (today's transit network), zones.json, roads.json, transit.json, manifest.json. Data: US Census Bureau (public domain); OpenStreetMap contributors (ODbL)."
           gh release upload "$TAG" "tsim-data-$AREA-$YEAR$SUFFIX.tar.gz" "manifest-$AREA-$YEAR$SUFFIX.json" --clobber

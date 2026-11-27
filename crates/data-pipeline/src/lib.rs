@@ -30,6 +30,9 @@ pub struct Config {
     pub margin_deg: f64,
     /// Zone level of the outputs: block group (default), tract or county.
     pub level: aggregate::Level,
+    /// Put today's network into `scenario.json` `lines` (DATA-7). It is always
+    /// written to `existing_lines.json`.
+    pub existing_lines: bool,
 }
 
 /// Summary written next to the data: counts, totals and the M0 exit-test
@@ -70,7 +73,8 @@ pub struct Manifest {
     /// Area-wide ACS commute mode shares (B08301), for calibration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commute_mode_shares: Option<acs::CommuteShares>,
-    /// Lines of today's network written to `scenario.json` `lines`.
+    /// Lines of today's network in `existing_lines.json` (and in
+    /// `scenario.json` `lines` with `--existing-lines`).
     pub existing_lines: usize,
     /// OSM transit routes given GTFS headways (`null` without a GTFS feed).
     pub gtfs_routes_matched: Option<usize>,
@@ -264,6 +268,7 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
         m.rail_routes = Some(rail_summary(&transit));
         write_json(&cfg.out, "roads.json", &r)?;
         existing = lines::existing_lines(&transit);
+        write_json(&cfg.out, "existing_lines.json", &existing)?;
         write_json(&cfg.out, "transit.json", &transit)?;
         roads = Some(r);
     } else {
@@ -275,7 +280,9 @@ pub fn build(cfg: &Config) -> Result<Manifest> {
 
     let mut scenario = scenario::to_scenario(&zones, &flows, roads.as_ref());
     m.existing_lines = existing.len();
-    scenario.lines = existing;
+    if cfg.existing_lines {
+        scenario.lines = existing;
+    }
     m.scenario_road_nodes = scenario.road_nodes.len();
     m.scenario_road_links = scenario.road_links.len();
     scenario

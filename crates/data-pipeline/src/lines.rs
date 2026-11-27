@@ -1,10 +1,11 @@
 //! Today's transit network as sim-core lines (DATA-7).
 //!
 //! sim-core treats `ScenarioInput.lines` as existing service: no capital
-//! charge, open from day 0. The pipeline writes every OSM transit route that
-//! got GTFS headways (`gtfs.rs`), one line per route `ref`, so the game can
-//! start with today's CapMetro network and calibration fits the same network.
-//! The app drops `lines` when the "start with today's network" setting is off.
+//! charge, open from day 0. The pipeline builds every OSM transit route that
+//! got GTFS headways (`gtfs.rs`), one line per route `ref`, writes them to
+//! `existing_lines.json`, and puts them in `scenario.json` only with
+//! `--existing-lines`, so calibration and a later "start with today's
+//! network" setting share one network.
 //!
 //! - One line per `ref`: the OSM direction relation with the most stops.
 //! - Mode from the OSM `route` value; `train` is commuter rail.

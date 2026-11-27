@@ -131,4 +131,4 @@ The Red Line reads 40 / 60 min in the current feed (19 trips per direction), spa
 
 ## Existing lines (2026-11-27)
 
-Actions run [45951673767](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45951673767), Travis with roads, branch build: `scenario.json` carries 61 existing lines (`existing_lines`), one per GTFS-matched route number, and passes sim-core `validate()`. The same day's main build (run 45951703196) republished `data-48453-2023` with GTFS headways (143 routes) and `commute_mode_shares`, but without lines.
+Actions run [45951673767](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45951673767), Travis with roads, branch build: 61 existing lines (`existing_lines`), one per GTFS-matched route number, passed sim-core `validate()` inside `scenario.json` (that build put them there unconditionally; they now go to `existing_lines.json`, and into `scenario.json` only with `--existing-lines`). The same day's main build (run 45951703196) republished `data-48453-2023` with GTFS headways (143 routes) and `commute_mode_shares`, but without lines.

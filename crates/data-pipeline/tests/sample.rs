@@ -199,6 +199,7 @@ fn builds_travis_sample() {
         year: 2022,
         margin_deg: 0.05,
         level: Level::BlockGroup,
+        existing_lines: false,
     };
     let m = build(&cfg).unwrap();
 
@@ -367,6 +368,7 @@ fn whole_state_area_keeps_both_counties() {
         year: 2022,
         margin_deg: 0.05,
         level: Level::BlockGroup,
+        existing_lines: false,
     };
     let m = build(&cfg).unwrap();
     assert_eq!(m.zones, 5);
@@ -392,6 +394,7 @@ fn county_level_merges_block_groups() {
         year: 2022,
         margin_deg: 0.05,
         level: Level::County,
+        existing_lines: false,
     };
     let m = build(&cfg).unwrap();
     assert_eq!((m.zones, m.block_groups, m.zone_level), (2, 5, "county"));

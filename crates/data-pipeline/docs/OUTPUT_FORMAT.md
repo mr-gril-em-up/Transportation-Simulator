@@ -41,11 +41,7 @@ Coordinates are WGS84 longitude, latitude in degrees. Lengths in meters, speeds 
 | `road_links[].capacity_vph`, `toll` | Not set | sim-core derives capacity from speed and lanes |
 | `road_links[].oneway` | OSM `oneway`, motorway class, roundabouts | `oneway=-1` ways are flipped so `from → to` is the legal direction |
 | `commutes[]` | LODES OD `S000` summed to block-group pairs | Only pairs with both ends in the area |
-<<<<<<< HEAD
-| `lines` | Today's network: one line per route `ref` that has GTFS headways (DATA-7); empty without a GTFS feed | sim-core treats these as existing service (no capital charge, open from day 0). The app drops them when the "start with today's network" setting is off. Red Line 550 uses the `figures.csv` timetable headways; Leander, Lakeline and Howard stops carry `park_ride` and `park_ride_spaces` |
-=======
-| `lines` | Always empty | The game starts with no transit; see `transit.json`. `Stop.park_ride_spaces` (SIM-11, optional) is never written; lot counts are figures.csv rows `pnr_spaces_*` (pending) |
->>>>>>> origin/main
+| `lines` | Empty by default. With `--existing-lines`, today's network: one line per route `ref` that has GTFS headways (DATA-7) | sim-core loads these as existing service (no capital charge, open from day 0), so they are opt-in until the app has a setting to drop them and Collins decides the default. The same lines are always written to `existing_lines.json`. Red Line 550 uses the `figures.csv` timetable headways; Leander, Lakeline and Howard stops carry `park_ride` and `park_ride_spaces` (SIM-11) |
 
 Zero-length links and self-loops are dropped from `scenario.json` (they remain in `roads.json`).
 
@@ -89,6 +85,10 @@ Zero-length links and self-loops are dropped from `scenario.json` (they remain i
 | `edges[].name` | OSM `name`, omitted if untagged |
 | `edges[].shape` | Intermediate points between `from` and `to`, in travel order; omitted if the edge is straight |
 
+## `existing_lines.json`
+
+A JSON array of sim-core `TransitLine`s: today's network, built by `lines::existing_lines` (DATA-7) whenever roads and a GTFS feed are present. sim-core's calibration reads it, and a future app setting "start with today's network" can too; `scenario.json` `lines` holds the same array only with `--existing-lines`.
+
 ## `transit.json`
 
 ```json
@@ -101,7 +101,7 @@ Zero-length links and self-loops are dropped from `scenario.json` (they remain i
 
 ## `manifest.json`
 
-Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, plus ` | headway P/M min` when GTFS gave peak/midday headways, sorted, so known lines can be checked from the manifest alone). `acs_income_zones`, `acs_zero_car_zones` and `area_zones` count block groups with their own ACS value or TIGER area (`null` if the file was absent). `commute_mode_shares` (present when B08301 was downloaded) sums the area's block groups into shares of all workers 16+: `drove_alone`, `carpool`, `transit`, `walk`, `bike`, `wfh` and `taxi_motorcycle_other`, which add to 1, plus `workers` and `block_groups`. sim-core's F14 calibration reads it. `existing_lines` counts the lines in `scenario.json`. `gtfs_routes_matched` counts OSM routes that got GTFS headways. `zone_level` is `block_group`, `tract` or `county`; `block_groups` is the number of block groups merged into `zones`. `scenario_road_nodes` and `scenario_road_links` count the simplified graph in `scenario.json`; `road_nodes` and `road_edges` count `roads.json`.
+Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, plus ` | headway P/M min` when GTFS gave peak/midday headways, sorted, so known lines can be checked from the manifest alone). `acs_income_zones`, `acs_zero_car_zones` and `area_zones` count block groups with their own ACS value or TIGER area (`null` if the file was absent). `commute_mode_shares` (present when B08301 was downloaded) sums the area's block groups into shares of all workers 16+: `drove_alone`, `carpool`, `transit`, `walk`, `bike`, `wfh` and `taxi_motorcycle_other`, which add to 1, plus `workers` and `block_groups`. sim-core's F14 calibration reads it. `existing_lines` counts the lines in `existing_lines.json`. `gtfs_routes_matched` counts OSM routes that got GTFS headways. `zone_level` is `block_group`, `tract` or `county`; `block_groups` is the number of block groups merged into `zones`. `scenario_road_nodes` and `scenario_road_links` count the simplified graph in `scenario.json`; `road_nodes` and `road_edges` count `roads.json`.
 
 ## Distribution
 
