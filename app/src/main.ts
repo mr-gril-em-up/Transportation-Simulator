@@ -166,7 +166,8 @@ const cycleLapse = () => (lapseBtn.textContent = `Time-lapse ${clock.cycleLapse(
 pauseBtn.onclick = togglePause;
 lapseBtn.onclick = cycleLapse;
 window.addEventListener("keydown", (e) => {
-  if (drawer.active || e.target instanceof HTMLSelectElement) return;
+  // Skip form controls: a focused button would also fire its own click on Space.
+  if (drawer.active || e.target instanceof HTMLSelectElement || e.target instanceof HTMLButtonElement) return;
   if (e.key === " ") togglePause();
   if (e.key === "t" || e.key === "T") cycleLapse();
 });
