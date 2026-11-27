@@ -170,11 +170,17 @@ performance table).
 
 676 zones, 1.3M residents, 4.1M daily trips.
 
-| Operation | 10k road nodes | 40k road nodes | Target |
-|---|---|---|---|
-| `Sim::new` (baseline to equilibrium) | 1.5 s | 6.4 s | none (load time) |
-| `add_line` / `update_line` / `remove_line` | 0.02 s | 0.02 s | < 2 s |
-| `equilibrate` (runs once per game day) | 1.2 s | 5.5 s | < 24 s (a day at 60x) |
+| Operation | 10k road nodes | 40k road nodes | 92k road nodes | Target |
+|---|---|---|---|---|
+| `Sim::new` (baseline to equilibrium) | 1.5 s | 6.4 s | 15.2 s | none (load time) |
+| `add_line` / `update_line` / `remove_line` | 0.02 s | 0.02 s | 0.02 s | < 2 s |
+| `equilibrate` (runs once per game day) | 1.2 s | 5.5 s | 13.0 s | < 24 s (a day at 60x) |
+
+The 92k column (`bench 0.165`) matches the size of the real Travis build
+(766 zones, 93k road nodes). Road-side cost grows linearly with road nodes;
+line edits do not touch the road graph, so they stay flat. Before the real
+Travis graph ships in the app, contract degree-2 nodes (pipeline) or add a
+contraction hierarchy here to bring `Sim::new` back to a few seconds.
 
 Line edits are fast because they leave car travel times alone and only redo
 transit paths, mode choice and transit loading. See
