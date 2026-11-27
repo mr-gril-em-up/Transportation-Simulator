@@ -31,6 +31,7 @@ tx_wac_*.csv.gz ─────────► 3. jobs ────┤
 tx_od_main_*.csv.gz ─────► 4. flows ───┤
 acs5_bg48_*.dat, ────────► 4b. ACS,  ──┼──► 6. scenario ──► validate ──► scenario.json
   tl_2020_48_bg.dbf           area     │                                 zones.json
+                         4c. --level: merge zones and flows into tracts or counties
 texas-latest.osm.pbf ────► 5. roads,   │                                 roads.json, transit.json
                               transit ─┘
                                                                          manifest.json
@@ -68,6 +69,16 @@ Optional inputs; without them zones keep sim-core's defaults and the build print
 - `acs5_bg48_<year>_b19013.dat`, `acs5_bg48_<year>_b25044.dat`: ACS 5-year estimates ending in the LODES year (2019–2023 for `--year 2023`), from the Census Bureau's table-based summary files. Each US-wide table is streamed and cut to its header plus Texas block-group rows (`GEO_ID` `1500000US48…`) by `fetch.sh`. The summary files need no API key; the Census API now refuses keyless requests ("Missing Key"), which the first real run hit. Median household income is `B19013_E001`. Zero-car share is (owner + renter households with no vehicle) / households from B25044 (`_E003 + _E010` over `_E001`). sim-core's schema comment names B08201, which measures the same households but is published only down to tract, so the pipeline uses B25044 to stay at block-group level (DATA-4).
 - Suppressed estimates (the Census writes negative sentinels such as -666666666 for small samples) and block groups with no households fall back to the household-weighted mean of the other block groups in the same tract, then the same county. Only if both are empty does the zone keep sim-core's default. The manifest counts zones with their own value (`acs_income_zones`, `acs_zero_car_zones`), so the fallback share is visible.
 - `tl_2020_48_bg.dbf`: the attribute table of the TIGER/Line 2020 block-group shapefile. `ALAND` (m²) becomes `area_km2`, which sim-core uses for density instead of estimating it from zone spacing. A minimal dBASE reader in `acs.rs` reads it, so no shapefile library is needed; polygons are a later step (F31, map fills).
+
+### 4c. Zone level (`aggregate::aggregate`, DATA-5)
+
+`--level bg` (default) keeps block groups. `--level tract` or `--level county` merges them by GEOID prefix (11 or 5 digits) after step 4b, so ACS fallbacks and land area are filled at the finest level first.
+
+- Population, workers, jobs, `commute_in`, `commute_out` and `area_km2` add up. Area is set only if every block group in the zone has one.
+- `lon`/`lat`, `median_income` and `zero_car_share` are population-weighted means of the block groups that have a value. An unpopulated zone uses equal weights.
+- Flows are re-keyed and summed. A flow between two block groups in the same tract becomes an intrazonal flow, which sim-core accepts and its desire lines skip.
+- Zones keep the order of their first block group, which is GEOID order.
+- The manifest's `zones`, `flows` and `top_flows` describe the merged zones; `block_groups` keeps the block-group count, and `acs_*_zones` / `area_zones` still count block groups.
 
 ### 5. Roads and transit (`osm::read_osm`)
 

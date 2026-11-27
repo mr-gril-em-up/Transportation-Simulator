@@ -57,7 +57,7 @@ Zero-length links and self-loops are dropped from `scenario.json` (they remain i
 
 | Field | Meaning |
 |---|---|
-| `geoid` | 12-digit 2020 block group GEOID |
+| `geoid` | 2020 GEOID of the zone: 12 digits for a block group, 11 for a tract, 5 for a county (`--level`) |
 | `lon`, `lat` | Population-weighted centroid |
 | `population` | 2020 census population |
 | `resident_workers` | LODES RAC `C000`: jobs held by people living here (anywhere in the US) |
@@ -97,7 +97,7 @@ Zero-length links and self-loops are dropped from `scenario.json` (they remain i
 
 ## `manifest.json`
 
-Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, sorted, so known lines can be checked from the manifest alone). `acs_income_zones`, `acs_zero_car_zones` and `area_zones` count zones with their own ACS value or TIGER area (`null` if the file was absent). `scenario_road_nodes` and `scenario_road_links` count the simplified graph in `scenario.json`; `road_nodes` and `road_edges` count `roads.json`.
+Human-readable summary, pretty-printed. Fields: `area`, `lodes_year`, `sources`, `zones`, `population`, `resident_workers`, `jobs`, `flows`, `internal_commuters`, `commute_out`, `commute_in`, `top_flows` (20 largest flows as GEOID pairs), and when roads were built `bbox`, `road_nodes`, `road_edges`, `road_km`, `transit_routes`, `rail_routes` (every non-bus route as `mode | ref | name | operator | N stops`, sorted, so known lines can be checked from the manifest alone). `acs_income_zones`, `acs_zero_car_zones` and `area_zones` count block groups with their own ACS value or TIGER area (`null` if the file was absent). `zone_level` is `block_group`, `tract` or `county`; `block_groups` is the number of block groups merged into `zones`. `scenario_road_nodes` and `scenario_road_links` count the simplified graph in `scenario.json`; `road_nodes` and `road_edges` count `roads.json`.
 
 ## Distribution
 

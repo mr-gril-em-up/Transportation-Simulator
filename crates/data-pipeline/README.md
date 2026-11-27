@@ -43,7 +43,7 @@ Covers a full build on a synthetic Travis County sample in the real file formats
 ### CLI
 
 ```
-tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--margin 0.05]
+tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--margin 0.05] [--level bg|tract|county]
 ```
 
 | Flag | Default | Meaning |
@@ -52,6 +52,7 @@ tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--mar
 | `--out` | `data/out/travis` | Where output files are written (created if missing) |
 | `--area` | `48453` | Comma-separated GEOID prefixes. `48453` = Travis County, `48453,48491` = Travis + Williamson, `48` = Texas |
 | `--year` | `2023` | LODES data year, and the end year of the ACS 5-year estimates (must match the downloaded file names) |
+| `--level` | `bg` | Zone level of the outputs: `bg` (block group), `tract` or `county`. Coarser levels merge block groups after ACS and land area are filled (DATA-5). Texas has 18,638 block groups, about 6,900 tracts and 254 counties |
 | `--margin` | `0.05` | Degrees of padding around the zones' bounding box when clipping OSM (about 5 km) |
 
 The build prints `manifest.json` to stdout and the elapsed time to stderr.
@@ -74,6 +75,7 @@ Ids are positions: zone `id` in `scenario.json` is its index in `zones.json`, an
 - **Block-group zones from Centers of Population** (D13): one small CSV gives population and a population-weighted centroid, with no geometry library.
 - **Routing simplification** (DATA-2): `scenario.json` drops road fragments, prunes dead ends without a zone and merges identical pass-through links. Paths between zones are unchanged; on Travis it cuts road nodes 44%. `roads.json` keeps full detail for drawing.
 - **ACS income and zero-car share at block-group level** (DATA-4): B19013 and B25044 from the ACS table-based summary files (no API key); suppressed estimates take the tract, then county, household-weighted mean. Land area from TIGER `ALAND`. Both inputs are optional.
+- **Tract and county zone levels** (DATA-5): `--level tract|county` merges block groups by GEOID prefix after the block-group build. Counts add; centroid, income and zero-car share are population-weighted; flows inside one coarse zone become intrazonal. The statewide scenario at block-group level is far too large for a sub-20 s day, so coarser levels come first.
 - **Zone connectors** (D19) go to the nearest local-road node (never motorway or trunk) in the largest connected component, so access is not free and clipping fragments cannot strand a zone.
 - **Lanes per direction in `scenario.json`**, because sim-core capacity is per direction; `roads.json` keeps OSM's total for drawing.
 - **No starting transit** in `scenario.json` (design doc "Starting map"); existing routes stay in `transit.json` for calibration.
@@ -97,6 +99,7 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 |---|---|
 | `src/main.rs` | CLI argument parsing, calls `build` |
 | `src/lib.rs` | `build()`: orchestrates the steps, writes files and the manifest |
+| `src/aggregate.rs` | Merges block-group zones and flows into tracts or counties (`--level`) |
 | `src/acs.rs` | Reads ACS summary-file tables (pipe-delimited) and TIGER `ALAND` (dBASE), fills zone income, zero-car share and area with tract/county fallback |
 | `src/census.rs` | Reads Centers of Population (zones) and LODES RAC/WAC/OD, aggregates blocks to block groups |
 | `src/osm.rs` | Two-pass OSM PBF reader: road graph and transit routes, clipped to a bbox |
@@ -124,5 +127,5 @@ Full step-by-step reasoning: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every
 
 - F02 done (#3). F03 done (#3).
 - Real-data Travis build: published as release `data-48453-2023` by the Actions workflow; checks in [docs/TESTING.md](docs/TESTING.md).
-- F31 partial: statewide `--area 48` builds and publishes (release `data-48-2023`); ACS income and zero-car share plus TIGER land area added. Tract and county zone levels and polygons are next.
+- F31 partial: statewide `--area 48` builds and publishes (release `data-48-2023`); ACS income and zero-car share plus TIGER land area added. Tract and county zone levels (`--level`, DATA-5) added; releases for them are tagged `data-<area>-<year>-<level>`. Polygons are next.
 - F04, F32, F33 not started.

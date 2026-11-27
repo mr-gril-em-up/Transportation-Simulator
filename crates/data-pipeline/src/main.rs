@@ -1,11 +1,12 @@
 use anyhow::{bail, Result};
-use data_pipeline::{build, census::Area, Config};
+use data_pipeline::{aggregate::Level, build, census::Area, Config};
 use std::path::PathBuf;
 
-const USAGE: &str = "usage: tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--margin 0.05]
+const USAGE: &str = "usage: tsim-data [--raw DIR] [--out DIR] [--area 48453[,48491...]] [--year 2023] [--margin 0.05] [--level bg|tract|county]
 
 Builds scenario.json (sim-core input), zones.json, roads.json, transit.json and manifest.json.
---area takes GEOID prefixes: 48453 = Travis County, 48 = all of Texas.";
+--area takes GEOID prefixes: 48453 = Travis County, 48 = all of Texas.
+--level merges block groups into census tracts or counties (default bg).";
 
 fn main() -> Result<()> {
     let mut cfg = Config {
@@ -16,6 +17,7 @@ fn main() -> Result<()> {
         },
         year: 2023,
         margin_deg: 0.05,
+        level: Level::BlockGroup,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -29,6 +31,7 @@ fn main() -> Result<()> {
             "--area" => cfg.area.prefixes = val()?.split(',').map(str::to_string).collect(),
             "--year" => cfg.year = val()?.parse()?,
             "--margin" => cfg.margin_deg = val()?.parse()?,
+            "--level" => cfg.level = Level::parse(&val()?)?,
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return Ok(());
