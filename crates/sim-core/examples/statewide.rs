@@ -50,7 +50,20 @@ fn main() {
         .map(|f| serde_json::from_str(&std::fs::read_to_string(f).expect("LINES")).unwrap())
         .unwrap_or_default();
     input.lines = lines.clone();
-    let mut sim = Sim::new(input, params).unwrap();
+    // ROADS=<file>: start warm from saved road volumes if the file exists,
+    // and save them there at the end (SIM-19).
+    let roads_file = std::env::var("ROADS").ok();
+    let saved: Option<sim_core::RoadState> = roads_file
+        .as_ref()
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .and_then(|j| serde_json::from_str(&j).ok());
+    let mut sim = match &saved {
+        Some(r) => Sim::new_warm(input, params, r).unwrap(),
+        None => Sim::new(input, params).unwrap(),
+    };
+    if saved.is_some() {
+        println!("warm start from saved roads: {}", sim.started_warm());
+    }
     let cold = t.elapsed().as_secs_f64();
     println!(
         "cold start ({rounds} rounds): {cold:.1} s, peak speed {:.0} km/h",
@@ -105,6 +118,9 @@ fn main() {
         "budgeted day: {:.1} s in {calls} calls of 100 ms budget, longest call {longest:.2} s",
         t.elapsed().as_secs_f64()
     );
+    if let Some(f) = &roads_file {
+        std::fs::write(f, serde_json::to_string(&sim.road_state()).unwrap()).unwrap();
+    }
     let r = sim.results();
     let sh = r.mode_share;
     println!(
