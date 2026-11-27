@@ -172,17 +172,22 @@ function renderPanel(): void {
     .join("");
 }
 
-// Startup: sim-core can take seconds (15 s on the real Travis road graph) to build.
+// Startup: sim-core takes a few seconds to build (longer on the real Travis road graph).
 $("sim-ms").textContent = `${sim.label} · loading…`;
+const showLoading = setInterval(() => ($("sim-ms").textContent = `${sim.label} · loading…`), 500);
 sim.ready().then(
   async () => {
+    clearInterval(showLoading);
     $("sim-ms").textContent = `${sim.label} · ready`;
     renderBudget(await sim.budget());
     // Hand the clock to the sim, carrying over pause and speed set while it loaded.
     simReady = true;
     syncClock(await sim.setClock({ paused: clock.paused, timelapse: clock.speed }));
   },
-  (e) => ($("sim-ms").textContent = `${sim.label} failed to start: ${e}`),
+  (e) => {
+    clearInterval(showLoading);
+    $("sim-ms").textContent = `${sim.label} failed to start: ${e}`;
+  },
 );
 
 // ---- Desire lines (F06) -------------------------------------------------------

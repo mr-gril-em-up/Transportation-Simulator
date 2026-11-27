@@ -156,3 +156,14 @@ state stays testable without a running app. Ticking under the same lock as
 edits keeps the one-`Sim`, one-writer model; the cost is that an edit at
 midnight waits for the day re-run. sim-core's start time (day 0 05:00) is
 adopted; the client's old 06:00 start is gone.
+
+### A24. Real Travis data by default, from the pipeline's release, not bundled
+The shell loads `TRANSPO_SCENARIO`, else the Travis build that `npm run data`
+downloads to the pipeline's gitignored `data/out/48453-2023/`, else the
+synthetic region. The path is resolved from the shell crate's source
+directory, so it works in any checkout with no configuration, and the
+download reuses the pipeline's own script (DATA-1) instead of a second copy.
+Not committed (27 MB of JSON, DATA-1 keeps generated data out of git) and not
+bundled yet (installers are not an M1 need). The synthetic fallback keeps a
+fresh clone and CI working with no network. The panel names the source so a
+synthetic run is never mistaken for real numbers.

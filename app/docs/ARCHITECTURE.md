@@ -19,7 +19,7 @@ flowchart LR
         state --> core["sim_core::Sim"]
     end
     tauri -->|"invoke (JSON IPC)"| cmds
-    scen[("TRANSPO_SCENARIO json<br/>or synth::generate")] -->|"background thread at startup"| core
+    scen[("TRANSPO_SCENARIO json, else the<br/>downloaded Travis build, else synth::generate")] -->|"background thread at startup"| core
 ```
 
 The client holds all UI state. The simulation is reached only through the

@@ -19,13 +19,14 @@ doc.
 - Build cost preview while drawing (capital, grant, riders, operating cost) and
   a cash/budget line from sim-core's ledger (F16, F23, F26) (#22)
 - Sim-owned clock: shell worker drives `Sim::tick`; client polls and
-  interpolates; skip to next month; ridership refreshes after each daily re-run (F21)
+  interpolates; skip to next month; ridership refreshes after each daily re-run (F21) (#23)
+- Real Travis County data by default (`npm run data`, then the shell finds the
+  downloaded build); panel names the scenario source
 
 ## Next, M0/M1 (blocked items say on what)
 
 | Item | Blocked on |
 |---|---|
-| Ship the pipeline's Travis `scenario.json` as the default scenario | pipeline output path/packaging agreed |
 | Snap drawn bus routes to the road graph | road graph from the pipeline; router location (sim-core vs app) to agree |
 | Line inspector: per-stop boardings chart, segment load profile, peak load vs capacity | nothing (fields already cross IPC) |
 | M1 exit check in the UI: Red Line replica vs reported ridership | calibrated mode split (F14) and real scenario |

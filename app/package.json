@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
+    "data": "bash ../crates/data-pipeline/scripts/download-build.sh",
     "tauri": "tauri"
   },
   "dependencies": {
