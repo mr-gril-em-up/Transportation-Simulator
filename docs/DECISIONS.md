@@ -32,6 +32,7 @@ If two PRs in the same stream still pick the same number, the one that merges se
 ## Data pipeline (DATA)
 
 | # | Date | Decision | Why | Status | Source |
+| DATA-1 | 2026-11-27 | Pipeline builds are distributed as GitHub Release assets (`data-<area>-<year>`), published by the manual data-pipeline workflow; never committed to git | Consumers (app, sim-core, reviewers) get real data with one command and no raw downloads; keeps tens of MB of generated JSON out of history; re-runs replace assets in place | As built | [pipeline README](../crates/data-pipeline/README.md#use-a-published-build-no-raw-downloads) |
 |---|---|---|---|---|---|
 
 ## App (APP)
@@ -51,7 +52,6 @@ Detailed app decisions also live in [app/docs/DECISIONS.md](../app/docs/DECISION
 
 | # | Date | Decision | Why | Status | Source |
 |---|---|---|---|---|---|
-| D32 | 2026-11-27 | Pipeline builds are distributed as GitHub Release assets (`data-<area>-<year>`), published by the manual data-pipeline workflow; never committed to git | Consumers (app, sim-core, reviewers) get real data with one command and no raw downloads; keeps tens of MB of generated JSON out of history; re-runs replace assets in place | As built | [pipeline README](../crates/data-pipeline/README.md#use-a-published-build-no-raw-downloads) |
 | D31 | 2026-11-27 | Capital is charged when a line is added or extended, only for cost above what the line already paid; shortening or removing refunds nothing. `preview_line` prices a line by evaluating it and removing it again | No construction period yet (F24), so charging at the edit is the simplest honest rule; sunk construction cannot be resold. Reusing the line-edit path makes the preview's ridership and grant exactly what building would give | As built | [sim-core MODEL.md](../crates/sim-core/docs/MODEL.md#10-capital-cost-and-funding) |
 | D30 | 2026-11-27 | The network is funded by federal and state grants plus a local tax base: federal capital grants (50%) for lines under a capital-per-daily-rider gate, operating assistance as a share of operating cost, and a 1% local sales tax over the population a network serves; settled monthly | Mirrors how Texas transit is paid for (FTA CIG, formula funds, CapMetro/DART/METRO 1% sales tax), and makes growing coverage grow the tax base | Decided | Collins; [sim-core MODEL.md](../crates/sim-core/docs/MODEL.md#10-capital-cost-and-funding) |
 | D29 | 2026-11-27 | sim-core defaults use the sourced figures: 2.28 total trips per person per day (non-work = total minus work, floored at 0), NTD 2023 cost per car revenue hour with a cars-per-vehicle count (bus 182, light rail 436 x 2, commuter rail 716 x 2), CapMetro fares; a test checks them against `figures.csv` | Collins chose the real sourced figures over the design doc's numbers; NTD reports rail hours per car, so storing per-car cost keeps the default equal to the published row | Decided | Collins; [sim-core MODEL.md](../crates/sim-core/docs/MODEL.md#2-trip-generation) |
