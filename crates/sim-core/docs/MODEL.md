@@ -114,9 +114,10 @@ the intrazonal distance x `detour_factor [1.3]` at 25 km/h.
 **Strategic cutoff (F34, SIM-13).** With `strategic_max_min` set (default
 none), the model keeps only zone pairs within that many free-flow car minutes
 of each other, in either direction; every per-pair skim, demand and flow
-exists only for those. The free-flow tree stops at the cutoff and congested
-trees at 3x it, so a kept pair whose congested time triples loses its car
-option. LODES commutes between pairs beyond the cutoff are not assigned and
+exists only for those. The pair set comes from free-flow trees stopped at the
+cutoff, made symmetric; every later tree runs until the origin's kept
+destinations are reached, so each kept pair has a car time in both directions
+(tested with asymmetric one-way roads). LODES commutes between pairs beyond the cutoff are not assigned and
 are reported as `beyond_cutoff_trips` (both directions); they still count
 against the home zone's non-work trip budget. Non-work trips are distributed
 by the gravity model over the kept destinations only. With a cutoff that

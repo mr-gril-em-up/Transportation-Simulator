@@ -289,6 +289,10 @@ pub struct Tree {
     n_targets: usize,
     /// Stop expanding past this cost (F34 strategic cutoff); infinite by default.
     pub bound: f64,
+    /// Nodes given a distance by the last run, so the next one resets only
+    /// those (a bounded tree touches a sliver of a statewide graph).
+    touched: Vec<u32>,
+    target_list: Vec<u32>,
 }
 
 impl Tree {
@@ -297,7 +301,8 @@ impl Tree {
         for &t in targets {
             is_target[t as usize] = true;
         }
-        let n_targets = is_target.iter().filter(|&&t| t).count();
+        let target_list: Vec<u32> = (0..n as u32).filter(|&v| is_target[v as usize]).collect();
+        let n_targets = target_list.len();
         Tree {
             dist: vec![f64::INFINITY; n],
             pred: vec![NONE; n],
@@ -307,19 +312,26 @@ impl Tree {
             is_target,
             n_targets,
             bound: f64::INFINITY,
+            touched: Vec::new(),
+            target_list,
         }
     }
 
     /// Dijkstra from `src` on edge costs `times`. Stops once every target is
     /// settled or the next node is costlier than `bound`.
     pub fn run(&mut self, g: &RoadGraph, times: &[f64], src: u32) {
-        self.dist.fill(f64::INFINITY);
-        self.pred.fill(NONE);
-        self.settled.fill(false);
+        for &v in &self.touched {
+            let v = v as usize;
+            self.dist[v] = f64::INFINITY;
+            self.pred[v] = NONE;
+            self.settled[v] = false;
+        }
+        self.touched.clear();
         self.order.clear();
         self.heap.clear();
         let mut remaining = self.n_targets;
         self.dist[src as usize] = 0.0;
+        self.touched.push(src);
         self.heap.push(key(0.0, src));
         while let Some(Reverse(k)) = self.heap.pop() {
             let v = (k & 0xFFFF_FFFF) as usize;
@@ -344,12 +356,30 @@ impl Tree {
                 let to = to as usize;
                 let nd = cost + t;
                 if nd < self.dist[to] && !self.settled[to] {
+                    if self.dist[to] == f64::INFINITY {
+                        self.touched.push(to as u32);
+                    }
                     self.dist[to] = nd;
                     self.pred[to] = ei as u32;
                     self.heap.push(key(nd, to as u32));
                 }
             }
         }
+    }
+
+    /// Replace the target set (the tree stops once all are settled).
+    pub fn set_targets(&mut self, targets: impl IntoIterator<Item = u32>) {
+        for &t in &self.target_list {
+            self.is_target[t as usize] = false;
+        }
+        self.target_list.clear();
+        for t in targets {
+            if !self.is_target[t as usize] {
+                self.is_target[t as usize] = true;
+                self.target_list.push(t);
+            }
+        }
+        self.n_targets = self.target_list.len();
     }
 
     /// True if `v` was settled (its `dist` is final). Nodes past `bound` are not.

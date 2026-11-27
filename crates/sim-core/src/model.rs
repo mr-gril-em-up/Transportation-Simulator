@@ -995,6 +995,16 @@ impl Sim {
         self.finish(Instant::now(), self.results.car_times_stale, None);
     }
 
+    /// Kept zone pairs with no free-flow car time although the reverse
+    /// direction has one: a diagnostic for the strategic cutoff (0 when the
+    /// trees reach far enough for asymmetric road times).
+    pub fn car_unreachable_pairs(&self) -> usize {
+        let t = &self.car_free.time;
+        (0..self.pairs.len())
+            .filter(|&k| !t[k].is_finite() && t[self.pairs.rev[k]].is_finite())
+            .count()
+    }
+
     /// Commute (home-work) mode shares under the current constants and skims,
     /// the quantity `calibrate_mode_shares` fits.
     pub fn commute_mode_shares(&self) -> ModeSplit {
@@ -1302,6 +1312,22 @@ impl Sim {
         t
     }
 
+    /// Shortest-path tree from zone `i`, run until every kept destination is
+    /// settled (or past the tree's bound). With a cutoff the targets are the
+    /// row's own zones, so asymmetric road times cannot leave a kept pair
+    /// without a car time.
+    fn run_tree(&self, tree: &mut Tree, times: &[f64], i: usize) {
+        if self.params.strategic_max_min.is_some() {
+            tree.set_targets(
+                self.pairs
+                    .dests(i)
+                    .iter()
+                    .map(|&j| self.zone_node[j as usize]),
+            );
+        }
+        tree.run(&self.graph, times, self.zone_node[i]);
+    }
+
     /// Car skims for every kept pair on `times` (used once, for free-flow times).
     fn skim_car(&self, times: &[f64]) -> CarSkim {
         let z = self.nz;
@@ -1310,9 +1336,11 @@ impl Sim {
         let rows: Vec<(Vec<f32>, Vec<f32>, Vec<f32>)> = (0..z)
             .into_par_iter()
             .map_init(
-                || (self.tree(1.0), vec![0.0; g.n_nodes], vec![0.0; g.n_nodes]),
+                // The bound is only a guard: trees stop once the row's own
+                // destinations are settled (`run_tree`).
+                || (self.tree(10.0), vec![0.0; g.n_nodes], vec![0.0; g.n_nodes]),
                 |(tree, km, toll), i| {
-                    tree.run(g, times, self.zone_node[i]);
+                    self.run_tree(tree, times, i);
                     tree.km_and_toll(g, km, toll);
                     self.car_row(i, tree, km, toll)
                 },
@@ -1501,7 +1529,7 @@ impl Sim {
                     let (mut tree, mut km, mut toll, mut srch, mut nd, mut outs) = acc
                         .unwrap_or_else(|| {
                             (
-                                self.tree(3.0),
+                                self.tree(10.0),
                                 vec![0.0; g.n_nodes],
                                 vec![0.0; g.n_nodes],
                                 Searcher::new(net, p, z),
@@ -1509,7 +1537,7 @@ impl Sim {
                                 Vec::new(),
                             )
                         });
-                    tree.run(g, times, self.zone_node[i]);
+                    self.run_tree(&mut tree, times, i);
                     tree.km_and_toll(g, &mut km, &mut toll);
                     let (t, k, tl) = self.car_row(i, &tree, &km, &toll);
                     let dests = self.pairs.dests(i);

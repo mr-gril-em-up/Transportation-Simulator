@@ -584,3 +584,31 @@ fn short_strategic_cutoff_drops_far_pairs_but_conserves_trips() {
     assert!(r.other_trips.total() > 0.99 * dense.results().other_trips.total());
     assert!(r.lines[0].daily_boardings > 0.0);
 }
+
+#[test]
+fn every_kept_pair_under_a_cutoff_has_a_car_time() {
+    // One-way links make road times asymmetric; a kept pair must still be
+    // drivable both ways, or it silently loses its car option.
+    let mut input = generate(&SynthConfig::small());
+    let mut slow = Vec::new();
+    for (n, l) in input.road_links.iter_mut().enumerate() {
+        if n % 3 == 0 {
+            l.oneway = true;
+            slow.push(sim_core::RoadLink {
+                from: l.to,
+                to: l.from,
+                speed_kph: l.speed_kph / 3.0,
+                ..l.clone()
+            });
+        }
+    }
+    input.road_links.extend(slow);
+    let p = Params {
+        strategic_max_min: Some(8.0),
+        ..Params::default()
+    };
+    let dense = Sim::new(input.clone(), Params::default()).unwrap();
+    let s = Sim::new(input, p).unwrap();
+    assert_eq!(dense.car_unreachable_pairs(), 0);
+    assert_eq!(s.car_unreachable_pairs(), 0);
+}
