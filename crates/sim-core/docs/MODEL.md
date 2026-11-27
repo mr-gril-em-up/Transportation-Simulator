@@ -275,6 +275,79 @@ Projected or foreign-only modes (maglev, gondola, people mover) take speeds and
 costs from built systems abroad; these are flagged in the build menu by the app,
 not here. No hyperloop.
 
+## 10. Capital cost and funding
+
+Collins decided (D30) that the network is funded by state and federal grants
+plus a local tax base, using real sourced figures. Code:
+[src/economy.rs](../src/economy.rs), wired into `Sim` in `model.rs`.
+
+### Capital cost (F23, first cut)
+
+`capital = capital_per_km x route length + vehicles x cars_per_vehicle x vehicle_cost`
+
+where `vehicles` is the fleet from section 9 (round trip x 1.1 / headway).
+
+| Mode | Per route km | Per car | Source |
+|---|---|---|---|
+| Bus | $0.3M (stops, shelters) | $716,400 | price: MTC FY2024-25 pricelist (figures.csv); per km estimate |
+| Trolleybus | $3M (overhead wire) | $1,407,600 | price: MTC battery-electric bus as proxy; per km estimate |
+| BRT | $15M | $1,407,600 | estimate; same bus price |
+| Tram | $117M/mile = $72.7M | $5M | Eno: US mostly-surface rail; LRV price (figures.csv) |
+| Light rail | **$840M/mile = $522M** | $5M | Austin Light Rail Phase 1, FTA profile (Collins's chosen figure); LRV price |
+| Commuter rail | $20M | $5M | estimate (shares existing freight right-of-way) |
+| Metro | $570M/mile = $354M | $15M | Eno: US mostly-tunnel rail; car price estimate |
+| High-speed rail | $167M/mile = $104M | $40M per train | Texas Central (USDOT > $40B / 240 mi); train estimate |
+| Monorail, people mover, gondola, maglev, ferry | $150M, $100M, $30M, $300M, $0 | $10M, $5M, $0.1M, $60M, $10M | estimates |
+
+`tests/figures.rs` checks every sourced cell against figures.csv.
+
+Simplifications and why:
+- The Austin figure is a whole-project cost (stations, maintenance facility,
+  vehicles, finance charges). Adding vehicles on top double-counts about 1-2%;
+  not worth a second constant.
+- No terrain, land cover or right-of-way multipliers yet (rest of F23). The
+  same line costs the same through wetlands or downtown.
+- Capital is charged the moment a line is added or extended: no construction
+  period yet (F24). An edit pays only the cost above what the line already paid
+  (`capital_paid` per line); shortening or removing a line refunds nothing,
+  because sunk construction is gone.
+- Lines in the input (present at start) are treated as already paid for.
+
+### Federal capital grants
+
+When capital is charged, the federal government pays `federal_capital_share
+[0.5]` of it if the line passes a cost-effectiveness gate: total capital cost
+per forecast daily boarding at most `federal_max_capital_per_daily_rider
+[$600k]`. This stands in for FTA Capital Investment Grants, which fund up to 80%
+(typically about half) of projects rated on cost-effectiveness. Austin Light
+Rail Phase 1 ($7.1B excluding finance charges, 18,700 forecast riders) is about
+$380k per rider and is in the CIG pipeline, so the gate sits above it. The
+forecast is the model's own daily boardings with the line in place, the same
+number `preview_line` shows.
+
+### Monthly settlement
+
+At each 30-day month boundary (`tick` or `Sim::skip_to_next_month`), the ledger
+closes the month using that day's line results:
+
+| Line | Formula |
+|---|---|
+| Fare revenue | 30 x sum of `fare_revenue_per_day` |
+| Operating cost | 30 x sum of `operating_cost_per_day` |
+| Operating assistance | operating cost x `operating_assistance_share [0.12]` (federal formula and state funds; estimate) |
+| Local tax | served population x `taxable_sales_per_capita [$23,000]` x `local_sales_tax_rate [1%]` / 12 |
+
+Served population is the residents of every zone with any walking coverage of
+a stop. Texas transit authorities (CapMetro, DART, Houston METRO) levy a 1%
+sales tax in their member cities; growing the network grows the taxing area.
+Taxable sales per capita is an estimate (CapMetro's ~$300M/yr sales tax over
+~1.4M residents implies ~$21k) pending a sourced figures.csv row.
+
+Cash starts at `starting_cash [0]` and may go negative: bonds, debt service and
+the bankruptcy rule are F26. On the synthetic Travis bench, a 28 km light rail
+line costs about $16B and fails the grant gate at its uncalibrated ridership;
+it then needs local tax of about $4M a month against $8.6M operating cost.
+
 ## Known gaps
 
 In rough priority for M1 tuning:
@@ -289,3 +362,5 @@ In rough priority for M1 tuning:
    700 zones, not for 6,900 tracts (M3 needs sparse or blocked storage and a
    contracted highway graph).
 7. Park-and-ride car trips are not added to road volumes.
+8. Capital cost has no terrain or right-of-way multipliers and no construction
+   period; funding has no bonds or state appropriation yet (F23, F24, F26).

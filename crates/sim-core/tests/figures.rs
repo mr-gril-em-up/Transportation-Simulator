@@ -2,7 +2,7 @@
 //! `crates/data-pipeline/reference/figures.csv` (decision D25: sourced numbers
 //! live in one file; sim-core copies them as constants and this test stops drift).
 
-use sim_core::params::mode_defaults;
+use sim_core::params::{mode_defaults, MI_KM};
 use sim_core::{Mode, Params};
 use std::collections::HashMap;
 
@@ -29,7 +29,7 @@ fn check(f: &HashMap<String, f64>, key: &str, ours: f64) {
         .get(key)
         .unwrap_or_else(|| panic!("{key} missing from figures.csv"));
     assert!(
-        (theirs - ours).abs() < 1e-9,
+        (theirs - ours).abs() <= 1e-9 * theirs.abs().max(1.0),
         "{key}: figures.csv says {theirs}, sim-core default is {ours}"
     );
 }
@@ -51,4 +51,30 @@ fn sourced_defaults_match_figures_csv() {
     check(&f, "fare_capmetro_local", bus.fare);
     check(&f, "fare_capmetro_local", lrt.fare);
     check(&f, "fare_capmetro_commuter", crt.fare);
+
+    // Capital: per-mile figures stored per km, vehicle prices per car.
+    let per_mile = |m| mode_defaults(m).capital_per_km * MI_KM;
+    check(
+        &f,
+        "cost_light_rail_austin_phase1",
+        per_mile(Mode::LightRail),
+    );
+    check(
+        &f,
+        "cost_rail_transit_us_mostly_surface",
+        per_mile(Mode::Tram),
+    );
+    check(
+        &f,
+        "cost_rail_transit_us_mostly_tunnel",
+        per_mile(Mode::Metro),
+    );
+    check(&f, "cost_hsr_texas_central", per_mile(Mode::HighSpeedRail));
+    check(&f, "cost_bus_40ft_diesel", bus.vehicle_cost);
+    check(
+        &f,
+        "cost_bus_40ft_battery_electric",
+        mode_defaults(Mode::Brt).vehicle_cost,
+    );
+    check(&f, "cost_light_rail_vehicle", lrt.vehicle_cost);
 }

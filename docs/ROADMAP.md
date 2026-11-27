@@ -54,9 +54,9 @@ gantt
     Shared clock and time-lapse                :        f21, 2027-01-06, 4d
     Departure-time choice (peak spreading)     :        f22, after f21, 5d
     Construction timelines (12x, 1x to 24x)    :        f24, after f21, 4d
-    Capital costs with terrain and land cover  :        f23, 2027-01-06, 7d
-    Operating costs, fares, tolls, budget      :        f25, after f23, 5d
-    Bonds, grants, appropriation, bankruptcy   :        f26, after f25, 4d
+    Capital costs with terrain and land cover  :active, f23, 2027-01-06, 7d
+    Operating costs, fares, tolls, budget      :active, f25, after f23, 5d
+    Bonds, grants, appropriation, bankruptcy   :active, f26, after f25, 4d
     Approval score                             :        f27, after f26, 3d
     Mode-shift exaggeration factor             :        f2e, after f22, 3d
     Local-tier agents (seeded sampling)        :        f28, 2027-01-06, 10d
@@ -136,10 +136,10 @@ Goal: turn the loop into a game. Costs and a budget, one shared clock, people yo
 |---|---|---|---|---|---|
 | F21 | One game clock for every tier (1 real s ≈ 1 game min); time-lapse 2x, 10x, 60x and skip-to-next-month; zoom never changes speed | core, app | F15 | Clock rate is identical at every zoom; time-lapse applies to all tiers | Prototype (#2, #7): client clock in the app; sim-core `Clock` (1/2/10/60x, skip-to-next-month) and `Sim::tick` ready to replace it |
 | F22 | Desired arrival times and departure-time choice (ACS departure-time distributions, late/early penalties) | core | F14, F21 | Jamming the 8:00 peak shifts some trips earlier (peak spreading visible) | Partial (#7): desired-arrival profile sets the peak-hour share and a transit schedule-delay penalty; no departure-time choice |
-| F23 | Capital cost model from the design doc's cost table; terrain (USGS 3DEP DEM) and land cover (NLCD) multipliers; right-of-way priced by block-group density | core, pipeline | F03 | Build preview shows cost; same line costs more through wetlands, water or dense block groups | Planned |
+| F23 | Capital cost model from the design doc's cost table; terrain (USGS 3DEP DEM) and land cover (NLCD) multipliers; right-of-way priced by block-group density | core, pipeline | F03 | Build preview shows cost; same line costs more through wetlands, water or dense block groups | Partial (#15): per-km guideway plus vehicle fleet from sourced figures (Austin LRT $840M/mi, Eno surface/tunnel, Texas Central HSR, MTC bus and LRV prices); `Sim::preview_line` returns cost, grant and ridership before a line is committed; no terrain, land cover or right-of-way multipliers |
 | F24 | Construction time compressed 12x by default, realism setting 1x to 24x; bond terms and vehicle lifetimes compress by the same factor; capacity degraded on affected roads during construction | core | F21 | A 6-year light rail line builds in 6 game months at default | Partial (#7): `Params::construction_speedup` (12x) and `build_days` only |
-| F25 | Operating costs (per revenue hour; road maintenance 2–3% of capital/yr), fares (flat, distance, zone), tolls (per-mile, dynamic), monthly budget settlement | core | F23, F21 | Budget settles monthly; fare change moves riders through the logit model | Partial (#7, #14): per-line operating cost from NTD 2023 cost per car hour, CapMetro fares, distance fares, farebox recovery; no budget or settlement |
-| F26 | Funding: cash, bonds (20–30 yr debt service), federal grants (50–80% match, ridership-per-dollar gate), state appropriation by served population; bankruptcy fail state | core | F25 | Debt service exceeding revenue for 12 months ends the game. *Bankruptcy placed here; elections and loss of mandate are out of the MVP.* | Planned |
+| F25 | Operating costs (per revenue hour; road maintenance 2–3% of capital/yr), fares (flat, distance, zone), tolls (per-mile, dynamic), monthly budget settlement | core | F23, F21 | Budget settles monthly; fare change moves riders through the logit model | Partial (#7, #14, #15): per-line operating cost from NTD 2023 cost per car hour, CapMetro fares, distance fares, farebox recovery; monthly budget settlement in `Sim::ledger()` |
+| F26 | Funding: cash, bonds (20–30 yr debt service), federal grants (50–80% match, ridership-per-dollar gate), state appropriation by served population; bankruptcy fail state | core | F25 | Debt service exceeding revenue for 12 months ends the game. *Bankruptcy placed here; elections and loss of mandate are out of the MVP.* | Partial (#15): cash ledger, federal capital grants (50%, capital-per-rider gate), operating assistance, local 1% sales tax over the served population (D30); no bonds, state appropriation or bankruptcy |
 | F27 | Approval score from travel-time savings, construction disruption, fare/toll changes, tax burden | core | F26 | Approval responds to each of the four inputs | Planned |
 | F2e | Tunable exaggeration factor on mode shifts (design doc risk: believability vs fun) | core | F22 | Factor exposed in settings; default chosen from playtest feedback | Planned |
 | F28 | Local tier: agents within ~5 km of the camera sampled from regional flows with seeded RNG per zone and time slice; vehicles follow lanes, riders board and alight; flow animation instead of agents above 10x | core, app | F14, F21 | Zooming out and back in shows the same people on the same bus | Planned |

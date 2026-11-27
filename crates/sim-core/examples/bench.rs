@@ -55,6 +55,15 @@ fn main() {
     // A north-south light rail line through downtown to the Domain.
     let line = straight_line(Mode::LightRail, (0.5, -12.0), (2.0, 16.0), 1.2, 8.0);
     let t = Instant::now();
+    let pv = sim.preview_line(line.clone()).unwrap();
+    println!(
+        "preview_line: {:.3} s  capital ${:.0}M  federal grant ${:.0}M  ${:.0}k per daily boarding",
+        t.elapsed().as_secs_f64(),
+        pv.capital_cost / 1e6,
+        pv.federal_grant / 1e6,
+        pv.capital_per_daily_boarding / 1e3
+    );
+    let t = Instant::now();
     let id = sim.add_line(line).unwrap();
     let dt = t.elapsed().as_secs_f64();
     let lr = &sim.results().lines[0];
@@ -87,4 +96,15 @@ fn main() {
         t.elapsed().as_secs_f64()
     );
     assert!(dt < 2.0, "line edit must re-evaluate in under 2 s");
+    sim.skip_to_next_month();
+    let m = sim.ledger().history.last().unwrap();
+    println!(
+        "month settled: fares ${:.1}M  op cost ${:.1}M  assistance ${:.1}M  local tax ${:.1}M (served pop {:.0})  cash ${:.0}M",
+        m.fare_revenue / 1e6,
+        m.operating_cost / 1e6,
+        m.operating_assistance / 1e6,
+        m.local_tax / 1e6,
+        sim.ledger().served_population,
+        sim.ledger().cash / 1e6
+    );
 }
