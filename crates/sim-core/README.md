@@ -172,7 +172,8 @@ Fields marked optional may be omitted.
     "lanes": 1,            // optional, per direction
     "capacity_vph": 1800,  // optional, per direction; derived from speed x lanes
     "toll": 0,             // optional, $ per traversal
-    "oneway": false        // optional; false = usable both ways
+    "oneway": false,       // optional; false = usable both ways
+    "class": "primary"     // optional OSM highway class; sets derived capacity (F38)
   }],
   "commutes": [{ "home": 2, "work": 1, "workers": 900 }],  // LODES OD by zone
   "lines": []              // optional, transit present at start (see TransitLine)

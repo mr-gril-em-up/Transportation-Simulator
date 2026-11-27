@@ -276,7 +276,9 @@ unchanged. **Open:** about 39 km/h after a week is still low for a peak
 hour. Two known causes, for F38 with TxDOT counts: roads at 55 to 80 km/h get
 900 veh/h per lane (`lane_capacity_vph`, set for signalized arterials), which
 also applies to rural two-lane highways that carry ~1,700; and BPR puts no cap
-on delay at very high volume/capacity.
+on delay at very high volume/capacity. `RoadLink.class` (OSM highway class,
+optional) now sets capacity by facility type, so a rural two-lane highway can
+carry 1,700 per lane; the pipeline fills it next, and the counts then fit it.
 
 **Line edits (SIM-17).** With today's 61 CapMetro lines loaded
 (`LINES=existing_lines.json examples/statewide.rs`), a statewide

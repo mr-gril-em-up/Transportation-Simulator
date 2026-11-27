@@ -88,6 +88,11 @@ pub struct RoadLink {
     /// If false (default) the link is usable in both directions.
     #[serde(default)]
     pub oneway: bool,
+    /// OSM highway class (`motorway`, `trunk`, `primary`, ..., `_link`
+    /// variants). Optional; sets the derived capacity when `capacity_vph`
+    /// is omitted (see `params::lane_capacity_vph`). F38.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<String>,
 }
 
 /// Workers living in `home` and working in `work` (zone ids).
