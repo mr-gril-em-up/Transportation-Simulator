@@ -64,7 +64,7 @@ jobs:
       - run: cargo run --release -- --area "$AREA" --year "$YEAR" --level "$LEVEL" --roads "${{ inputs.roads || 'all' }}" ${{ inputs.existing_lines && '--existing-lines' || '' }} --out data/out/area
       - uses: actions/upload-artifact@v4
         with:
-          name: tsim-data-${{ inputs.area }}-${{ inputs.year }}-${{ inputs.level }}
+          name: tsim-data-${{ inputs.area }}-${{ inputs.year }}-${{ inputs.level }}${{ inputs.roads == 'highway' && '-highway' || '' }}
           path: crates/data-pipeline/data/out/area
       - name: Publish release data-${{ inputs.area }}-${{ inputs.year }} (level ${{ inputs.level }})
         # Only main publishes, so a branch run cannot replace a reviewed release.
