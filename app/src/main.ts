@@ -9,8 +9,9 @@ import { layoutSchematic, morph } from "./schematic";
 import { km, routePath } from "./geo";
 import { money, escapeHtml } from "./format";
 import { inspectorHtml } from "./inspector";
-import { isRegional, defaultFare, type PendingRoute, type Budget, type Statement, type ClockState, type LngLat, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
+import { isRegional, defaultFare, type PendingRoute, type Budget, type Statement, type ClockState, type LngLat, type LoadProgress, type Mode, type RouteResult, type RouteSpec } from "./sim/api";
 import { createSim } from "./sim";
+import { countyAt, countyName, loadingText } from "./statewide";
 import { serialQueue } from "./sim/queue";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -20,6 +21,11 @@ const sim = createSim();
 const map = await createMap("map");
 if (import.meta.env.DEV) Object.assign(window, { __map: map }); // for e2e scripts
 const routes: RouteSpec[] = [];
+/** Real rail and intercity lines sim-core does not run: drawn in the schematic, never sent to the sim. */
+let reference: RouteSpec[] = [];
+/** Zone centroids with county FIPS, for naming the county under the camera. */
+let zoneCounty: [number, number, number][] = [];
+let statewide = false;
 let results = new Map<string, RouteResult>();
 let pending = new Map<string, PendingRoute>(); // routes under construction (F24)
 let nextId = 1;
@@ -171,8 +177,9 @@ function render(): void {
   // While editing, draw true geography so dragged stops land where the cursor is.
   const t = editor.active ? 1 : Math.min(1, Math.max(0, (z - SCHEMATIC_FULL) / (GEO_FULL - SCHEMATIC_FULL)));
   const pxPerDeg = (512 * 2 ** z) / 360;
-  const rail = routes.filter((r) => isRegional(r.mode));
-  const layouts = layoutSchematic(rail, pxPerDeg);
+  const rail = [...routes.filter((r) => isRegional(r.mode)), ...reference];
+  // Fully geographic, every stop shows (the layout thins stops only for the schematic).
+  const layouts = layoutSchematic(rail, t === 1 ? Infinity : pxPerDeg);
   const stops: GeoJSON.Feature[] = [];
 
   setData(
@@ -185,9 +192,9 @@ function render(): void {
     })),
   );
   for (const l of layouts)
-    l.stops.forEach((s, idx) => {
+    l.stops.forEach((s) => {
       const b = stopBoardings(l.routeId, s.id);
-      stops.push(stopFeature(morph(s.schem, s.geo, t), true, l.color, s.name, b, s.interchange, l.routeId, idx));
+      stops.push(stopFeature(morph(s.schem, s.geo, t), true, l.color, s.name, b, s.interchange, l.routeId, s.idx));
     });
 
   const bus = routes.filter((r) => !isRegional(r.mode));
@@ -207,8 +214,13 @@ function render(): void {
     });
   setData(map, "stops", stops);
 
+  // County detail (statewide): from the City band in, name the county under the camera. The
+  // score does not change with the camera; this is the view handing off, not a second model.
+  const c = map.getCenter();
+  const fips = statewide && zoomBand(z) !== "State" && zoomBand(z) !== "Region" ? countyAt(zoneCounty, [c.lng, c.lat]) : null;
   $("zoom-badge").innerHTML =
     `<b>${zoomBand(z)}</b> z${z.toFixed(1)} · ${t === 0 ? "schematic" : t === 1 ? "geographic" : "morphing"}` +
+    (fips ? ` · <b>${countyName(fips)}</b>` : "") +
     ` <button data-go="tx">Texas</button><button data-go="travis">Travis</button>`;
 }
 
@@ -237,10 +249,11 @@ const inspecting = new Set<string>();
 const existing = new Set<string>();
 let existingOpen = false;
 const EXISTING_COLOR = { rail: "#dc241f", bus: "#8a8a8a" };
+let referenceOpen = false;
 
 function renderPanel(): void {
   const list = $("route-list");
-  if (!routes.length) {
+  if (!routes.length && !reference.length) {
     list.innerHTML = "<em>No lines yet. Draw one.</em>";
     return;
   }
@@ -255,6 +268,11 @@ function renderPanel(): void {
     (own.length ? own.map(routeRow).join("") : "<em>No lines of your own yet. Draw one.</em>") +
     (start.length
       ? `<details id="existing" ${existingOpen ? "open" : ""}><summary>Today's network: ${start.length} lines, ${riders.toLocaleString()} riders/day</summary>${start.map(routeRow).join("")}</details>`
+      : "") +
+    (reference.length
+      ? `<details class="ref" id="reference" ${referenceOpen ? "open" : ""}><summary>Other real rail: ${reference.length} lines, drawn only (not simulated yet)</summary><ul>${reference
+          .map((r) => `<li><span class="swatch" style="background:${r.color}"></span>${escapeHtml(r.name)}</li>`)
+          .join("")}</ul></details>`
       : "");
 }
 
@@ -298,9 +316,27 @@ function routeRow(r: RouteSpec): string {
 // Startup: sim-core takes a few seconds to build (longer on the real Travis road graph).
 $("sim-ms").textContent = `${sim.label} · loading…`;
 const showLoading = setInterval(() => ($("sim-ms").textContent = `${sim.label} · loading…`), 500);
-sim.ready().then(
+// Loading screen (statewide startup is over a minute): stage, bar, elapsed. Opens on the
+// scenario's extent once it is read, so a statewide game starts on all of Texas.
+let framed = false;
+const onProgress = (p: LoadProgress) => {
+  statewide = p.statewide;
+  if (p.statewide && p.bounds && !framed) {
+    framed = true;
+    map.fitBounds(p.bounds, { padding: 40, duration: 0 });
+  }
+  if (p.stage === "ready") return;
+  // A county build is ready in seconds; show the screen only for the statewide wait.
+  $("loading").hidden = !p.statewide;
+  const { stage, detail, fill } = loadingText(p);
+  $("loading-stage").textContent = stage;
+  $("loading-detail").textContent = detail;
+  $("loading-fill").style.width = `${Math.round(fill * 100)}%`;
+};
+sim.ready(onProgress).then(
   async () => {
     clearInterval(showLoading);
+    $("loading").hidden = true;
     $("sim-ms").textContent = `${sim.label} · ready`;
     renderBudget(await sim.budget());
     // Today's network when the shell started with it (the provisional default, APP-4; empty on a blank map).
@@ -315,12 +351,17 @@ sim.ready().then(
       $("btn-demo").hidden = start.some((r) => r.mode === "commuter_rail");
       await apply(() => sim.results());
     }
+    // Real rail and intercity lines the sim does not run, and counties for the badge.
+    [reference, zoneCounty] = await Promise.all([sim.referenceLines(), sim.zoneCounties()]);
+    renderPanel();
+    render();
     // Hand the clock to the sim, carrying over pause and speed set while it loaded.
     simReady = true;
     syncClock(await sim.setClock({ paused: clock.paused, timelapse: clock.speed }));
   },
   (e) => {
     clearInterval(showLoading);
+    $("loading").hidden = true;
     $("sim-ms").textContent = `${sim.label} failed to start: ${e}`;
   },
 );
@@ -354,6 +395,7 @@ $("btn-desire").onclick = () => {
 
 // Zoom re-renders only the map: the schematic morphs, the clock is untouched.
 map.on("zoom", render);
+map.on("moveend", render); // the county name follows panning too
 
 // ---- UI wiring --------------------------------------------------------------
 const DRAW_HINT = "Click to place stops. Enter or double-click to finish, Esc to cancel.";
@@ -447,6 +489,7 @@ $("btn-demo").onclick = () =>
 // "toggle" does not bubble, so listen in the capture phase.
 $("route-list").addEventListener("toggle", (e) => {
   if ((e.target as HTMLElement).id === "existing") existingOpen = (e.target as HTMLDetailsElement).open;
+  if ((e.target as HTMLElement).id === "reference") referenceOpen = (e.target as HTMLDetailsElement).open;
 }, true);
 $("budget").addEventListener("toggle", (e) => {
   if ((e.target as HTMLElement).id === "statements") statementsOpen = (e.target as HTMLDetailsElement).open;

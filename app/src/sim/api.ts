@@ -135,11 +135,27 @@ export interface Budget {
   statements: Statement[];
 }
 
+/** Startup progress (shell `LoadInfo`), for the loading screen. */
+export interface LoadProgress {
+  stage: "reading" | "equilibrium" | "ready";
+  elapsedS: number;
+  /** Rough total startup time for this scenario size; the screen says it is an estimate. */
+  expectedS: number;
+  zones: number; // 0 until the scenario is read
+  /** On sim-core's strategic tier (the statewide build, F34). */
+  statewide: boolean;
+  /** Zone centroid extent [[west, south], [east, north]], once read. */
+  bounds?: [LngLat, LngLat];
+}
+
 export interface SimClient {
   /** Shown in the ridership panel so it is obvious which backend produced the numbers. */
   readonly label: string;
-  /** Resolves once the backend can answer without waiting (sim-core builds for seconds at startup); rejects if it failed to start. */
-  ready(): Promise<void>;
+  /**
+   * Resolves once the backend can answer without waiting (sim-core builds for seconds at startup, over
+   * a minute statewide); rejects if it failed to start. `onProgress` gets each startup report.
+   */
+  ready(onProgress?: (p: LoadProgress) => void): Promise<void>;
   /** Add or replace a route, re-run demand, and return results for every route. */
   upsertRoute(route: RouteSpec): Promise<RouteResult[]>;
   removeRoute(id: string): Promise<RouteResult[]>;
@@ -158,6 +174,13 @@ export interface SimClient {
    * The client may edit or delete them like its own.
    */
   existingRoutes(): Promise<RouteSpec[]>;
+  /**
+   * Real rail and intercity lines sim-core does not run (the pipeline's transit.json, minus
+   * CapMetro's, which are in `existingRoutes`). Drawn only: never sent to the sim, never scored.
+   */
+  referenceLines(): Promise<RouteSpec[]>;
+  /** Every zone's centroid and county FIPS, `[lon, lat, fips]`; empty without zones.json. */
+  zoneCounties(): Promise<[number, number, number][]>;
   /** Results for every route without changing anything (re-read after the day re-runs). */
   results(): Promise<RouteResult[]>;
   /** The simulation's clock (F21): the client polls it and interpolates in between. */

@@ -2,7 +2,8 @@
 // app/src-tauri/src/sim.rs. Converts the app's RouteSpec to sim-core's
 // TransitLine and LineResult back to RouteResult.
 import { invoke } from "@tauri-apps/api/core";
-import { isRegional, defaultFare, STATEMENT_MONTHS, type Budget, type Statement, type PendingRoute, type ClockState, type DesireLine, type RoutePreview, type LngLat, type Mode, type RouteResult, type RouteSpec, type SimClient } from "./api";
+import { fromRef, type RefLineOut } from "../statewide";
+import { isRegional, defaultFare, STATEMENT_MONTHS, type Budget, type Statement, type PendingRoute, type ClockState, type DesireLine, type RoutePreview, type LngLat, type LoadProgress, type Mode, type RouteResult, type RouteSpec, type SimClient } from "./api";
 
 /** sim-core TransitLine (crates/sim-core/src/schema.rs). Omitted fields take mode defaults. */
 interface TransitLine {
@@ -187,7 +188,29 @@ export function fromLineResult(o: LineResultOut, route: RouteSpec | undefined): 
 /** Panel label for the shell's scenario source: a file path or "synthetic". */
 export function sourceLabel(source: string): string {
   if (source === "synthetic") return "sim-core · synthetic region";
+  if (source.includes("48-2023")) return "sim-core · Texas data";
   return source.includes("48453") ? "sim-core · Travis data" : `sim-core · ${source.split(/[\\/]/).slice(-2).join("/")}`;
+}
+
+/** Startup progress as the shell reports it (sim.rs `LoadInfo`). */
+interface LoadInfo {
+  stage: LoadProgress["stage"];
+  elapsed_s: number;
+  expected_s: number;
+  zones: number;
+  statewide: boolean;
+  bounds: [number, number, number, number] | null;
+}
+
+export function fromLoad(l: LoadInfo): LoadProgress {
+  return {
+    stage: l.stage,
+    elapsedS: l.elapsed_s,
+    expectedS: l.expected_s,
+    zones: l.zones,
+    statewide: l.statewide,
+    ...(l.bounds && { bounds: [[l.bounds[0], l.bounds[1]], [l.bounds[2], l.bounds[3]]] as [LngLat, LngLat] }),
+  };
 }
 
 /** SimClient that calls sim-core through the desktop shell's Tauri commands. */
@@ -197,11 +220,12 @@ export class TauriSim implements SimClient {
   // Stop ids live only in the client; keep specs to map per-stop results back.
   private routes = new Map<string, RouteSpec>();
 
-  async ready(): Promise<void> {
+  async ready(onProgress?: (p: LoadProgress) => void): Promise<void> {
     for (;;) {
-      const s = await invoke<{ ready: boolean; error: string | null; source: string }>("sim_status");
+      const s = await invoke<{ ready: boolean; error: string | null; source: string; load: LoadInfo }>("sim_status");
       this.label = sourceLabel(s.source);
       if (s.error) throw new Error(s.error);
+      onProgress?.(fromLoad(s.load));
       if (s.ready) return;
       await new Promise((r) => setTimeout(r, 500));
     }
@@ -231,6 +255,14 @@ export class TauriSim implements SimClient {
     const out = (await invoke<{ route_id: string; line: TransitLine }[]>("existing_routes")).map(fromExisting);
     for (const r of out) this.routes.set(r.id, r); // so results map back to their stops
     return out;
+  }
+
+  async referenceLines(): Promise<RouteSpec[]> {
+    return (await invoke<RefLineOut[]>("reference_lines")).map(fromRef);
+  }
+
+  zoneCounties(): Promise<[number, number, number][]> {
+    return invoke("zone_counties");
   }
 
   async pendingRoutes(): Promise<PendingRoute[]> {

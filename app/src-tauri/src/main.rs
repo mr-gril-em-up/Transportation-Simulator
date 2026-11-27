@@ -18,6 +18,8 @@ fn main() {
             sim::ledger,
             sim::issue_bond,
             sim::existing_routes,
+            sim::reference_lines,
+            sim::zone_counties,
             sim::clock,
             sim::set_clock,
             sim::skip_to_next_month,

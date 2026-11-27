@@ -174,6 +174,15 @@ export class MockSim implements SimClient {
     return { dailyRiders, ...mockCapital(route, dailyRiders) };
   }
 
+  /** The mock has no transit.json or zones: nothing to draw for reference, no counties. */
+  async referenceLines(): Promise<RouteSpec[]> {
+    return [];
+  }
+
+  async zoneCounties(): Promise<[number, number, number][]> {
+    return [];
+  }
+
   /** The mock always starts on a blank map. */
   async existingRoutes(): Promise<RouteSpec[]> {
     return [];

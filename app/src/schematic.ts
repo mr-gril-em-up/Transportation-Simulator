@@ -1,6 +1,8 @@
 // Tube-style schematic layout for rail lines, plus the geo<->schematic morph.
 // Heuristic, not optimal: each line walks its stops, snapping every hop to a
-// multiple of 45 degrees with even spacing. Stops of different lines within
+// multiple of 45 degrees and aiming each hop at the stop's real position, so
+// snapping error does not build up along a 600 km intercity line (statewide
+// view). Hops are at least MIN_PX on screen. Stops of different lines within
 // MERGE_KM become one interchange station; a line reaching an already placed
 // station bends to it with one diagonal plus one straight leg.
 import type { LngLat, RouteSpec } from "./sim/api";
@@ -40,7 +42,8 @@ export interface LineLayout {
   color: string;
   geo: LngLat[]; // same length as schem, for pointwise morph
   schem: LngLat[];
-  stops: { id: string; name: string; geo: LngLat; schem: LngLat; interchange: boolean }[];
+  /** Stops drawn at this zoom; `idx` is the stop's index in the route (zoomed out, some are left out). */
+  stops: { id: string; idx: number; name: string; geo: LngLat; schem: LngLat; interchange: boolean }[];
 }
 
 /** pxPerDeg: screen pixels per degree of longitude at the current zoom. */
@@ -62,22 +65,27 @@ export function layoutSchematic(routes: RouteSpec[], pxPerDeg: number): LineLayo
   const out: LineLayout[] = [];
   for (const r of ordered) {
     if (r.stops.length < 2) continue;
-    const geoXY = r.stops.map((s) => toXY(s.lngLat));
-    let geoLen = 0;
-    for (let i = 1; i < geoXY.length; i++) geoLen += len(sub(geoXY[i], geoXY[i - 1]));
-    const spacing = Math.max(minSpacing, geoLen / (geoXY.length - 1));
-
-    // Free layout from the origin.
-    const free: XY[] = [[0, 0]];
-    for (let i = 1; i < geoXY.length; i++) {
-      const d = snapDir(sub(geoXY[i], geoXY[i - 1]));
-      free.push(add(free[i - 1], [d[0] * spacing, d[1] * spacing]));
+    // Zoomed out, stops closer than the minimum gap would push a line far from its geography
+    // (25 stops x 34 px is wider than Texas at State zoom). Keep the ends, interchanges and
+    // stops at least one gap from the last kept one, as a tube overview does.
+    const keep = r.stops
+      .map((s, i) => i)
+      .filter((i) => i === 0 || i === r.stops.length - 1 || stations[stationOf.get(r.stops[i].id)!].lines.size > 1);
+    const kept: number[] = [];
+    for (let i = 0; i < r.stops.length; i++) {
+      const last = kept[kept.length - 1];
+      if (keep.includes(i) || len(sub(toXY(r.stops[i].lngLat), toXY(r.stops[last].lngLat))) >= minSpacing) kept.push(i);
     }
-    // Anchor on the first already placed station, else on the geographic centroid.
-    const st = r.stops.map((s) => stations[stationOf.get(s.id)!]);
-    const anchorIdx = st.findIndex((x) => x.placed);
-    const centroid = (pts: XY[]): XY => pts.reduce((a, p) => add(a, [p[0] / pts.length, p[1] / pts.length]), [0, 0] as XY);
-    const shift = anchorIdx >= 0 ? sub(st[anchorIdx].placed!, free[anchorIdx]) : sub(centroid(geoXY), centroid(free));
+    const rStops = kept.map((i) => r.stops[i]);
+    const geoXY = rStops.map((s) => toXY(s.lngLat));
+    const st = rStops.map((s) => stations[stationOf.get(s.id)!]);
+    /** Next stop from `prev`: the snapped direction toward the stop's real position, at least one gap long. */
+    const hop = (prev: XY, target: XY): XY => {
+      const v = sub(target, prev);
+      const d = snapDir(v);
+      const l = Math.max(minSpacing, len(v));
+      return add(prev, [d[0] * l, d[1] * l]);
+    };
 
     // Walk the line; already placed stations pull the line to them via an elbow.
     const stopXY: XY[] = [];
@@ -86,8 +94,8 @@ export function layoutSchematic(routes: RouteSpec[], pxPerDeg: number): LineLayo
     for (let i = 0; i < geoXY.length; i++) {
       let p: XY;
       if (st[i].placed) p = st[i].placed!;
-      else if (i === 0) p = add(free[0], shift);
-      else p = add(stopXY[i - 1], sub(free[i], free[i - 1]));
+      else if (i === 0) p = geoXY[0];
+      else p = hop(stopXY[i - 1], geoXY[i]);
       st[i].placed ??= p;
       if (i > 0) {
         const mids = elbow(stopXY[i - 1], p);
@@ -110,8 +118,9 @@ export function layoutSchematic(routes: RouteSpec[], pxPerDeg: number): LineLayo
       color: r.color,
       geo: geoPath.map(toLngLat),
       schem: path.map(toLngLat),
-      stops: r.stops.map((s, i) => ({
+      stops: rStops.map((s, i) => ({
         id: s.id,
+        idx: kept[i],
         name: s.name,
         geo: s.lngLat,
         schem: toLngLat(stopXY[i]),

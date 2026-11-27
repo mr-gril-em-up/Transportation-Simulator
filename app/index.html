@@ -27,6 +27,12 @@
         <div id="route-list"><em>No lines yet. Draw one.</em></div>
       </div>
       <div id="zoom-badge" class="panel"></div>
+      <div id="loading" class="panel" hidden>
+        <b id="loading-stage">Starting the simulation</b>
+        <div class="bar"><div id="loading-fill"></div></div>
+        <small id="loading-detail"></small>
+        <small>The first day is computed before the clock starts; times are estimates for a 4-core machine.</small>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
