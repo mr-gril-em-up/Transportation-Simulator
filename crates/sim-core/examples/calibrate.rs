@@ -2,12 +2,15 @@
 //! shares with today's CapMetro network loaded, then report the fit, the
 //! fitted constants and Red Line ridership (F19).
 //!
-//! `cargo run --release -p sim-core --example calibrate -- <scenario.json> <transit.json> [bus_peak_headway] [bus_offpeak_headway]`
+//! `cargo run --release -p sim-core --example calibrate -- <scenario.json> <existing_lines.json | transit.json> [bus_peak_headway] [bus_offpeak_headway]`
 //!
-//! The network comes from the build's `transit.json` (OSM route relations):
+//! Today's network comes from, in order: the scenario's `lines`, the build's
+//! `existing_lines.json` (DATA-7, the same lines the game can start with), or
+//! the build's `transit.json` (OSM route relations, built here):
 //! one line per route ref (OSM keeps each direction as its own relation),
-//! the Red Line (ref 550) as commuter rail at 32/51 min, buses at the given
-//! headways (default 20/30 min; OSM has no frequencies, GTFS is a follow-up).
+//! the Red Line (ref 550) as commuter rail at 32/51 min over 15.1 h, buses at
+//! GTFS weekday headways and span where the ref matched (DATA-6), else the
+//! given placeholder headways (default 20/30 min).
 //! Red Line park-and-ride runs only at the three stations with lots, capped
 //! at their spaces (SIM-11).
 //! Targets are ACS journey-to-work shares excluding work from home (`targets`).
@@ -46,13 +49,61 @@ fn main() {
     let a: Vec<String> = std::env::args().collect();
     let mut input =
         ScenarioInput::from_json(&std::fs::read_to_string(&a[1]).expect("scenario.json")).unwrap();
-    let transit: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&a[2]).expect("transit.json")).unwrap();
     let bus_peak: f64 = a.get(3).and_then(|h| h.parse().ok()).unwrap_or(20.0);
     let bus_off: f64 = a.get(4).and_then(|h| h.parse().ok()).unwrap_or(30.0);
+    // Today's network: scenario `lines` if the build put it there, else the
+    // second file, either `existing_lines.json` (DATA-7, an array of
+    // TransitLine) or `transit.json` (OSM routes with GTFS headways).
+    if input.lines.is_empty() {
+        let file: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&a[2]).expect("existing_lines.json or transit.json"),
+        )
+        .unwrap();
+        input.lines = if file.is_array() {
+            serde_json::from_value(file).expect("existing_lines.json: TransitLine array")
+        } else {
+            lines_from_transit(&file, bus_peak, bus_off)
+        };
+    }
+    let n_lines = input.lines.len();
+    let t = Instant::now();
+    let params = Params {
+        instant_build: true,
+        ..Params::default()
+    };
+    let mut sim = Sim::new(input, params).unwrap();
+    println!(
+        "{n_lines} CapMetro lines loaded: {:.1} s",
+        t.elapsed().as_secs_f64()
+    );
+    report(&sim, "before");
 
+    let t = Instant::now();
+    for _ in 0..3 {
+        sim.calibrate_mode_shares(targets(), 10);
+        sim.equilibrate_warm();
+    }
+    sim.calibrate_mode_shares(targets(), 10);
+    println!("calibrated in {:.1} s", t.elapsed().as_secs_f64());
+    report(&sim, "after");
+    println!(
+        "asc {:?}",
+        sim.params.asc.map(|x| (x * 1000.0).round() / 1000.0)
+    );
+}
+
+/// Today's CapMetro network from `transit.json`, for builds without `lines`:
+/// one line per route ref (OSM keeps each direction as its own relation).
+fn lines_from_transit(
+    transit: &serde_json::Value,
+    bus_peak: f64,
+    bus_off: f64,
+) -> Vec<TransitLine> {
+    let mut lines = Vec::new();
+    let routes = transit["routes"].as_array().unwrap();
+    let gtfs_attached = routes.iter().any(|r| r["peak_headway_min"].is_number());
     let mut seen = HashSet::new();
-    for r in transit["routes"].as_array().unwrap() {
+    for r in routes {
         let reference = r["ref"].as_str().unwrap_or("").to_string();
         let stops: Vec<Stop> = r["stops"]
             .as_array()
@@ -66,11 +117,17 @@ fn main() {
                 park_ride_spaces: None,
             })
             .collect();
-        if stops.len() < 2 || !seen.insert(reference.clone()) {
+        let rail = reference == "550";
+        // With GTFS attached, a route without a CapMetro match is another
+        // operator's (Amtrak's Texas Eagle, intercity coaches): skip it.
+        let unmatched = gtfs_attached && r["peak_headway_min"].is_null() && !rail;
+        if stops.len() < 2 || unmatched || !seen.insert(reference.clone()) {
             continue;
         }
-        let rail = reference == "550";
-        input.lines.push(TransitLine {
+        // GTFS weekday headways (DATA-6) where the ref matched, else the
+        // placeholder. The Red Line keeps its timetable rows (figures.csv).
+        let gtfs = |k: &str, dflt: f64| r[k].as_f64().unwrap_or(dflt);
+        lines.push(TransitLine {
             name: format!("CapMetro {reference}"),
             mode: if rail { Mode::CommuterRail } else { Mode::Bus },
             stops: if rail {
@@ -88,39 +145,27 @@ fn main() {
             } else {
                 stops
             },
-            headway_min: if rail { 32.0 } else { bus_peak },
-            offpeak_headway_min: Some(if rail { 51.0 } else { bus_off }),
+            headway_min: if rail {
+                32.0
+            } else {
+                gtfs("peak_headway_min", bus_peak)
+            },
+            offpeak_headway_min: Some(if rail {
+                51.0
+            } else {
+                gtfs("midday_headway_min", bus_off)
+            }),
             fare: None,
             fare_per_km: None,
             speed_kph: None,
-            span_hours: None,
+            span_hours: if rail {
+                Some(15.1)
+            } else {
+                r["span_hours"].as_f64()
+            },
         });
     }
-    let n_lines = input.lines.len();
-    let t = Instant::now();
-    let params = Params {
-        instant_build: true,
-        ..Params::default()
-    };
-    let mut sim = Sim::new(input, params).unwrap();
-    println!(
-        "{n_lines} CapMetro lines loaded (bus {bus_peak}/{bus_off} min): {:.1} s",
-        t.elapsed().as_secs_f64()
-    );
-    report(&sim, "before");
-
-    let t = Instant::now();
-    for _ in 0..3 {
-        sim.calibrate_mode_shares(targets(), 10);
-        sim.equilibrate_warm();
-    }
-    sim.calibrate_mode_shares(targets(), 10);
-    println!("calibrated in {:.1} s", t.elapsed().as_secs_f64());
-    report(&sim, "after");
-    println!(
-        "asc {:?}",
-        sim.params.asc.map(|x| (x * 1000.0).round() / 1000.0)
-    );
+    lines
 }
 
 fn report(sim: &Sim, label: &str) {

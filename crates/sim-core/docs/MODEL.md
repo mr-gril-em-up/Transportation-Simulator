@@ -249,7 +249,13 @@ Travis by `examples/calibrate.rs`:
   tuned (-3.76 vs walk access). Probe: with no gap the full lots alone put
   about 4,800 a day on the Red Line, and with a gap of -1 about 4,200, so lot
   capacity cannot replace the tuned constant; real lots are not full either.
-  The constants are now `[0, -2.44, -0.40, -4.16, -0.41, -3.89]`.
+  The constants were then `[0, -2.44, -0.40, -4.16, -0.41, -3.89]`.
+- **GTFS refit (SIM-12 PR):** the network is now the build's
+  `existing_lines.json` (DATA-7): the 61 CapMetro-operated routes with GTFS
+  weekday peak and midday headways and span (DATA-6), the Red Line at its
+  32/51 timetable over 15.1 h. Constants `[0, -2.44, -0.43, -4.19, -0.40,
+  -3.89]`. Buses carry 77.8k a day against ~69-70k weekday (NTD), 11% high;
+  the Red Line 1,367 against 1,500, 9% low.
 - SIM-10 (superseded split): park-and-ride share of transit commuters 3%. **Tuned, not sourced**: ACS
   has no access mode and no CapMetro on-board survey split was found. It
   decides the Red Line: with walk and drive access fitted together, modeled
@@ -450,29 +456,43 @@ closes the month using that day's line results:
 | Fare revenue | 30 x sum of `fare_revenue_per_day` |
 | Operating cost | 30 x sum of `operating_cost_per_day` |
 | Operating assistance | operating cost x `operating_assistance_share [0.143]` (federal formula funds; Texas gives big-city transit authorities no state operating money) |
-| Local tax | served population x `taxable_sales_per_capita [$20,600]` x `local_sales_tax_rate [1%]` / 12 |
+| Local tax | served population x `taxable_sales_per_capita [$39,100, calibrated]` x `local_sales_tax_rate [1%]` / 12 |
 
 Served population (the tax area, SIM-9) is the full population of every zone
 whose centre lies within `tax_area_km [3]` of an open stop. Texas transit
 authorities (CapMetro, DART, Houston METRO) levy a 1% sales tax across whole
 member cities, not just the blocks beside a stop; the buffer stands in for
 city membership, which follows service. Growing the network grows the taxing
-area, up to the whole county (CapMetro's real base: ~1.36M residents, ~$280M a
-year).
+area, up to the whole county. The buffer is a game abstraction: the real tax
+is jurisdictional, collected in Austin and member cities whether or not a
+stop is near.
+
+Rate calibration (SIM-12): `taxable_sales_per_capita` is fitted, not
+sourced. CapMetro collected $382.4M of sales tax in FY2023 (ACFR, audited)
+from 1.36M service-area residents, $28,100 each. Under the buffer rule today's
+CapMetro network (`existing_lines.json`) taxes 977,834 residents, so the rate
+that reproduces the real $382.4M is $382.4M / 1% / 977,834 = $39,100 per
+taxed resident. Sales tax per resident runs higher than retail spending
+because businesses and visitors pay it too. (SIM-9 used $20,600, derived
+from the operating share of local funds only; that understated the tax by
+about half.) With today's network loaded the budget balances: fares $37M,
+assistance $55M and tax $382M against $384M operating cost a year (bus
+5,493 revenue hours a weekday at $182). The Red Line alone taxes ~291k
+residents, $114M a year.
 
 Why 3 km and not walking coverage: the first cut (#20) taxed only residents in
 walking range, weighted by stop coverage. On real Travis that gave the Red
 Line's ten stations ~$0.5M a month against $1.6M operating cost, so the first
 rail line always bankrupted the player. With a 3 km buffer the same stations
-tax ~291k residents, about $5.0M a month ($60M a year). That runs the line and
-services a bond of a few hundred million, while a $1B commuter rail build from
-scratch stays out of reach without a federal grant or a wider network first.
+tax ~291k residents, about $9.5M a month ($114M a year at the SIM-12 rate;
+$60M at SIM-9's). That runs the line and services a bond of several hundred
+million, while a $1B commuter rail build from scratch stays out of reach
+without a federal grant or a wider network first.
 Buffer sizes on real Travis around the Red Line: 1 km 38k residents, 2 km
 130k, 3 km 291k, 5 km 513k, 8 km 731k. 3 km is a balance choice.
 Sources (figures.csv rows of the same names): the 1% rate is the Comptroller's
-MTA table (the statutory cap). Taxable sales per capita is derived from
-CapMetro's NTD 2023 local funds divided by 1% and by its 1.36M service-area
-residents (Austin MSA high: $26,000). Operating assistance is CapMetro NTD
+MTA table (the statutory cap). The tax rate per resident is the calibrated
+row above. Operating assistance is CapMetro NTD
 2023, federal $50.9M over $356.3M; 2023 may still carry pandemic relief, so it
 is an upper bound, and small agencies run far higher (El Paso 57%).
 
@@ -508,8 +528,8 @@ built. With no lines it is 0 and nothing can be borrowed. (SIM-7 first used
 the whole scenario's population; that let the player borrow against tax the
 network would never collect and walk into bankruptcy.) `Sim::bond_capacity()`
 is the principal still allowed; `issue_bond` refuses above it. Real Travis:
-the Red Line alone pledges ~$60M a year, so about $440M of 30-year debt at
-5.43%; a county-wide network pledges $268M, about $2.0B.
+the Red Line alone pledges ~$114M a year, so about $840M of 30-year debt at
+5.43%; today's CapMetro network pledges $382M, about $2.8B.
 Source (figures.csv `bond_coverage_min`): Houston METRO's sales-tax bonds
 require 2.0x maximum annual debt service before new parity bonds (KBRA AAA
 affirmation, Sep 2023); DART's senior lien is reported at 2x too.
@@ -553,8 +573,8 @@ construction. Only construction is compressed; fares, costs and taxes are per
 real day. Compressing the term 12x alone makes each payment ~12x larger, so a
 tax base that carries $X of 30-year debt carries about X/7 at 2.5 years.
 Rough Travis scale: all 1.3M residents in the tax area would raise
-1.3M x $20,600 x 1% = $268M a year; at 5.43% over 30 years that services at most
-about $4.0B (annuity factor 14.8), versus about $0.6B over 2.5 years. Austin's
+1.3M x $39,100 x 1% = $508M a year; at 5.43% over 30 years that services at most
+about $7.5B (annuity factor 14.8), versus about $1.2B over 2.5 years. Austin's
 light rail is priced in billions, so compression would rule it out.
 `bond_term_speedup` is the switch if Collins prefers D9 as written; the
 question is with him.
@@ -584,7 +604,11 @@ In rough priority for M1 tuning:
 3. Transit crowding in path and mode choice.
 4. Frequency-based transit assignment for shared corridors.
 5. Time-sliced assignment and departure-time choice (regional tier, M3).
-6. Statewide scale: Z x Z matrices are ~8 bytes per pair per matrix, fine for
+6. Line economics bill weekday service every day of the year. On today's
+   CapMetro network that is 5,539 bus revenue hours a day, 2.0M a year,
+   against NTD 2023's 1.31M, so operating cost ($387M a year) runs ~40% above
+   CapMetro's ~$270M fixed-route cost. Weekend service levels would fix it.
+7. Statewide scale: Z x Z matrices are ~8 bytes per pair per matrix, fine for
    700 zones, not for 6,900 tracts (M3 needs sparse or blocked storage and a
    contracted highway graph).
 7. Park-and-ride car trips are not added to road volumes.

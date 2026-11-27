@@ -127,7 +127,9 @@ pub struct Params {
     pub operating_assistance_share: f64,
     /// Local transit sales tax rate (CapMetro, DART, Houston METRO: 1%).
     pub local_sales_tax_rate: f64,
-    /// Taxable retail sales per resident per year, dollars.
+    /// Taxable sales per resident of the tax area per year, dollars.
+    /// Calibrated, not sourced (SIM-12): set so today's CapMetro network
+    /// collects CapMetro's real sales tax under the 3 km tax-area rule.
     pub taxable_sales_per_capita: f64,
     /// Zones whose centre is within this distance of an open stop pay the
     /// local transit tax in full (stand-in for MTA city membership, SIM-9), km.
@@ -157,9 +159,10 @@ impl Default for Params {
             // to ACS 2019-2023 B08301 commute shares excluding work-from-home.
             // Transit is fitted as one share; the drive-access gap (-3.76)
             // was tuned in SIM-10 and is not sourced. Red Line park-and-ride
-            // is limited to its three lots and their spaces (SIM-11).
-            // Reproduce with `examples/calibrate.rs`.
-            asc: [0.0, -2.44, -0.40, -4.16, -0.41, -3.89],
+            // is limited to its three lots and their spaces (SIM-11). Network:
+            // the build's `existing_lines.json` (DATA-7, 61 lines, GTFS
+            // weekday headways). Reproduce with `examples/calibrate.rs`.
+            asc: [0.0, -2.44, -0.43, -4.19, -0.40, -3.89],
             wait_weight: 2.0,
             walk_weight: 2.0,
             transfer_penalty_min: 5.0,
@@ -211,8 +214,10 @@ impl Default for Params {
             operating_assistance_share: 0.143,
             // figures.csv `transit_sales_tax_rate`: CapMetro, DART, METRO (MTA cap).
             local_sales_tax_rate: 0.01,
-            // figures.csv `taxable_sales_per_capita`: CapMetro service area, 2023$.
-            taxable_sales_per_capita: 20_600.0,
+            // figures.csv `taxable_sales_per_served_resident_calibrated`
+            // (SIM-12): CapMetro FY2023 sales tax $382.4M (ACFR) / 1% / the
+            // 977,834 residents within 3 km of today's network's stops.
+            taxable_sales_per_capita: 39_100.0,
             // Game balance (SIM-9): on real Travis the Red Line's 10 stations
             // then tax ~291k residents ($60M a year), enough to run it and
             // service a bond for its capital; a city-wide network reaches the
