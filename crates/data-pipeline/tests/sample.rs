@@ -344,7 +344,10 @@ fn builds_travis_sample() {
         "nearest local node in the main component, not the closer fragment"
     );
     assert!(sc.road_links.iter().any(|l| l.lanes == 2 && !l.oneway));
-    assert!(sc.lines.is_empty(), "no GTFS in the sample, so no existing lines");
+    assert!(
+        sc.lines.is_empty(),
+        "no GTFS in the sample, so no existing lines"
+    );
 
     let _ = std::fs::remove_dir_all(root);
 }
