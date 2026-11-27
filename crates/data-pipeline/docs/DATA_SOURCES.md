@@ -100,15 +100,25 @@ Margins of error are large at block-group level, which is why suppressed values 
 
 **Citation:** U.S. Census Bureau, 2020 TIGER/Line Shapefiles, Block Groups, Texas.
 
+## 6. CapMetro GTFS static feed
+
+| | |
+|---|---|
+| Publisher | Capital Metropolitan Transportation Authority, via the City of Austin open data portal (catalog.data.gov dataset "CapMetro GTFS") |
+| File | https://data.austintexas.gov/download/r4v4-vz24/application/zip; `fetch.sh` keeps `routes.txt`, `trips.txt`, `stop_times.txt`, `calendar.txt`, `calendar_dates.txt` in `raw/gtfs_capmetro/` |
+| Columns used | `route_short_name`; trip `service_id`, `direction_id`; first `departure_time` per trip; calendar days and exceptions |
+| Gives the game | Weekday peak and midday headway and span for existing CapMetro routes in `transit.json`, so calibration loads today's network at real frequencies |
+| Not reachable | From the cloud sandbox (proxy); the Actions runner downloads it |
+
+**Citation:** Capital Metropolitan Transportation Authority, GTFS static feed, City of Austin Open Data Portal.
+
 ## Planned sources (not read yet)
 
 From the overview doc's data table, in the order the pipeline will likely add them:
 
 | Source | For | Milestone |
 |---|---|---|
-| ACS 5-year commute mode share (B08301) | Mode-choice calibration | M1 |
 | TIGER/Line block group polygons | Zone polygons for map fills | M1 |
-| CapMetro GTFS | Red Line schedule for the M1 ridership check | M1 |
 | ACS PUMS | Synthetic population | M2+ |
 | NHTS | Non-work trip rates | M2+ |
 | TxDOT AADT counts | Road assignment calibration | M3 |

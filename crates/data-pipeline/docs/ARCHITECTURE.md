@@ -95,6 +95,16 @@ Speed, lane and one-way rules are in [ASSUMPTIONS.md](ASSUMPTIONS.md).
 
 If `texas-latest.osm.pbf` is missing, this step is skipped with a note, and the scenario gets one placeholder road node so it still validates. That mode exists for quick census-only checks; real builds always include roads.
 
+### 5b. GTFS headways (`gtfs::read_headways`, `gtfs::apply`, DATA-6)
+
+OSM route relations give stops in order but no frequencies. When `raw/gtfs_capmetro/routes.txt` exists, the timetable is reduced to three numbers per route and copied onto OSM routes whose `ref` equals the GTFS `route_short_name` (both directions get the same values):
+
+- Service day: the Wednesday with the most scheduled trips, from `calendar.txt` plus `calendar_dates.txt` additions and removals. A Wednesday avoids Monday and Friday schedule variants; the busiest one avoids holiday and short-pick weeks.
+- Per route and direction, each trip's first departure. Each window takes the more frequent direction, so a peak-direction express (inbound mornings, outbound evenings) still gets a peak headway.
+- `peak_headway_min` = 120 / departures 07:00–09:00; `midday_headway_min` = 300 / departures 10:00–15:00; `span_hours` = last − first departure. These are averages, so a route with irregular gaps reads as its mean frequency.
+
+Only CapMetro is read; other operators' routes keep no headways. Matching by `ref` assumes OSM uses CapMetro's public route numbers, which it does for MetroBus, MetroRapid and the Red Line (route 550).
+
 ### 6. Scenario (`scenario::to_scenario`)
 
 Converts the layers into `sim_core::ScenarioInput`:

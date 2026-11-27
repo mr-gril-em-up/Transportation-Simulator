@@ -58,7 +58,8 @@ jobs:
           name: tsim-data-${{ inputs.area }}-${{ inputs.year }}-${{ inputs.level }}
           path: crates/data-pipeline/data/out/area
       - name: Publish release data-${{ inputs.area }}-${{ inputs.year }} (level ${{ inputs.level }})
-        if: ${{ !inputs.skip_osm }}
+        # Only main publishes, so a branch run cannot replace a reviewed release.
+        if: ${{ !inputs.skip_osm && github.ref == 'refs/heads/main' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

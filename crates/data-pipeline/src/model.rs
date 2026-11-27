@@ -99,6 +99,15 @@ pub struct TransitRoute {
     pub operator: Option<String>,
     /// Stops in route order.
     pub stops: Vec<Stop>,
+    /// Weekday minutes between departures 07:00-09:00, from GTFS (`gtfs.rs`).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub peak_headway_min: Option<f64>,
+    /// Weekday minutes between departures 10:00-15:00, from GTFS.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub midday_headway_min: Option<f64>,
+    /// Hours from first to last weekday departure, from GTFS.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub span_hours: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
