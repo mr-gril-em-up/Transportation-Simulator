@@ -1,0 +1,45 @@
+# Assumptions and defaults
+
+Every number or rule in the code that is not read straight from a source. Each entry says where it lives, why it was chosen, and what replaces it.
+
+## Zones and demand
+
+| Assumption | Where | Why | Replace with |
+|---|---|---|---|
+| Zones are 2020 block groups | `census.rs` | Design doc's unit for City zoom and the M0/M1 model; ~18,600 statewide is tractable | Tract zones for the statewide strategic tier come from the same data by aggregating on the first 11 GEOID digits |
+| All jobs (`JT00`, `S000`/`C000`) | `census.rs`, `fetch.sh` | Total commute demand; wage and sector splits are not used by the model yet | Read `SE01–03` / `SI01–03` when mode choice or destination choice needs them |
+| Population is 2020 census, jobs are LODES 2023 | `lib.rs` | Latest of each; three years apart | ACS 5-year population if growth since 2020 matters for calibration |
+| Out-of-state commuters ignored | `census.rs` | `od_aux` is a rounding error for Travis | Read `tx_od_aux_*` for border metros (El Paso, Texarkana) at M3 |
+| `zero_car_share` 0.06, `median_income` 70,000, `parking_cost` 0 | `scenario.rs` | sim-core's own defaults; no ACS reader yet | ACS B08201 and B19013 by block group (M1) |
+| `area_km2` omitted | `scenario.rs` | sim-core estimates it from zone spacing | TIGER `ALAND` (M1) |
+
+## Road network
+
+| Assumption | Where | Why | Replace with |
+|---|---|---|---|
+| Classes kept: motorway, trunk, primary, secondary, tertiary, their links, unclassified, residential, living_street | `osm.rs` `class_defaults` | Covers every road a commute trip uses; dropping `service` (parking aisles, driveways) roughly halves the graph | Add `service` if local-tier agents need driveways |
+| Default speeds (km/h): motorway 105, trunk 90, primary 72, secondary 64, tertiary 56, motorway/trunk links 72, other links 48, unclassified 48, residential 40, living_street 16 | `osm.rs` | Typical Texas posted limits (65, 55, 45, 40, 35, 30, 25 mph) where `maxspeed` is untagged | TxDOT speed data or calibration against observed travel times |
+| Default total lanes: motorway 4, trunk 4, primary 4, secondary 2, tertiary 2, links 1, unclassified 2, residential 2, living_street 1; one-way roads get half (rounded up) | `osm.rs` | Common US cross-sections | Tagged `lanes` (already used when present) |
+| `maxspeed` without a unit is km/h; `"NN mph"` is converted | `osm.rs` `parse_speed` | OSM convention | n/a |
+| Motorways and roundabouts are one-way unless `oneway=no` | `osm.rs` | OSM convention: motorway carriageways are mapped separately per direction | n/a |
+| Lanes per direction in the scenario = total / 2 for two-way roads (min 1) | `scenario.rs` | sim-core's `lanes` is per direction | n/a. Odd totals (3 = two lanes plus a center turn lane) round down on purpose |
+| Clip box = zone bbox + 0.05° | `lib.rs`, `--margin` | Keeps the roads just past the county line that boundary zones use | Clip by county polygon if the bbox pulls in too much of neighboring counties |
+| Edges that cross the clip box are dropped, not cut | `osm.rs` `build_roads` | No dangling half-edges; the margin makes the loss irrelevant | n/a |
+| Zone connector = nearest node on a non-motorway, non-trunk road, straight line | `scenario.rs` | One connector per zone is what sim-core's schema takes; freeway nodes would make access free | Multiple connectors per zone if sim-core adds them |
+
+## Transit
+
+| Assumption | Where | Why | Replace with |
+|---|---|---|---|
+| Stops = relation members with role `stop*`, else `platform*` | `osm.rs` | PTv2 tagging; older routes map only platforms | GTFS for agencies that publish it |
+| Routes kept if any stop is in the clip box | `osm.rs` | Lines entering the county count | n/a |
+| No headways or schedules | `osm.rs` | OSM does not carry them | CapMetro GTFS for the M1 Red Line check |
+| Scenario `lines` empty | `scenario.rs` | Design doc: game starts with existing transit removed | Optional toggle in the app reads `transit.json` |
+
+## Known gaps
+
+1. No zone polygons yet (map draws points or desire lines).
+2. No ACS fields; sim-core defaults stand in.
+3. No synthetic population or non-work trips (later milestones).
+4. JSON output will be large statewide; binary format pending a sim-core loader.
+5. Raw file names hard-code Texas (`48`, `tx`, `texas-latest`).

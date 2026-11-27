@@ -1,0 +1,20 @@
+[package]
+name = "data-pipeline"
+version = "0.1.0"
+edition.workspace = true
+description = "Builds Transpo-Sim input files (zones, commute flows, road and transit networks) from Census and OpenStreetMap data"
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "tsim-data"
+path = "src/main.rs"
+
+[dependencies]
+csv = "1"
+flate2 = "1"
+osmpbf = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+sim-core = { path = "../sim-core" }
