@@ -14,6 +14,7 @@
 //!   streetcar or trolley; 1 metro; 2 commuter rail; 3 bus; 5 tram;
 //!   11 trolleybus; 12 monorail; and the extended 100-999 ranges). Ferries,
 //!   cable cars and funiculars are left out.
+//!   `MODE` fixes feeds that code a route wrongly (TEXRail is type 0).
 //! - Name: agency, short name and long name, the short name left out when
 //!   the long name already has it (`CapMetro 7 Duval/Dove Springs`,
 //!   `DART Red Line`).
@@ -55,6 +56,11 @@ const TIMETABLE: &[(&str, &str, [&str; 3])] = &[(
         "span_capmetro_rail_weekday_hours",
     ],
 )];
+
+/// Mode overrides by (feed id, route key) where a feed's `route_type` is
+/// wrong: Trinity Metro codes TEXRail, a diesel commuter line to DFW
+/// Airport, as type 0 (light rail).
+const MODE: &[(&str, &str, &str)] = &[("trinity", "TEXRail", "commuter_rail")];
 
 /// sim-core mode for a GTFS `route_type`; `name` tells a streetcar from
 /// light rail, which share type 0.
@@ -106,7 +112,11 @@ pub fn existing_lines(
             } else {
                 format!("{k} {}", r.long_name)
             };
-            let Some(m) = r.route_type.and_then(|t| mode(t, &label)) else {
+            let fixed = MODE
+                .iter()
+                .find(|(f, id, _)| *f == feed.id && id == k)
+                .map(|x| x.2);
+            let Some(m) = fixed.or_else(|| r.route_type.and_then(|t| mode(t, &label))) else {
                 continue;
             };
             if r.stops.len() < 2 || !r.stops.iter().any(|s| inside(s.lon, s.lat)) {
@@ -212,9 +222,15 @@ mod tests {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
+        let tm: HashMap<String, RouteHeadway> = [(
+            "TEXRail".to_string(),
+            route(0, "TEXRail", &["U", "V"], Some(30.0)),
+        )]
+        .into();
         let feeds = vec![
             (feed("capmetro", "CapMetro"), cap),
             (feed("dart", "DART"), dart),
+            (feed("trinity", "Trinity Metro"), tm),
         ];
         let bbox = [-98.0, 30.0, -97.0, 31.0];
         let lines = existing_lines(&feeds, &bbox);
@@ -231,7 +247,8 @@ mod tests {
                 "CapMetro 550 MetroRail Red Line",
                 "CapMetro 7 Duval/Dove Springs",
                 "DART 620 Dallas Streetcar",
-                "DART Red Line"
+                "DART Red Line",
+                "Trinity Metro TEXRail",
             ],
             "no-headway, one-stop and ferry routes dropped"
         );
@@ -244,6 +261,7 @@ mod tests {
         assert_eq!(v[1]["offpeak_headway_min"], 30.0);
         assert_eq!(v[2]["mode"], "tram");
         assert_eq!(v[3]["mode"], "light_rail");
+        assert_eq!(v[4]["mode"], "commuter_rail", "TEXRail override");
         assert_eq!(figure("pnr_spaces_capmetro_lakeline"), Some(935.0));
         // Outside the box: nothing.
         assert!(existing_lines(&feeds, &[0.0, 0.0, 1.0, 1.0]).is_empty());

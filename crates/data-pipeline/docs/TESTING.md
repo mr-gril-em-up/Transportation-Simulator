@@ -148,3 +148,21 @@ Actions run [45956794828](https://github.com/mr-gril-em-up/Transportation-Simula
 | `scenario_road_nodes` / `scenario_road_links` | 213,801 / 283,966 | 1,092,465 / 1,712,605 |
 
 The highway cut keeps 17% of nodes and 20% of road km. Simplification removes only 34% here, against 45% for all classes, because rural highways change speed or lane count often and contraction needs both equal. `existing_lines` is 61 (CapMetro only) and `transit_routes` 691.
+
+## Statewide GTFS existing lines (2026-11-27)
+
+Actions run [45970882831](https://github.com/mr-gril-em-up/Transportation-Simulator/actions/runs/45970882831), `--area 48 --level tract --roads highway`, branch build (not published). Every feed in `reference/gtfs_feeds.csv` downloaded; CCRTA's own URL returned 403 to the runner and the Mobility Database fallback was used.
+
+| Feed | GTFS trips | Routes |
+|---|---|---|
+| CapMetro | 26,147 | 67 |
+| DART | 20,931 | 92 |
+| METRO | 21,878 | 109 |
+| Trinity Metro | 5,979 | 32 |
+| DCTA | 1,845 | 13 |
+| VIA | 20,947 | 95 |
+| CCRTA | 23,745 | 32 |
+| El Paso County Transit | 229 | 6 |
+
+415 existing lines from 446 routes; the 31 left out have no morning-peak or midday departures (CapMetro 481–486 and VIA 2xx school and PM-only routes, Trinity 61X/65X, DCTA NTX). Rail checks from the log (peak / midday min, stops): DART Red, Blue, Green, Orange 20 / 20 with 23–31 stops; DART Silver 30 / 42.9, 10 stops; TRE 30 / 50, 10 stops; METRO 700 (Red) 6 / 6, 25 stops; METRO 800 and 900 12 / 12; TEXRail 30 / 30, 9 stops (coded light rail in the feed, corrected to commuter rail); DCTA A-train 30 / 30, 6 stops; DART 620 streetcar (type 5) tram 20 / 20.
+
